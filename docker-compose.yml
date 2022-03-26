@@ -1,0 +1,44 @@
+networks:
+  roachnet:
+    driver: bridge
+services:
+  region1:
+    image: cockroachdb/cockroach:v21.2.7
+    networks:
+      - roachnet
+    command:
+      - start
+      - --insecure
+      - --join=region1,region2,region3
+    ports:
+      - 26257:26257
+      - 18080:18080
+    volumes:
+      - region1:/cockroach/cockrach-data
+  region2:
+    image: cockroachdb/cockroach:v21.2.7
+    networks:
+      - roachnet
+    command:
+      - start
+      - --insecure
+      - --join=region1,region2,region3
+    ports:
+      - 26257:26257
+      - 18080:18080
+    volumes:
+      - region1:/cockroach/cockrach-data
+  region3:
+    image: cockroachdb/cockroach:v21.2.7
+    networks:
+      - roachnet
+    command:
+      - start
+      - --insecure
+      - --join=region1,region2,region3
+    volumes:
+      - region1:/cockroach/cockrach-data
+volumes:
+  region1:
+  region2:
+  region3:
