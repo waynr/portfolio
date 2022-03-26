@@ -1,0 +1,10 @@
+[package]
+name = "portfolio"
+version = "0.0.0"
+authors = ["Wayne Warren <wayne.warren.s@gmail.com>"]
+description = "placeholder for Registry API implementation in rust"
+repository = "https://github.com/waynr/portfolio"
+license = "MIT OR Apache-2.0"
+edition = "2021"
+
+[dependencies]
