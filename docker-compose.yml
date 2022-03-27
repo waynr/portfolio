@@ -23,9 +23,6 @@ services:
       - start
       - --insecure
       - --join=region1,region2,region3
-    ports:
-      - 26257:26257
-      - 18080:18080
     volumes:
       - region1:/cockroach/cockrach-data
   region3:
