@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
 
 use axum::{
     extract::Path,
@@ -6,9 +8,25 @@ use axum::{
     Router,
 };
 
+use portfolio::{Config, MetadataBackend};
+use portfolio::Result;
+use portfolio::metadata::PostgresConfig;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
+    let mut dev_config = File::open("./dev-config.yml")?;
+    let mut s = String::new();
+    dev_config.read_to_string(&mut s)?;
+    let config: Config = serde_yaml::from_str(&s)?;
+    let metadata = match config.metadata {
+        MetadataBackend::Postgres(cfg) => cfg.new_metadata().await?,
+    };
+
+    serve().await;
+    Ok(())
+}
+
+async fn serve() {
     let blobs = Router::new().route( "/:digest", get(notimplemented).delete(notimplemented).head(notimplemented))
         .route("/uploads/", post(notimplemented))
         .route("/uploads/:reference", patch(notimplemented).put(notimplemented));
