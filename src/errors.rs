@@ -12,4 +12,6 @@ pub enum Error {
     IOError(#[from] std::io::Error),
     #[error("aws sdk credentials error")]
     AWSSDKCredentialsError(#[from] aws_types::credentials::CredentialsError),
+    #[error("http error")]
+    HTTPError(#[from] http::Error),
 }

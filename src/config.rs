@@ -6,6 +6,7 @@ use crate::objects;
 #[derive(Deserialize)]
 pub struct Config {
     pub metadata: MetadataBackend,
+    pub objects: ObjectsBackend,
 }
 
 #[derive(Deserialize)]

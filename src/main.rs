@@ -8,7 +8,7 @@ use axum::{
     Router,
 };
 
-use portfolio::{Config, MetadataBackend};
+use portfolio::{Config, MetadataBackend, ObjectsBackend};
 use portfolio::Result;
 use portfolio::metadata::PostgresConfig;
 
@@ -20,6 +20,10 @@ async fn main() -> Result<()> {
     let config: Config = serde_yaml::from_str(&s)?;
     let metadata = match config.metadata {
         MetadataBackend::Postgres(cfg) => cfg.new_metadata().await?,
+    };
+
+    let objects = match config.objects {
+        ObjectsBackend::S3(cfg) => cfg.new_objects().await?,
     };
 
     serve().await;

@@ -14,11 +14,11 @@ pub struct S3 {
 pub struct S3Config {
     secret_key: String,
     access_key: String,
-    endpoint: String,
+    hostname: String,
 }
 
 impl S3Config {
-    pub async fn new_objects(&'static self) -> Result<S3> {
+    pub async fn new_objects(&self) -> Result<S3> {
         let scp = SharedCredentialsProvider::new(
             Credentials::new(
                 self.access_key.clone(),
@@ -30,10 +30,15 @@ impl S3Config {
             .provide_credentials()
             .await?,
         );
+        let uri = Uri::builder()
+            .scheme("https")
+            .authority(self.hostname.as_str())
+            .path_and_query("/")
+            .build()?;
         let config = Config::builder()
             .region(Region::new("us-east-1"))
             .credentials_provider(scp)
-            .endpoint_resolver(Endpoint::mutable(Uri::from_static(self.endpoint.as_str())))
+            .endpoint_resolver(Endpoint::mutable(uri))
             .build();
 
         Ok(S3 { client: Client::from_conf(config) })
