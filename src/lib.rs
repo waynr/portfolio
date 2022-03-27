@@ -7,5 +7,4 @@ mod errors;
 pub use errors::{Error, Result};
 
 pub mod metadata;
-mod objects;
-
+pub mod objects;

@@ -10,4 +10,6 @@ pub enum Error {
     ConfigError(#[from] serde_yaml::Error),
     #[error("io error")]
     IOError(#[from] std::io::Error),
+    #[error("aws sdk credentials error")]
+    AWSSDKCredentialsError(#[from] aws_types::credentials::CredentialsError),
 }

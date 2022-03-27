@@ -1242,6 +1242,7 @@ version = "0.0.0"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
+ "aws-types",
  "axum",
  "http",
  "hyper",

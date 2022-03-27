@@ -26,6 +26,7 @@ sqlx = { version = "0.5", features = [ "runtime-tokio-native-tls" , "postgres" ]
 
 http = "0.2"
 aws-config = "0.9.0"
+aws-types = "0.9.0"
 aws-sdk-s3 = "0.9.0"
 
 thiserror = "1"
