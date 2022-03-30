@@ -3,12 +3,9 @@ use serde::Deserialize;
 use aws_sdk_s3::{Client, Config, Credentials, Endpoint, Region};
 use aws_types::credentials::{ProvideCredentials, SharedCredentialsProvider};
 use http::Uri;
+use hyper::body::Body;
 
 use crate::errors::Result;
-
-pub struct S3 {
-    client: Client,
-}
 
 #[derive(Deserialize)]
 pub struct S3Config {
@@ -41,6 +38,25 @@ impl S3Config {
             .endpoint_resolver(Endpoint::mutable(uri))
             .build();
 
-        Ok(S3 { client: Client::from_conf(config) })
+        Ok(S3 {
+            client: Client::from_conf(config),
+        })
+    }
+}
+
+pub struct S3 {
+    client: Client,
+}
+
+impl S3 {
+    pub async fn upload_blob(&self, body: Body) -> Result<()> {
+        let _put_object_output = self
+            .client
+            .put_object()
+            .body(body.into())
+            .bucket("portfolio-experiement")
+            .send()
+            .await?;
+        Ok(())
     }
 }

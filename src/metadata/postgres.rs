@@ -4,10 +4,6 @@ use sqlx::Pool;
 
 use crate::errors::Result;
 
-pub struct PostgresMetadata {
-    pool: Pool<Postgres>,
-}
-
 #[derive(Deserialize)]
 pub struct PostgresConfig {
     connection_string: String,
@@ -20,5 +16,16 @@ impl PostgresConfig {
         Ok(PostgresMetadata {
             pool,
         })
+    }
+}
+
+pub struct PostgresMetadata {
+    pool: Pool<Postgres>,
+}
+
+impl PostgresMetadata {
+    pub async fn insert_blob(&self, digest: &str) -> Result<()> {
+        let conn = self.pool.acquire().await?;
+        Ok(())
     }
 }

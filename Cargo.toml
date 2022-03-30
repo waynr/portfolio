@@ -17,18 +17,28 @@ path = "src/main.rs"
 
 [dependencies]
 
-axum = "0.4"
+axum = { version = "0.4", features = [ "headers" ] }
+axum-macros = "0.2"
 hyper = { version = "0.14", features = [ "full" ] }
 tokio = { version = "1.17", features = [ "full" ] }
 tower = "0.4"
 
-sqlx = { version = "0.5", features = [ "runtime-tokio-native-tls" , "postgres" ] }
+sqlx = { version = "0.5", features = [ "runtime-tokio-native-tls", "postgres", "migrate" ] }
+#sqlx = { path = "../sqlx", features = [ "runtime-tokio-native-tls", "postgres", "migrate" ] }
 
 http = "0.2"
+http-body = "0.4"
 aws-config = "0.9.0"
 aws-types = "0.9.0"
 aws-sdk-s3 = "0.9.0"
+futures-core = "0.3"
+
+sha2 = "0.10"
+digest = "0.10"
 
 thiserror = "1"
 serde = "1"
 serde_yaml = "0.8"
+
+# OCI & Distribution Spec
+oci-spec = "0.5"
