@@ -1,14 +1,14 @@
 -- a "registry" is a top-level store of container images, eg "meow" in
 -- "registry.digitalocean.com/meow/nginx:latest"
 CREATE TABLE registries (
-	id INT PRIMARY key,
+	id SERIAL PRIMARY key,
 	name VARCHAR(128)
 );
 
 -- a "repository" is the name of an image, eg "nginx" in
 -- "registry.digitalocean.com/meow/nginx:latest"
 CREATE TABLE repositories (
-	id INT PRIMARY key,
+	id SERIAL PRIMARY key,
 	registry INT NOT NULL REFERENCES registries (id),
 	name VARCHAR(128)
 );
@@ -16,14 +16,14 @@ CREATE TABLE repositories (
 -- a blob is a chunk of data, most likely either a manifest config file or an
 -- image layer
 CREATE TABLE blobs (
-	id INT PRIMARY key,
+	id SERIAL PRIMARY key,
 	digest VARCHAR(256) UNIQUE NOT NULL
 );
 
 -- a manifest is an OCI image manifest:
 -- https://github.com/opencontainers/image-spec/blob/main/manifest.md
 CREATE TABLE manifests (
-	id INT PRIMARY key,
+	id SERIAL PRIMARY key,
 	registry INT NOT NULL REFERENCES registries (id),
 	repository INT NOT NULL REFERENCES repositories (id),
 	config VARCHAR(256) NOT NULL REFERENCES blobs (digest),
@@ -44,7 +44,7 @@ CREATE TABLE layers (
 
 -- a tag is a reference to a manifest
 CREATE TABLE tags (
-	id INT PRIMARY key,
+	id SERIAL PRIMARY key,
 	name VARCHAR(256),
 	manifest_id INT NOT NULL REFERENCES manifests (id)
 );
