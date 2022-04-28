@@ -36,8 +36,10 @@ aws-sdk-s3 = "0.9.0"
 futures-core = "0.3"
 
 # RustCrypto
-sha2 = { version = "0.10", path = "../RustCrypto/hashes/sha2", features = [ "compress" ] }
-digest = { version = "0.10", path = "../RustCrypto/traits/digest" }
+sha2 = { version = "0.10", features = [ "compress" ] }
+digest = { version = "0.10" }
+#sha2 = { version = "0.10", path = "../RustCrypto/hashes/sha2", features = [ "compress" ] }
+#digest = { version = "0.10", path = "../RustCrypto/traits/digest" }
 
 thiserror = "1"
 serde = "1"
