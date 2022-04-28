@@ -32,6 +32,8 @@ pub enum Error {
 
     #[error("missing query parameter: {0}")]
     MissingQueryParameter(&'static str),
+    #[error("missing header: {0}")]
+    MissingHeader(&'static str),
     #[error("missing path parameter: {0}")]
     MissingPathParameter(&'static str),
 
@@ -65,6 +67,9 @@ impl IntoResponse for Error {
                 (StatusCode::BAD_REQUEST, format!("{}", self))
             },
             Error::InvalidDigest(_) => {
+                (StatusCode::BAD_REQUEST, format!("{}", self))
+            },
+            Error::MissingHeader(_) => {
                 (StatusCode::BAD_REQUEST, format!("{}", self))
             },
             Error::MissingPathParameter(_) => {

@@ -32,7 +32,7 @@ pub struct UploadSession {
 
 async fn uploads_post(
     Path(path_params): Path<HashMap<String, String>>,
-    TypedHeader(content_length): TypedHeader<ContentLength>,
+    content_length: Option<TypedHeader<ContentLength>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
@@ -41,19 +41,49 @@ async fn uploads_post(
     let repo_name = path_params
         .get("repository")
         .ok_or_else(|| Error::MissingPathParameter("repository"))?;
-    let digest: &String = match query_params.get("digest") {
-        None => return upload_session_id(repo_name, metadata).await,
-        Some(dgst) => dgst,
-    };
-    upload_blob(
-        repo_name,
-        digest,
-        content_length,
-        request,
-        metadata,
-        objects,
-    )
-    .await
+    match query_params.get("digest") {
+        None => {
+            match content_length {
+                // according to docs:
+                //   * https://github.com/opencontainers/distribution-spec/blob/main/spec.md#post-then-put
+                // ContentLength is not required for POST in POST-PUT monolithic upload.
+                //
+                // however, according to conformance tests it's also not required for
+                // POST-PATCH-PUT chunked uploads:
+                //   * https://github.com/opencontainers/distribution-spec/blob/dd38b7ed8a995fc2f6e730a4deae60e2c0ee92fe/conformance/02_push_test.go#L24
+                //
+                // i'm sure if we looked at the docker registry client, it would probably do
+                // something different than both conformance and spec docs.
+                //
+                // here we are just going to allow missing ContentLength when the digest is missing
+                // (implying either POST-PUT or POST-PATCH-PUT sequence)
+                None => (),
+                Some(TypedHeader(length)) => {
+                    if length.0 > 0 {
+                        return Err(Error::MissingHeader(
+                            "ContentLength must be 0 to start new session",
+                        ))
+                    }
+                }
+            }
+            upload_session_id(repo_name, metadata).await
+        }
+        Some(dgst) => {
+            if let Some(TypedHeader(length)) = content_length {
+                upload_blob(
+                    repo_name,
+                    dgst,
+                    length,
+                    request,
+                    metadata,
+                    objects,
+                )
+                .await
+            } else {
+                Err(Error::MissingHeader("ContentLength"))
+            }
+        }
+    }
 }
 
 async fn uploads_put(
