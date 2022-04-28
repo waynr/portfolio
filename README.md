@@ -20,14 +20,18 @@ and relatively simple abstractions between HTTP API and storage backends.
 ```
 docker compose up -d
 ```
-2. Take note of the postgres connection string in the output of `docker compose
+2. Initialized the cockroachdb cluster:
+```
+docker exec -it portfolio-region1-1 ./cockroach init --insecure
+```
+3. Take note of the postgres connection string in the output of `docker compose
    logs`. These should look something like the following (note that you will
    have to replace the network identifier with `localhost` later):
 ```
 postgresql://root@71990c668326:26257/defaultdb?sslmode=disable
 ```
-3. Retrieve your secret & access keys for Spaces.
-4. Create a file called `dev-config.yml` that should look something like:
+4. Retrieve your secret & access keys for Spaces.
+5. Create a file called `dev-config.yml` that should look something like:
 ```
 metadata:
   type: Postgres
@@ -37,6 +41,12 @@ objects:
   secret_key: <spaces-secret-key>
   access_key: <spaces-access-key>
   hostname: <bucket-region>.digitaloceanspaces.com
+```
+6. Run DB migrations:
+```
+export DATABASE_URL=postgresql://root@localhost:26257/defaultdb?sslmode=disable
+cargo install sqlx-cli
+sqlx migrate run --source db/postgres/migrations
 ```
 
 ### Compile Time DB Query Validation
