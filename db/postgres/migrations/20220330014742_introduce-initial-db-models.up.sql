@@ -48,3 +48,11 @@ CREATE TABLE tags (
 	name VARCHAR(256),
 	manifest_id INT NOT NULL REFERENCES manifests (id)
 );
+
+-- http upload sessions. sessions are used to track a sequence of stateful http
+-- requests, usually for chunked blob uploads.
+CREATE TABLE upload_sessions (
+	uuid UUID PRIMARY key DEFAULT gen_random_uuid(),
+	start_date DATE NOT NULL DEFAULT now(),
+	digest_state JSONB NOT NULL
+);
