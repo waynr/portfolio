@@ -4,7 +4,7 @@ use std::sync::Arc;
 use ::http::StatusCode;
 use axum::{
     extract::{Extension, Path, Query, TypedHeader},
-    headers::{ContentLength, ContentType},
+    headers::{ContentLength, ContentRange, ContentType},
     http::header::{HeaderMap, HeaderName, HeaderValue},
     http::Request,
     response::{IntoResponse, Response},
@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::{
     http::notimplemented,
     metadata::PostgresMetadata,
-    objects::{StreamObjectBody, S3},
+    objects::{ChunkInfo, StreamObjectBody, S3},
     DigestState, DistributionErrorCode, Error, OciDigest, Result,
 };
 
@@ -28,6 +28,7 @@ pub struct UploadSession {
     pub uuid: Uuid,
     pub start_date: NaiveDate,
     pub digest_state: Option<Json<DigestState>>,
+    pub chunk_info: Option<Json<ChunkInfo>>,
 }
 
 async fn uploads_post(
@@ -62,7 +63,7 @@ async fn uploads_post(
                     if length.0 > 0 {
                         return Err(Error::MissingHeader(
                             "ContentLength must be 0 to start new session",
-                        ))
+                        ));
                     }
                 }
             }
@@ -70,15 +71,7 @@ async fn uploads_post(
         }
         Some(dgst) => {
             if let Some(TypedHeader(length)) = content_length {
-                upload_blob(
-                    repo_name,
-                    dgst,
-                    length,
-                    request,
-                    metadata,
-                    objects,
-                )
-                .await
+                upload_blob(repo_name, dgst, length, request, metadata, objects).await
             } else {
                 Err(Error::MissingHeader("ContentLength"))
             }
@@ -140,6 +133,79 @@ async fn uploads_put(
     Ok(response)
 }
 
+async fn uploads_patch(
+    Path(path_params): Path<HashMap<String, String>>,
+    TypedHeader(content_length): TypedHeader<ContentLength>,
+    TypedHeader(content_range): TypedHeader<ContentRange>,
+    TypedHeader(content_type): TypedHeader<ContentType>,
+    request: Request<Body>,
+    Extension(metadata): Extension<Arc<PostgresMetadata>>,
+    Extension(objects): Extension<Arc<S3>>,
+) -> Result<Response> {
+    let repo_name = path_params
+        .get("repository")
+        .ok_or_else(|| Error::MissingPathParameter("repository"))?;
+    let session_uuid = match path_params.get("session_uuid") {
+        None => return Err(Error::MissingPathParameter("session_uuid")),
+        Some(uuid_str) => Uuid::parse_str(uuid_str)?,
+    };
+
+    // retrieve the session from metadata backend
+    let mut session = match metadata.get_session(session_uuid).await {
+        Ok(session) => session,
+        // TODO: may need to distinguish later between database connection errors and session not
+        // found errors
+        Err(_) => {
+            return Err(Error::DistributionSpecError(
+                DistributionErrorCode::BlobUploadUnknown,
+            ))
+        }
+    };
+
+    let mut range_end: u64 = 0;
+
+    let mut chunk_info = match session.chunk_info {
+        Some(Json(info)) => info,
+        None => {
+            objects
+                .clone()
+                .initiate_chunked_upload(&session.uuid)
+                .await?
+        }
+    };
+
+    // verify the request's ContentRange against the last chunk's end of range
+    if let Some(range) = content_range.bytes_range() {
+        if range.0 != chunk_info.last_range_end {
+            return Err(Error::DistributionSpecError(
+                DistributionErrorCode::BlobUploadInvalid,
+            ));
+        }
+        range_end = range.1;
+    }
+
+    objects
+        .clone()
+        .upload_chunk(&mut chunk_info, request.into_body())
+        .await?;
+
+    chunk_info.last_range_end = range_end;
+    session.chunk_info = Some(Json(chunk_info));
+
+    // TODO: validate content length of chunk
+    // TODO: update incremental digest state on session
+
+    metadata.update_session(&session).await?;
+
+    let location = format!("/v2/{}/blobs/{}", repo_name, session.uuid);
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        HeaderName::from_static("Location"),
+        HeaderValue::from_str(&location).unwrap(),
+    );
+    Ok((StatusCode::CREATED, headers, "").into_response())
+}
+
 async fn upload_blob(
     repo_name: &str,
     digest: &str,
@@ -159,8 +225,8 @@ async fn upload_blob(
         .await
         .unwrap();
 
-    // validate digest
-    // validate content length
+    // TODO: validate digest
+    // TODO: validate content length
 
     // insert metadata
     metadata.clone().insert_blob(digest).await.unwrap();
@@ -196,6 +262,6 @@ pub fn router() -> Router {
         .route("/uploads/", post(uploads_post))
         .route(
             "/uploads/:session_uuid",
-            patch(notimplemented).put(uploads_put),
+            patch(uploads_patch).put(uploads_put),
         )
 }
