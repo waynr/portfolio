@@ -4,6 +4,7 @@ use aws_sdk_s3::{Client, Config, Credentials, Endpoint, Region};
 use aws_types::credentials::{ProvideCredentials, SharedCredentialsProvider};
 use http::Uri;
 use hyper::body::Body;
+use uuid::Uuid;
 
 use crate::errors::Result;
 
@@ -49,10 +50,11 @@ pub struct S3 {
 }
 
 impl S3 {
-    pub async fn upload_blob(&self, body: Body) -> Result<()> {
+    pub async fn upload_blob(&self, digest: &str, body: Body) -> Result<()> {
         let _put_object_output = self
             .client
             .put_object()
+            .key(digest)
             .body(body.into())
             .bucket("portfolio-experiement")
             .send()

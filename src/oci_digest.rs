@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use digest::{Digest, DynDigest};
+use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Sha512};
 
 use crate::{Error, Result};
@@ -11,9 +12,9 @@ pub struct OciDigest {
     encoded: String,
 }
 
-impl TryFrom<&String> for OciDigest {
+impl TryFrom<&str> for OciDigest {
     type Error = Error;
-    fn try_from(s: &String) -> Result<Self> {
+    fn try_from(s: &str) -> Result<Self> {
         let i = match s.find(':') {
             Some(i) => i,
             None => return Err(Error::InvalidDigest(s.to_string())),
@@ -86,4 +87,10 @@ impl Digester {
     pub fn update(&mut self, data: &[u8]) {
         self.digester.lock().unwrap().update(data);
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DigestState {
+    sha256_state: Box<[u8]>,
+    sha512_state: Box<[u8]>,
 }
