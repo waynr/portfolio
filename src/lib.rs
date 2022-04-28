@@ -6,7 +6,7 @@ pub use config::ObjectsBackend;
 pub mod errors;
 pub use errors::{DistributionErrorCode, Error, Result};
 
-pub(crate) mod http;
+pub mod http;
 pub mod metadata;
 pub mod objects;
 
