@@ -32,7 +32,7 @@ pub struct UploadSession {
 
 async fn uploads_post(
     Path(path_params): Path<HashMap<String, String>>,
-    TypedHeader(content_length): TypedHeader<ContentLength>,
+    content_length: Option<TypedHeader<ContentLength>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
@@ -45,15 +45,18 @@ async fn uploads_post(
         None => return upload_session_id(repo_name, metadata).await,
         Some(dgst) => dgst,
     };
-    upload_blob(
-        repo_name,
-        digest,
-        content_length,
-        request,
-        metadata,
-        objects,
-    )
-    .await
+    if let Some(TypedHeader(length)) = content_length {
+        upload_blob(
+            repo_name,
+            digest,
+            length,
+            request,
+            metadata,
+            objects,
+        )
+        .await?;
+    }
+    Err(Error::MissingHeader("ContentLength"))
 }
 
 async fn uploads_put(
