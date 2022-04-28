@@ -13,6 +13,7 @@ pub struct S3Config {
     secret_key: String,
     access_key: String,
     hostname: String,
+    bucket_name: String,
 }
 
 impl S3Config {
@@ -40,12 +41,14 @@ impl S3Config {
             .build();
 
         Ok(S3 {
+            config: self,
             client: Client::from_conf(config),
         })
     }
 }
 
 pub struct S3 {
+    config: *S3Config,
     client: Client,
 }
 
@@ -56,7 +59,7 @@ impl S3 {
             .put_object()
             .key(digest)
             .body(body.into())
-            .bucket("portfolio-experiement")
+            .bucket(self.config.bucket_name.as_str())
             .send()
             .await?;
         Ok(())
