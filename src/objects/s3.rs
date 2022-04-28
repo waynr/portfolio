@@ -41,14 +41,14 @@ impl S3Config {
             .build();
 
         Ok(S3 {
-            config: self,
+            bucket_name: self.bucket_name.clone(),
             client: Client::from_conf(config),
         })
     }
 }
 
 pub struct S3 {
-    config: *S3Config,
+    bucket_name: String,
     client: Client,
 }
 
@@ -59,7 +59,7 @@ impl S3 {
             .put_object()
             .key(digest)
             .body(body.into())
-            .bucket(self.config.bucket_name.as_str())
+            .bucket(&self.bucket_name)
             .send()
             .await?;
         Ok(())
