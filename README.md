@@ -41,6 +41,8 @@ objects:
   secret_key: <spaces-secret-key>
   access_key: <spaces-access-key>
   hostname: <bucket-region>.digitaloceanspaces.com
+  bucket_name: <bucket-name>
+
 ```
 6. Run DB migrations:
 ```
