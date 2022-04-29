@@ -1,2 +1,0 @@
-ALTER TABLE blobs
-ADD COLUMN object_key UUID NOT NULL;
