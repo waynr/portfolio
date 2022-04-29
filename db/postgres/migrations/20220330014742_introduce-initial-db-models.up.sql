@@ -17,7 +17,8 @@ CREATE TABLE repositories (
 -- image layer
 CREATE TABLE blobs (
 	id SERIAL PRIMARY key,
-	digest VARCHAR(256) UNIQUE NOT NULL
+	digest VARCHAR(256) UNIQUE NOT NULL,
+	object_key UUID NOT NULL
 );
 
 -- a manifest is an OCI image manifest:
@@ -54,5 +55,6 @@ CREATE TABLE tags (
 CREATE TABLE upload_sessions (
 	uuid UUID PRIMARY key DEFAULT gen_random_uuid(),
 	start_date DATE NOT NULL DEFAULT now(),
-	digest_state JSONB NOT NULL
+	digest_state JSONB NOT NULL,
+	chunk_info JSONB
 );
