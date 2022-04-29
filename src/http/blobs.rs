@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use ::http::StatusCode;
 use axum::{
+    body::StreamBody,
     extract::{Extension, Path, Query, TypedHeader},
     headers::{ContentLength, ContentRange, ContentType},
     http::header::{HeaderMap, HeaderName, HeaderValue},
@@ -12,6 +13,7 @@ use axum::{
     Router,
 };
 use hyper::body::Body;
+use aws_sdk_s3::types::ByteStream;
 
 use chrono::NaiveDate;
 use sqlx::types::Json;
@@ -28,7 +30,7 @@ pub fn router() -> Router {
     Router::new()
         .route(
             "/:digest",
-            get(notimplemented).delete(notimplemented).head(head),
+            get(get_blob).delete(notimplemented).head(head_blob),
         )
         .route("/uploads/", post(uploads_post))
         .route(
@@ -37,7 +39,44 @@ pub fn router() -> Router {
         )
 }
 
-async fn head(
+async fn get_blob(
+    Path(path_params): Path<HashMap<String, String>>,
+    Extension(metadata): Extension<Arc<PostgresMetadata>>,
+    Extension(objects): Extension<Arc<S3>>,
+) -> Result<Response> {
+    let registry = metadata.get_registry("meow").await?;
+    match path_params.get("repository") {
+        Some(s) => metadata.get_repository(&registry.id, s).await?,
+        None => return Err(Error::MissingPathParameter("repository")),
+    };
+    let digest: &String = path_params
+        .get("digest")
+        .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
+
+    match metadata.blob_exists(&registry.id, digest).await {
+        Ok(_) => {
+            let blob = metadata.get_blob(&registry.id, digest).await?;
+            let stream_body: StreamBody<ByteStream> = objects.get_blob(&blob.id).await?;
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                HeaderName::from_static("Docker-Content-Digest"),
+                HeaderValue::from_str(digest).unwrap(),
+            );
+            Ok((StatusCode::OK, headers, stream_body).into_response())
+        }
+        Err(e) => match e {
+            Error::SQLXError(ref source) => match source {
+                sqlx::Error::RowNotFound => Err(Error::DistributionSpecError(
+                    DistributionErrorCode::BlobUnknown,
+                )),
+                _ => Err(e),
+            },
+            _ => Err(e),
+        },
+    }
+}
+
+async fn head_blob(
     Path(path_params): Path<HashMap<String, String>>,
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
 ) -> Result<Response> {

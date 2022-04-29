@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::errors::{Error, Result};
 use crate::http::blobs::UploadSession;
-use crate::metadata::{Registry, Repository};
+use crate::metadata::{Blob, Registry, Repository};
 use crate::objects::ChunkInfo;
 use crate::{DigestState, RegistryDefinition};
 
@@ -116,6 +116,21 @@ RETURNING id
         Ok(record.id)
     }
 
+    pub async fn get_blob(&self, registry_id: &Uuid, digest: &str) -> Result<Blob> {
+        let mut conn = self.pool.acquire().await?;
+        Ok(sqlx::query_as!(
+            Blob,
+            r#"
+SELECT id, digest, registry_id
+FROM blobs
+WHERE registry_id = $1 AND digest = $2
+            "#,
+            registry_id,
+            digest,
+        )
+        .fetch_one(&mut conn)
+        .await?)
+    }
     pub async fn blob_exists(&self, registry_id: &Uuid, digest: &str) -> Result<()> {
         let mut conn = self.pool.acquire().await?;
         sqlx::query!(

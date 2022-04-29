@@ -12,8 +12,9 @@ pub struct Repository {
 }
 
 pub struct Blob {
-    pub(crate) id: Uuid,
-    pub repository_id: Uuid,
+    pub id: Uuid,
+    pub registry_id: Uuid,
+    pub digest: String,
 }
 
 pub struct Manifest {

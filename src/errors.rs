@@ -21,6 +21,8 @@ pub enum Error {
     AWSSDKCredentialsError(#[from] aws_types::credentials::CredentialsError),
     #[error("aws sdk put object error")]
     AWSSDKPutObjectError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::PutObjectError>),
+    #[error("aws sdk get object error")]
+    AWSSDKGetObjectError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::GetObjectError>),
     #[error("aws sdk create multipart upload error")]
     AWSSDKCreateMultiPartUploadError(
         #[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CreateMultipartUploadError>,

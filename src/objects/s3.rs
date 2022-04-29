@@ -1,7 +1,9 @@
 use serde::Deserialize;
 
 use aws_sdk_s3::{Client, Config, Credentials, Endpoint, Region};
+use aws_sdk_s3::types::ByteStream;
 use aws_types::credentials::{ProvideCredentials, SharedCredentialsProvider};
+use axum::body::StreamBody;
 use http::Uri;
 use hyper::body::Body;
 
@@ -57,6 +59,21 @@ pub struct S3 {
 }
 
 impl S3 {
+    pub async fn get_blob(
+        &self,
+        uuid: &Uuid,
+    ) -> Result<StreamBody<ByteStream>> {
+        let get_object_output = self
+            .client
+            .get_object()
+            .key(uuid.to_string())
+            .bucket(&self.bucket_name)
+            .send()
+            .await?;
+
+        Ok(StreamBody::new(get_object_output.body))
+    }
+
     pub async fn upload_blob(&self, uuid: &Uuid, body: Body) -> Result<()> {
         let _put_object_output = self
             .client
