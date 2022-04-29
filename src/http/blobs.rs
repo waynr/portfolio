@@ -102,8 +102,9 @@ async fn uploads_post(
 //
 async fn uploads_put(
     Path(path_params): Path<HashMap<String, String>>,
-    TypedHeader(content_length): TypedHeader<ContentLength>,
-    TypedHeader(content_type): TypedHeader<ContentType>,
+    content_length: Option<TypedHeader<ContentLength>>,
+    content_type: Option<TypedHeader<ContentType>>,
+    content_range: Option<TypedHeader<ContentRange>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
@@ -112,36 +113,68 @@ async fn uploads_put(
     let repo_name = path_params
         .get("repository")
         .ok_or_else(|| Error::MissingPathParameter("repository"))?;
-    let digest: &String = match query_params.get("digest") {
-        None => return upload_session_id(repo_name, metadata).await,
-        Some(dgst) => dgst,
-    };
-    let session_uuid = match path_params.get("session_uuid") {
-        None => return Err(Error::MissingPathParameter("session_uuid")),
-        Some(uuid_str) => Uuid::parse_str(uuid_str)?,
-    };
+    let digest: &String = query_params
+        .get("digest")
+        .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
+    let session_uuid = path_params
+        .get("session_uuid")
+        .map(|s| Uuid::parse_str(s))
+        .transpose()?
+        .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
 
-    // verify the session uuid in the url exists, otherwise reject the put
-    match metadata.get_session(session_uuid).await {
-        Ok(_) => (),
-        // TODO: may need to distinguish later between database connection errors and session not
-        // found errors
-        Err(_) => {
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::BlobUploadUnknown,
-            ))
+    // retrieve the session or fail if it doesn't exist
+    let session = metadata
+        .get_session(session_uuid)
+        .await
+        .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
+
+    // determine if this is a monolithic POST-PUT or the final request in a chunked POST-PATCH-PUT
+    // sequence
+    let response = match session.chunk_info {
+        // POST-PATCH-PUT
+        Some(mut chunk_info) => {
+            if let (
+                Some(TypedHeader(content_range)),
+                Some(TypedHeader(content_type)),
+                Some(TypedHeader(content_length)),
+            ) = (content_range, content_type, content_length)
+            {
+                upload_chunk(
+                    &mut chunk_info,
+                    content_length,
+                    content_range,
+                    request,
+                    objects.clone(),
+                )
+                .await?;
+            }
+
+            objects
+                .finalize_chunked_upload(&session.uuid, &chunk_info)
+                .await?;
+            metadata.insert_blob(digest, &session.uuid).await?;
+
+            let location = format!("/v2/{}/blobs/{}", repo_name, session.uuid);
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                HeaderName::from_static("Location"),
+                HeaderValue::from_str(&location).unwrap(),
+            );
+            (StatusCode::CREATED, headers, "").into_response()
+        }
+        // POST-PUT
+        None => {
+            upload_blob(
+                repo_name,
+                digest,
+                *content_length.ok_or_else(|| Error::MissingHeader("ContentRange"))?,
+                request,
+                metadata.clone(),
+                objects,
+            )
+            .await?
         }
     };
-
-    let response = upload_blob(
-        repo_name,
-        digest,
-        content_length,
-        request,
-        metadata.clone(),
-        objects,
-    )
-    .await?;
 
     match metadata.delete_session(session_uuid).await {
         Ok(_) => (),
@@ -166,24 +199,17 @@ async fn uploads_patch(
     let repo_name = path_params
         .get("repository")
         .ok_or_else(|| Error::MissingPathParameter("repository"))?;
-    let session_uuid = match path_params.get("session_uuid") {
-        None => return Err(Error::MissingPathParameter("session_uuid")),
-        Some(uuid_str) => Uuid::parse_str(uuid_str)?,
-    };
+    let session_uuid = path_params
+        .get("session_uuid")
+        .map(|s| Uuid::parse_str(s))
+        .transpose()?
+        .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
 
-    // retrieve the session from metadata backend
-    let mut session = match metadata.get_session(session_uuid).await {
-        Ok(session) => session,
-        // TODO: may need to distinguish later between database connection errors and session not
-        // found errors
-        Err(_) => {
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::BlobUploadUnknown,
-            ))
-        }
-    };
-
-    let mut range_end: u64 = 0;
+    // retrieve the session or fail if it doesn't exist
+    let mut session = metadata
+        .get_session(session_uuid)
+        .await
+        .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
     let mut chunk_info = match session.chunk_info {
         Some(Json(info)) => info,
@@ -195,22 +221,15 @@ async fn uploads_patch(
         }
     };
 
-    // verify the request's ContentRange against the last chunk's end of range
-    if let Some(range) = content_range.bytes_range() {
-        if range.0 != chunk_info.last_range_end {
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::BlobUploadInvalid,
-            ));
-        }
-        range_end = range.1;
-    }
+    upload_chunk(
+        &mut chunk_info,
+        content_length,
+        content_range,
+        request,
+        objects.clone(),
+    )
+    .await?;
 
-    objects
-        .clone()
-        .upload_chunk(&mut chunk_info, request.into_body())
-        .await?;
-
-    chunk_info.last_range_end = range_end;
     session.chunk_info = Some(Json(chunk_info));
 
     // TODO: validate content length of chunk
@@ -238,11 +257,12 @@ async fn upload_blob(
     let oci_digest: OciDigest = digest.try_into()?;
 
     // upload blob
+    let uuid = Uuid::new_v4();
     let digester = oci_digest.digester();
     let body = StreamObjectBody::from_body(request.into_body(), digester);
     objects
         .clone()
-        .upload_blob(digest, body.into())
+        .upload_blob(&uuid, body.into())
         .await
         .unwrap();
 
@@ -250,7 +270,7 @@ async fn upload_blob(
     // TODO: validate content length
 
     // insert metadata
-    metadata.clone().insert_blob(digest).await.unwrap();
+    metadata.clone().insert_blob(digest, &uuid).await?;
 
     let location = format!("/v2/{}/blobs/{}", repo_name, digest,);
     let mut headers = HeaderMap::new();
@@ -259,6 +279,37 @@ async fn upload_blob(
         HeaderValue::from_str(&location).unwrap(),
     );
     Ok((StatusCode::CREATED, headers, "").into_response())
+}
+
+async fn upload_chunk(
+    chunk_info: &mut ChunkInfo,
+    content_length: ContentLength,
+    content_range: ContentRange,
+    request: Request<Body>,
+    objects: Arc<S3>,
+) -> Result<()> {
+    let mut range_end: u64 = 0;
+    // verify the request's ContentRange against the last chunk's end of range
+    if let Some(range) = content_range.bytes_range() {
+        if range.0 != chunk_info.last_range_end {
+            return Err(Error::DistributionSpecError(
+                DistributionErrorCode::BlobUploadInvalid,
+            ));
+        }
+        range_end = range.1;
+    }
+
+    objects
+        .clone()
+        .upload_chunk(chunk_info, request.into_body())
+        .await?;
+
+    chunk_info.last_range_end = range_end;
+
+    // TODO: validate content length of chunk
+    // TODO: update incremental digest state on session
+
+    Ok(())
 }
 
 async fn upload_session_id(repo_name: &str, metadata: Arc<PostgresMetadata>) -> Result<Response> {

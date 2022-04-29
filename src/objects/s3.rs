@@ -57,11 +57,11 @@ pub struct S3 {
 }
 
 impl S3 {
-    pub async fn upload_blob(&self, digest: &str, body: Body) -> Result<()> {
+    pub async fn upload_blob(&self, uuid: &Uuid, body: Body) -> Result<()> {
         let _put_object_output = self
             .client
             .put_object()
-            .key(digest)
+            .key(uuid.to_string())
             .body(body.into())
             .bucket(&self.bucket_name)
             .send()
@@ -105,11 +105,12 @@ impl S3 {
         Ok(())
     }
 
-    pub async fn finalize_chunked_upload(&self, digest: &str) -> Result<()> {
+    pub async fn finalize_chunked_upload(&self, uuid: &Uuid, chunk: &ChunkInfo) -> Result<()> {
         let _complete_multipart_upload_output = self
             .client
             .complete_multipart_upload()
-            .key(digest)
+            .upload_id(chunk.upload_id.clone())
+            .key(uuid.to_string())
             .bucket(&self.bucket_name)
             .send()
             .await?;

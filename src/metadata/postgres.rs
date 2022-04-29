@@ -28,15 +28,16 @@ pub struct PostgresMetadata {
 }
 
 impl PostgresMetadata {
-    pub async fn insert_blob(&self, digest: &str) -> Result<i64> {
+    pub async fn insert_blob(&self, digest: &str, object_key: &Uuid) -> Result<i64> {
         let mut conn = self.pool.acquire().await?;
         let record = sqlx::query!(
             r#"
-INSERT INTO blobs ( digest )
-VALUES ( $1 )
+INSERT INTO blobs ( digest, object_key )
+VALUES ( $1, $2 )
 RETURNING id
             "#,
             digest,
+            object_key,
         )
         .fetch_one(&mut conn)
         .await?;
