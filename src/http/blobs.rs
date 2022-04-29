@@ -24,6 +24,27 @@ use crate::{
     DigestState, DistributionErrorCode, Error, OciDigest, Result,
 };
 
+pub fn router() -> Router {
+    Router::new()
+        .route(
+            "/:digest",
+            get(notimplemented)
+                .delete(notimplemented)
+                .head(head),
+        )
+        .route("/uploads/", post(uploads_post))
+        .route(
+            "/uploads/:session_uuid",
+            patch(uploads_patch).put(uploads_put),
+        )
+}
+
+async fn head(
+    Path(path_params): Path<HashMap<String, String>>,
+    ) -> Result<Response> {
+    Ok(().into_response())
+}
+
 pub struct UploadSession {
     pub uuid: Uuid,
     pub start_date: NaiveDate,
@@ -167,7 +188,7 @@ async fn uploads_put(
             upload_blob(
                 repo_name,
                 digest,
-                *content_length.ok_or_else(|| Error::MissingHeader("ContentRange"))?,
+                *content_length.ok_or_else(|| Error::MissingHeader("ContentLength"))?,
                 request,
                 metadata.clone(),
                 objects,
@@ -321,19 +342,4 @@ async fn upload_session_id(repo_name: &str, metadata: Arc<PostgresMetadata>) -> 
         HeaderValue::from_str(&location).unwrap(),
     );
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
-}
-
-pub fn router() -> Router {
-    Router::new()
-        .route(
-            "/:digest",
-            get(notimplemented)
-                .delete(notimplemented)
-                .head(notimplemented),
-        )
-        .route("/uploads/", post(uploads_post))
-        .route(
-            "/uploads/:session_uuid",
-            patch(uploads_patch).put(uploads_put),
-        )
 }
