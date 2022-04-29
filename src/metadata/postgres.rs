@@ -45,7 +45,7 @@ RETURNING id, name
         .await?)
     }
 
-    pub async fn get_registry(&self, name: &String) -> Result<Registry> {
+    pub async fn get_registry(&self, name: impl ToString) -> Result<Registry> {
         let mut conn = self.pool.acquire().await?;
         Ok(sqlx::query_as!(
             Registry,
@@ -54,7 +54,7 @@ SELECT id, name
 FROM registries
 WHERE name = $1
             "#,
-            name,
+            name.to_string(),
         )
         .fetch_one(&mut conn)
         .await?)
@@ -98,21 +98,39 @@ WHERE reg.id = $1 AND rep.name = $2
         .await?)
     }
 
-    pub async fn insert_blob(&self, digest: &str, object_key: &Uuid) -> Result<Uuid> {
+    pub async fn insert_blob(&self, registry_id: &Uuid, digest: &str, id: &Uuid) -> Result<Uuid> {
         let mut conn = self.pool.acquire().await?;
         let record = sqlx::query!(
             r#"
-INSERT INTO blobs ( id, digest)
-VALUES ( $2, $1 )
+INSERT INTO blobs ( id, digest, registry_id )
+VALUES ( $1, $2, $3 )
 RETURNING id
             "#,
+            id,
             digest,
-            object_key,
+            registry_id,
         )
         .fetch_one(&mut conn)
         .await?;
 
         Ok(record.id)
+    }
+
+    pub async fn blob_exists(&self, registry_id: &Uuid, digest: &str) -> Result<()> {
+        let mut conn = self.pool.acquire().await?;
+        sqlx::query!(
+            r#"
+SELECT registry_id, digest
+FROM blobs 
+WHERE registry_id = $1 AND digest = $2
+            "#,
+            registry_id,
+            digest,
+        )
+        .fetch_one(&mut conn)
+        .await?;
+
+        Ok(())
     }
 
     pub async fn new_upload_session(&self) -> Result<UploadSession> {
