@@ -18,6 +18,7 @@ CREATE TABLE repositories (
 CREATE TABLE blobs (
 	id SERIAL PRIMARY key,
 	digest VARCHAR(256) UNIQUE NOT NULL,
+	repository INT NOT NULL REFERENCES repositories (id),
 	object_key UUID NOT NULL
 );
 
