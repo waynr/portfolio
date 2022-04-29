@@ -19,8 +19,8 @@ CREATE TABLE repositories (
 CREATE TABLE blobs (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	digest VARCHAR(256) NOT NULL,
-	repository_id UUID NOT NULL REFERENCES repositories (id),
-	UNIQUE (digest, repository_id)
+	registry_id UUID NOT NULL REFERENCES registries (id),
+	UNIQUE (digest, registry_id)
 );
 
 -- a manifest is an OCI image manifest:

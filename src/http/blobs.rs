@@ -19,10 +19,57 @@ use uuid::Uuid;
 
 use crate::{
     http::notimplemented,
-    metadata::PostgresMetadata,
+    metadata::{PostgresMetadata, Registry, Repository},
     objects::{ChunkInfo, StreamObjectBody, S3},
     DigestState, DistributionErrorCode, Error, OciDigest, Result,
 };
+
+pub fn router() -> Router {
+    Router::new()
+        .route(
+            "/:digest",
+            get(notimplemented).delete(notimplemented).head(head),
+        )
+        .route("/uploads/", post(uploads_post))
+        .route(
+            "/uploads/:session_uuid",
+            patch(uploads_patch).put(uploads_put),
+        )
+}
+
+async fn head(
+    Path(path_params): Path<HashMap<String, String>>,
+    Extension(metadata): Extension<Arc<PostgresMetadata>>,
+) -> Result<Response> {
+    let registry = metadata.get_registry("meow").await?;
+    match path_params.get("repository") {
+        Some(s) => metadata.get_repository(&registry.id, s).await?,
+        None => return Err(Error::MissingPathParameter("repository")),
+    };
+    let digest: &String = path_params
+        .get("digest")
+        .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
+
+    match metadata.blob_exists(&registry.id, digest).await {
+        Ok(_) => {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                HeaderName::from_static("Docker-Content-Digest"),
+                HeaderValue::from_str(digest).unwrap(),
+            );
+            Ok((StatusCode::OK, headers, "").into_response())
+        }
+        Err(e) => match e {
+            Error::SQLXError(ref source) => match source {
+                sqlx::Error::RowNotFound => Err(Error::DistributionSpecError(
+                    DistributionErrorCode::BlobUnknown,
+                )),
+                _ => Err(e),
+            },
+            _ => Err(e),
+        },
+    }
+}
 
 pub struct UploadSession {
     pub uuid: Uuid,
@@ -46,9 +93,11 @@ async fn uploads_post(
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
     Extension(objects): Extension<Arc<S3>>,
 ) -> Result<Response> {
-    let repo_name = path_params
-        .get("repository")
-        .ok_or_else(|| Error::MissingPathParameter("repository"))?;
+    let registry = metadata.get_registry("meow").await?;
+    let repository = match path_params.get("repository") {
+        Some(s) => metadata.get_repository(&registry.id, s).await?,
+        None => return Err(Error::MissingPathParameter("repository")),
+    };
     match query_params.get("digest") {
         None => {
             match content_length {
@@ -74,11 +123,20 @@ async fn uploads_post(
                     }
                 }
             }
-            upload_session_id(repo_name, metadata).await
+            upload_session_id(&repository.name, metadata).await
         }
         Some(dgst) => {
             if let Some(TypedHeader(length)) = content_length {
-                upload_blob(repo_name, dgst, length, request, metadata, objects).await
+                upload_blob(
+                    &registry,
+                    &repository,
+                    dgst,
+                    length,
+                    request,
+                    metadata,
+                    objects,
+                )
+                .await
             } else {
                 Err(Error::MissingHeader("ContentLength"))
             }
@@ -110,9 +168,11 @@ async fn uploads_put(
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
     Extension(objects): Extension<Arc<S3>>,
 ) -> Result<Response> {
-    let repo_name = path_params
-        .get("repository")
-        .ok_or_else(|| Error::MissingPathParameter("repository"))?;
+    let registry = metadata.get_registry("meow").await?;
+    let repository = match path_params.get("repository") {
+        Some(s) => metadata.get_repository(&registry.id, s).await?,
+        None => return Err(Error::MissingPathParameter("repository")),
+    };
     let digest: &String = query_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
@@ -152,9 +212,11 @@ async fn uploads_put(
             objects
                 .finalize_chunked_upload(&session.uuid, &chunk_info)
                 .await?;
-            metadata.insert_blob(digest, &session.uuid).await?;
+            metadata
+                .insert_blob(&registry.id, digest, &session.uuid)
+                .await?;
 
-            let location = format!("/v2/{}/blobs/{}", repo_name, session.uuid);
+            let location = format!("/v2/{}/blobs/{}", repository.name, session.uuid);
             let mut headers = HeaderMap::new();
             headers.insert(
                 HeaderName::from_static("Location"),
@@ -165,9 +227,10 @@ async fn uploads_put(
         // POST-PUT
         None => {
             upload_blob(
-                repo_name,
+                &registry,
+                &repository,
                 digest,
-                *content_length.ok_or_else(|| Error::MissingHeader("ContentRange"))?,
+                *content_length.ok_or_else(|| Error::MissingHeader("ContentLength"))?,
                 request,
                 metadata.clone(),
                 objects,
@@ -196,9 +259,11 @@ async fn uploads_patch(
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
     Extension(objects): Extension<Arc<S3>>,
 ) -> Result<Response> {
-    let repo_name = path_params
-        .get("repository")
-        .ok_or_else(|| Error::MissingPathParameter("repository"))?;
+    let registry = metadata.get_registry("meow").await?;
+    let repository = match path_params.get("repository") {
+        Some(s) => metadata.get_repository(&registry.id, s).await?,
+        None => return Err(Error::MissingPathParameter("repository")),
+    };
     let session_uuid = path_params
         .get("session_uuid")
         .map(|s| Uuid::parse_str(s))
@@ -237,7 +302,7 @@ async fn uploads_patch(
 
     metadata.update_session(&session).await?;
 
-    let location = format!("/v2/{}/blobs/{}", repo_name, session.uuid);
+    let location = format!("/v2/{}/blobs/{}", repository.name, session.uuid);
     let mut headers = HeaderMap::new();
     headers.insert(
         HeaderName::from_static("Location"),
@@ -247,7 +312,8 @@ async fn uploads_patch(
 }
 
 async fn upload_blob(
-    repo_name: &str,
+    registry: &Registry,
+    repository: &Repository,
     digest: &str,
     content_length: ContentLength,
     request: Request<Body>,
@@ -270,9 +336,12 @@ async fn upload_blob(
     // TODO: validate content length
 
     // insert metadata
-    metadata.clone().insert_blob(digest, &uuid).await?;
+    metadata
+        .clone()
+        .insert_blob(&registry.id, digest, &uuid)
+        .await?;
 
-    let location = format!("/v2/{}/blobs/{}", repo_name, digest,);
+    let location = format!("/v2/{}/blobs/{}", repository.name, digest,);
     let mut headers = HeaderMap::new();
     headers.insert(
         HeaderName::from_static("Location"),
@@ -321,19 +390,4 @@ async fn upload_session_id(repo_name: &str, metadata: Arc<PostgresMetadata>) -> 
         HeaderValue::from_str(&location).unwrap(),
     );
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
-}
-
-pub fn router() -> Router {
-    Router::new()
-        .route(
-            "/:digest",
-            get(notimplemented)
-                .delete(notimplemented)
-                .head(notimplemented),
-        )
-        .route("/uploads/", post(uploads_post))
-        .route(
-            "/uploads/:session_uuid",
-            patch(uploads_patch).put(uploads_put),
-        )
 }
