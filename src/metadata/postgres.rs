@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::errors::Result;
 use crate::http::blobs::UploadSession;
+use crate::metadata::{Registry, Repository};
 use crate::objects::ChunkInfo;
 use crate::DigestState;
 
@@ -28,6 +29,56 @@ pub struct PostgresMetadata {
 }
 
 impl PostgresMetadata {
+    pub async fn get_registry(&self, name: &String) -> Result<Registry> {
+        let mut conn = self.pool.acquire().await?;
+        Ok(sqlx::query_as!(
+            Registry,
+            r#"
+SELECT id, name 
+FROM registries
+WHERE name = $1
+            "#,
+            name,
+        )
+        .fetch_one(&mut conn)
+        .await?)
+    }
+
+    pub async fn insert_repository(&self, repository: &mut Repository) -> Result<()> {
+        let mut conn = self.pool.acquire().await?;
+        repository.id = sqlx::query!(
+            r#"
+INSERT INTO repositories ( name, registry_id )
+VALUES ( $1, $2 )
+RETURNING id
+            "#,
+            repository.name,
+            repository.registry.id,
+        )
+        .fetch_one(&mut conn)
+        .await?
+        .id;
+
+        Ok(())
+    }
+
+    pub async fn get_repository(&self, registry: &String, repository: &String) -> Result<Repository> {
+        let mut conn = self.pool.acquire().await?;
+        Ok(sqlx::query_as!(
+            Repository,
+            r#"
+SELECT rep.id, rep.name 
+FROM registries reg
+JOIN repositories rep
+ON reg.id = rep.registry_id
+WHERE reg.name = $1 AND rep.name = $2
+            "#,
+            registry, repository,
+        )
+        .fetch_one(&mut conn)
+        .await?)
+    }
+
     pub async fn insert_blob(&self, digest: &str, object_key: &Uuid) -> Result<i64> {
         let mut conn = self.pool.acquire().await?;
         let record = sqlx::query!(
