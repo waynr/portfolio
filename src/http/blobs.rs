@@ -31,6 +31,13 @@ pub struct UploadSession {
     pub chunk_info: Option<Json<ChunkInfo>>,
 }
 
+// /v2/<repo>/blobs/upload
+//
+// two use cases:
+// * upload the entire blob body
+//   * must include 'digest' query param
+//   * must include 'ContentLength' query param
+// * initiate upload session for POST-PUT or POST-PATCH-PUT sequence
 async fn uploads_post(
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
@@ -79,6 +86,20 @@ async fn uploads_post(
     }
 }
 
+// /v2/<repo>/blobs/upload/<session>
+//
+// two use cases:
+//
+// * POST-PUT monolithic upload
+//   * entire blob must be in the body of PUT
+//   * must include 'digest' query param
+//   * should close out session
+// * POST-PATCH-PUT chunked upload
+//   * PUT body may contain final chunk
+//     * if body containers final chunk, must include ContentLength and ContentRange header
+//   * must include 'digest' query param, referring to the digest of the entire blob (not the final
+//   chunk)
+//
 async fn uploads_put(
     Path(path_params): Path<HashMap<String, String>>,
     TypedHeader(content_length): TypedHeader<ContentLength>,
