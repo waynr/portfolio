@@ -6,7 +6,6 @@ use uuid::Uuid;
 
 use crate::errors::Result;
 use crate::http::blobs::UploadSession;
-use crate::metadata::{Registry, Repository};
 use crate::objects::ChunkInfo;
 use crate::DigestState;
 
@@ -29,73 +28,6 @@ pub struct PostgresMetadata {
 }
 
 impl PostgresMetadata {
-    async fn insert_registry(&self, registry: &mut Registry) -> Result<()> {
-        let mut conn = self.pool.acquire().await?;
-        registry.id = sqlx::query!(
-            r#"
-INSERT INTO registries ( name )
-VALUES ( $1 )
-RETURNING id
-            "#,
-            registry.name,
-        )
-        .fetch_one(&mut conn)
-        .await?
-        .id;
-
-        Ok(())
-    }
-
-    pub async fn get_registry(&self, name: &String) -> Result<Registry> {
-        let mut conn = self.pool.acquire().await?;
-        Ok(sqlx::query_as!(
-            Registry,
-            r#"
-SELECT id, name 
-FROM registries
-WHERE name = $1
-            "#,
-            name,
-        )
-        .fetch_one(&mut conn)
-        .await?)
-    }
-
-    pub async fn insert_repository(&self, repository: &mut Repository) -> Result<()> {
-        let mut conn = self.pool.acquire().await?;
-        repository.id = sqlx::query!(
-            r#"
-INSERT INTO repositories ( name, registry_id )
-VALUES ( $1, $2 )
-RETURNING id
-            "#,
-            repository.name,
-            repository.registry_id,
-        )
-        .fetch_one(&mut conn)
-        .await?
-        .id;
-
-        Ok(())
-    }
-
-    pub async fn get_repository(&self, registry: &String, repository: &String) -> Result<Repository> {
-        let mut conn = self.pool.acquire().await?;
-        Ok(sqlx::query_as!(
-            Repository,
-            r#"
-SELECT rep.id, rep.name, rep.registry_id
-FROM repositories rep
-JOIN registries reg
-ON reg.id = rep.registry_id
-WHERE reg.name = $1 AND rep.name = $2
-            "#,
-            registry, repository,
-        )
-        .fetch_one(&mut conn)
-        .await?)
-    }
-
     pub async fn insert_blob(&self, digest: &str, object_key: &Uuid) -> Result<Uuid> {
         let mut conn = self.pool.acquire().await?;
         let record = sqlx::query!(
