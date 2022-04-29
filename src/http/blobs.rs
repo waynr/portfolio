@@ -102,9 +102,9 @@ async fn uploads_post(
 //
 async fn uploads_put(
     Path(path_params): Path<HashMap<String, String>>,
-    TypedHeader(content_length): TypedHeader<ContentLength>,
-    TypedHeader(content_type): TypedHeader<ContentType>,
-    option_content_range: Option<TypedHeader<ContentRange>>,
+    content_length: Option<TypedHeader<ContentLength>>,
+    content_type: Option<TypedHeader<ContentType>>,
+    content_range: Option<TypedHeader<ContentRange>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
@@ -133,18 +133,25 @@ async fn uploads_put(
     let response = match session.chunk_info {
         // POST-PATCH-PUT
         Some(mut chunk_info) => {
-            let TypedHeader(content_range) =
-                option_content_range.ok_or_else(|| Error::MissingHeader("ContentRange"))?;
-            upload_chunk(
-                &mut chunk_info,
-                content_length,
-                content_range,
-                request,
-                objects.clone(),
-            )
-            .await?;
+            if let (
+                Some(TypedHeader(content_range)),
+                Some(TypedHeader(content_type)),
+                Some(TypedHeader(content_length)),
+            ) = (content_range, content_type, content_length)
+            {
+                upload_chunk(
+                    &mut chunk_info,
+                    content_length,
+                    content_range,
+                    request,
+                    objects.clone(),
+                )
+                .await?;
+            }
 
-            objects.finalize_chunked_upload(&session.uuid, &chunk_info).await?;
+            objects
+                .finalize_chunked_upload(&session.uuid, &chunk_info)
+                .await?;
             metadata.insert_blob(digest, &session.uuid).await?;
 
             let location = format!("/v2/{}/blobs/{}", repo_name, session.uuid);
@@ -160,7 +167,7 @@ async fn uploads_put(
             upload_blob(
                 repo_name,
                 digest,
-                content_length,
+                *content_length.ok_or_else(|| Error::MissingHeader("ContentRange"))?,
                 request,
                 metadata.clone(),
                 objects,
