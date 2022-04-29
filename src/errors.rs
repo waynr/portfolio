@@ -14,12 +14,22 @@ pub enum Error {
     ConfigError(#[from] serde_yaml::Error),
     #[error("io error")]
     IOError(#[from] std::io::Error),
+    #[error("http error")]
+    HTTPError(#[from] http::Error),
+
     #[error("aws sdk credentials error")]
     AWSSDKCredentialsError(#[from] aws_types::credentials::CredentialsError),
     #[error("aws sdk put object error")]
     AWSSDKPutObjectError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::PutObjectError>),
-    #[error("http error")]
-    HTTPError(#[from] http::Error),
+    #[error("aws sdk create multipart upload error")]
+    AWSSDKCreateMultiPartUploadError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CreateMultipartUploadError>),
+    #[error("aws sdk upload part error")]
+    AWSSDKUploadPartError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::UploadPartError>),
+    #[error("aws sdk complete multipart upload error")]
+    AWSSDKCompleteMultipartUploadError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CompleteMultipartUploadError>),
+
+    #[error("failed to initiate chunked upload: {0}")]
+    ObjectsFailedToInitiateChunkedUpload(&'static str),
 
     #[error("error serializing to value")]
     SerdeJsonToValueError(#[from] serde_json::Error),
@@ -36,6 +46,8 @@ pub enum Error {
     MissingHeader(&'static str),
     #[error("missing path parameter: {0}")]
     MissingPathParameter(&'static str),
+    #[error("invalid header value: {0}")]
+    InvalidHeaderValue(&'static str),
 
     // distribution error codes
     // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
@@ -65,7 +77,7 @@ impl DistributionErrorCode {
     fn status_code(&self) -> StatusCode {
         match self {
             DistributionErrorCode::BlobUploadUnknown => StatusCode::BAD_REQUEST,
-            _ => StatusCode::NOT_FOUND,
+            DistributionErrorCode::BlobUploadInvalid => StatusCode::RANGE_NOT_SATISFIABLE,
         }
     }
 }
@@ -83,6 +95,9 @@ impl IntoResponse for Error {
                 (StatusCode::BAD_REQUEST, format!("{}", self))
             },
             Error::MissingHeader(_) => {
+                (StatusCode::BAD_REQUEST, format!("{}", self))
+            },
+            Error::InvalidHeaderValue(_) => {
                 (StatusCode::BAD_REQUEST, format!("{}", self))
             },
             Error::MissingPathParameter(_) => {
