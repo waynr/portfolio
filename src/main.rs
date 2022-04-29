@@ -2,9 +2,9 @@ use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
 
-use portfolio::Result;
-use portfolio::{Config, MetadataBackend, ObjectsBackend};
 use portfolio::http;
+use portfolio::{Config, MetadataBackend, ObjectsBackend};
+use portfolio::{Error, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -15,12 +15,16 @@ async fn main() -> Result<()> {
     let config: Config = serde_yaml::from_str(&s)?;
 
     // initialize persistence layer
-    let metadata = match config.metadata {
+    let mut metadata = match config.metadata {
         MetadataBackend::Postgres(cfg) => cfg.new_metadata().await?,
     };
     let objects = match config.objects {
         ObjectsBackend::S3(cfg) => cfg.new_objects().await?,
     };
+
+    if let Some(registries) = config.static_registries {
+        metadata.initialize_static_registries(registries).await?;
+    }
 
     // run HTTP server
     http::serve(Arc::new(metadata), Arc::new(objects)).await;

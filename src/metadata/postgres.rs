@@ -4,11 +4,11 @@ use sqlx::types::Json;
 use sqlx::Pool;
 use uuid::Uuid;
 
-use crate::errors::Result;
+use crate::errors::{Error, Result};
 use crate::http::blobs::UploadSession;
 use crate::metadata::{Registry, Repository};
 use crate::objects::ChunkInfo;
-use crate::DigestState;
+use crate::{DigestState, RegistryDefinition};
 
 #[derive(Deserialize)]
 pub struct PostgresConfig {
@@ -28,22 +28,21 @@ pub struct PostgresMetadata {
     pool: Pool<Postgres>,
 }
 
+// basic DB interaction methods
 impl PostgresMetadata {
-    async fn insert_registry(&self, registry: &mut Registry) -> Result<()> {
+    pub async fn insert_registry(&self, name: &String) -> Result<Registry> {
         let mut conn = self.pool.acquire().await?;
-        registry.id = sqlx::query!(
+        Ok(sqlx::query_as!(
+            Registry,
             r#"
 INSERT INTO registries ( name )
 VALUES ( $1 )
-RETURNING id
+RETURNING id, name
             "#,
-            registry.name,
+            name,
         )
         .fetch_one(&mut conn)
-        .await?
-        .id;
-
-        Ok(())
+        .await?)
     }
 
     pub async fn get_registry(&self, name: &String) -> Result<Registry> {
@@ -61,25 +60,27 @@ WHERE name = $1
         .await?)
     }
 
-    pub async fn insert_repository(&self, repository: &mut Repository) -> Result<()> {
+    pub async fn insert_repository(&self, registry_id: &Uuid, name: &String) -> Result<Repository> {
         let mut conn = self.pool.acquire().await?;
-        repository.id = sqlx::query!(
+        Ok(sqlx::query_as!(
+            Repository,
             r#"
 INSERT INTO repositories ( name, registry_id )
 VALUES ( $1, $2 )
-RETURNING id
+RETURNING id, name, registry_id
             "#,
-            repository.name,
-            repository.registry_id,
+            name,
+            registry_id
         )
         .fetch_one(&mut conn)
-        .await?
-        .id;
-
-        Ok(())
+        .await?)
     }
 
-    pub async fn get_repository(&self, registry: &String, repository: &String) -> Result<Repository> {
+    pub async fn get_repository(
+        &self,
+        registry: &Uuid,
+        repository: &String,
+    ) -> Result<Repository> {
         let mut conn = self.pool.acquire().await?;
         Ok(sqlx::query_as!(
             Repository,
@@ -88,9 +89,10 @@ SELECT rep.id, rep.name, rep.registry_id
 FROM repositories rep
 JOIN registries reg
 ON reg.id = rep.registry_id
-WHERE reg.name = $1 AND rep.name = $2
+WHERE reg.id = $1 AND rep.name = $2
             "#,
-            registry, repository,
+            registry,
+            repository,
         )
         .fetch_one(&mut conn)
         .await?)
@@ -180,6 +182,52 @@ WHERE uuid = $1
         .execute(&mut conn)
         .await?;
 
+        Ok(())
+    }
+}
+
+// higher level DB interaction methods
+impl PostgresMetadata {
+    pub async fn initialize_static_registries(
+        &mut self,
+        registries: Vec<RegistryDefinition>,
+    ) -> Result<()> {
+        for registry_config in registries {
+            let registry = match self.get_registry(&registry_config.name).await {
+                Ok(r) => r,
+                Err(e) => match e {
+                    Error::SQLXError(ref source) => match source {
+                        sqlx::Error::RowNotFound => {
+                            println!("registry not found!");
+                            self.insert_registry(&registry_config.name).await?
+                        }
+                        _ => return Err(e),
+                    },
+                    _ => return Err(e),
+                },
+            };
+
+            for repository_config in registry_config.repositories {
+                match self
+                    .get_repository(&registry.id, &repository_config.name)
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => match e {
+                        Error::SQLXError(ref source) => match source {
+                            sqlx::Error::RowNotFound => {
+                                println!("repository not found!");
+                                self
+                                    .insert_repository(&registry.id, &repository_config.name)
+                                    .await?
+                            }
+                            _ => return Err(e),
+                        },
+                        _ => return Err(e),
+                    },
+                };
+            }
+        }
         Ok(())
     }
 }
