@@ -52,13 +52,18 @@ async fn head(
 
     match metadata.blob_exists(&registry.id, digest).await {
         Ok(_) => {
-            Ok((StatusCode::OK, "").into_response())
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                HeaderName::from_static("Docker-Content-Digest"),
+                HeaderValue::from_str(digest).unwrap(),
+            );
+            Ok((StatusCode::OK, headers, "").into_response())
         }
         Err(e) => match e {
             Error::SQLXError(ref source) => match source {
-                sqlx::Error::RowNotFound => {
-                    Err(Error::DistributionSpecError(DistributionErrorCode::BlobUnknown))
-                }
+                sqlx::Error::RowNotFound => Err(Error::DistributionSpecError(
+                    DistributionErrorCode::BlobUnknown,
+                )),
                 _ => Err(e),
             },
             _ => Err(e),
