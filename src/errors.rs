@@ -45,7 +45,20 @@ pub enum Error {
 
 #[derive(Debug)]
 pub enum DistributionErrorCode {
-    BlobUploadUnknown = 3,
+    BlobUnknown = 1, // blob unknown to registry
+    BlobUploadInvalid = 2, // blob upload invalid
+    BlobUploadUnknown = 3, // blob upload unknown to registry
+    DigestInvalid = 4, // provided digest did not match uploaded content
+    ManifestBlobUnknown = 5, // manifest references a manifest or blob unknown to registry
+    ManifestInvalid = 6, // manifest invalid
+    ManifestUnknown = 7, // manifest unknown to registry
+    NameInvalid = 8, // invalid repository name
+    NameUnknown = 9, // repository name not known to registry
+    SizeInvalid = 10, // provided length did not match content length
+    Unauthorized = 12, // authentication required
+    Denied = 13, // request access to the resource is denied
+    Unsupported = 14, // the operation is unsupported
+    TooManyRequests = 15, // too many requests
 }
 
 impl DistributionErrorCode {
