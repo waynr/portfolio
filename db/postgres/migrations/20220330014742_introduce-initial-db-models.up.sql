@@ -2,33 +2,35 @@
 -- "registry.digitalocean.com/meow/nginx:latest"
 CREATE TABLE registries (
 	id SERIAL PRIMARY key,
-	name VARCHAR(128)
+	name VARCHAR(128) UNIQUE NOT NULL
 );
 
 -- a "repository" is the name of an image, eg "nginx" in
 -- "registry.digitalocean.com/meow/nginx:latest"
 CREATE TABLE repositories (
 	id SERIAL PRIMARY key,
-	registry INT NOT NULL REFERENCES registries (id),
-	name VARCHAR(128)
+	registry_id INT NOT NULL REFERENCES registries (id),
+	name VARCHAR(128) NOT NULL,
+	UNIQUE (registry_id, name)
 );
 
 -- a blob is a chunk of data, most likely either a manifest config file or an
 -- image layer
 CREATE TABLE blobs (
 	id SERIAL PRIMARY key,
-	digest VARCHAR(256) UNIQUE NOT NULL,
-	repository INT NOT NULL REFERENCES repositories (id),
-	object_key UUID NOT NULL
+	digest VARCHAR(256) NOT NULL,
+	repository_id INT NOT NULL REFERENCES repositories (id),
+	object_key UUID NOT NULL,
+	UNIQUE (digest, repository_id)
 );
 
 -- a manifest is an OCI image manifest:
 -- https://github.com/opencontainers/image-spec/blob/main/manifest.md
 CREATE TABLE manifests (
 	id SERIAL PRIMARY key,
-	registry INT NOT NULL REFERENCES registries (id),
-	repository INT NOT NULL REFERENCES repositories (id),
-	config VARCHAR(256) NOT NULL REFERENCES blobs (digest),
+	registry_id INT NOT NULL REFERENCES registries (id),
+	repository_id INT NOT NULL REFERENCES repositories (id),
+	config INT NOT NULL REFERENCES blobs (id),
 	digest VARCHAR(256) UNIQUE NOT NULL
 );
 
@@ -57,5 +59,5 @@ CREATE TABLE upload_sessions (
 	uuid UUID PRIMARY key DEFAULT gen_random_uuid(),
 	start_date DATE NOT NULL DEFAULT now(),
 	digest_state JSONB NOT NULL,
-	chunk_info JSONB
+	chunk_info JSONB NOT NULL
 );
