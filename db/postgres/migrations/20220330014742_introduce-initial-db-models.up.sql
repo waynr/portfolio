@@ -1,15 +1,15 @@
 -- a "registry" is a top-level store of container images, eg "meow" in
 -- "registry.digitalocean.com/meow/nginx:latest"
 CREATE TABLE registries (
-	id SERIAL PRIMARY key,
+	id UUID NOT NULL DEFAULT gen_random_uuid(),
 	name VARCHAR(128) UNIQUE NOT NULL
 );
 
 -- a "repository" is the name of an image, eg "nginx" in
 -- "registry.digitalocean.com/meow/nginx:latest"
 CREATE TABLE repositories (
-	id SERIAL PRIMARY key,
-	registry_id INT NOT NULL REFERENCES registries (id),
+	id UUID NOT NULL DEFAULT gen_random_uuid(),
+	registry_id UUID NOT NULL REFERENCES registries (id),
 	name VARCHAR(128) NOT NULL,
 	UNIQUE (registry_id, name)
 );
@@ -17,9 +17,9 @@ CREATE TABLE repositories (
 -- a blob is a chunk of data, most likely either a manifest config file or an
 -- image layer
 CREATE TABLE blobs (
-	id SERIAL PRIMARY key,
+	id UUID NOT NULL DEFAULT gen_random_uuid(),
 	digest VARCHAR(256) NOT NULL,
-	repository_id INT NOT NULL REFERENCES repositories (id),
+	repository_id UUID NOT NULL REFERENCES repositories (id),
 	object_key UUID NOT NULL,
 	UNIQUE (digest, repository_id)
 );
@@ -27,9 +27,9 @@ CREATE TABLE blobs (
 -- a manifest is an OCI image manifest:
 -- https://github.com/opencontainers/image-spec/blob/main/manifest.md
 CREATE TABLE manifests (
-	id SERIAL PRIMARY key,
-	registry_id INT NOT NULL REFERENCES registries (id),
-	repository_id INT NOT NULL REFERENCES repositories (id),
+	id UUID NOT NULL DEFAULT gen_random_uuid(),
+	registry_id UUID NOT NULL REFERENCES registries (id),
+	repository_id UUID NOT NULL REFERENCES repositories (id),
 	config INT NOT NULL REFERENCES blobs (id),
 	digest VARCHAR(256) UNIQUE NOT NULL
 );
@@ -48,9 +48,9 @@ CREATE TABLE layers (
 
 -- a tag is a reference to a manifest
 CREATE TABLE tags (
-	id SERIAL PRIMARY key,
+	id UUID NOT NULL DEFAULT gen_random_uuid(),
 	name VARCHAR(256),
-	manifest_id INT NOT NULL REFERENCES manifests (id)
+	manifest_id UUID NOT NULL REFERENCES manifests (id)
 );
 
 -- http upload sessions. sessions are used to track a sequence of stateful http
