@@ -51,6 +51,11 @@ cargo install sqlx-cli
 sqlx migrate run --source db/postgres/migrations
 ```
 
+7. Start local server
+```
+cargo run
+```
+
 ### Compile Time DB Query Validation
 
 Because we use the `sqlx::query!` macro, which provides compile-time Postgres
@@ -64,3 +69,4 @@ your shell:
 ```
 export DATABASE_URL=postgresql://root@localhost:26257/defaultdb?sslmode=disable
 ```
+
