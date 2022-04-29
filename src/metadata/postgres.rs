@@ -32,8 +32,8 @@ impl PostgresMetadata {
         let mut conn = self.pool.acquire().await?;
         let record = sqlx::query!(
             r#"
-INSERT INTO blobs ( digest, object_key )
-VALUES ( $1, $2 )
+INSERT INTO blobs ( id, digest)
+VALUES ( $2, $1 )
 RETURNING id
             "#,
             digest,
