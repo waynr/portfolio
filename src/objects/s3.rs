@@ -2,16 +2,22 @@ use serde::Deserialize;
 
 use aws_sdk_s3::{Client, Config, Credentials, Endpoint, Region};
 use aws_sdk_s3::types::ByteStream;
+use aws_sdk_s3::client::Builder;
+use aws_sdk_s3::middleware::DefaultMiddleware;
 use aws_types::credentials::{ProvideCredentials, SharedCredentialsProvider};
+use aws_smithy_client::erase::DynMiddleware;
 use axum::body::StreamBody;
 use http::Uri;
 use hyper::body::Body;
 
 use uuid::Uuid;
 
+use tower::layer::util::Stack;
+
 use crate::{
     errors::{Error, Result},
     objects::ChunkInfo,
+    http::middleware::LogLayer,
 };
 
 #[derive(Deserialize)]
@@ -46,9 +52,16 @@ impl S3Config {
             .endpoint_resolver(Endpoint::mutable(uri))
             .build();
 
+        let middleware = Stack::new(LogLayer{ target: "meow"}, DefaultMiddleware::new());
+        let inner_client = Builder::new()
+            .rustls()
+            .middleware(DynMiddleware::new(middleware))
+            .build();
+
+        //let _ = Client::from_conf(config);
         Ok(S3 {
             bucket_name: self.bucket_name.clone(),
-            client: Client::from_conf(config),
+            client: Client::with_config(inner_client, config),
         })
     }
 }
