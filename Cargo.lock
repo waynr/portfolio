@@ -1425,6 +1425,7 @@ version = "0.0.0"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
+ "aws-smithy-client",
  "aws-types",
  "axum",
  "axum-macros",
