@@ -17,7 +17,7 @@ go test -c
 ```shell
 export OCI_ROOT_URL="http://localhost:13030/"
 # Hardcoded 'meow' registry, repository name shouldn't matter
-export OCI_NAMESPACE="meow/myrepo"
+export OCI_NAMESPACE="meow/woof"
 
 # TODO implement crossmount support
 export OCI_AUTOMATIC_CROSSMOUNT=0
