@@ -112,7 +112,7 @@ RETURNING id
         Ok(record.id)
     }
 
-    pub async fn get_blob(&self, registry_id: &Uuid, digest: &str) -> Result<Blob> {
+    pub async fn get_blob(&self, registry_id: &Uuid, digest: &str) -> Result<Option<Blob>> {
         let mut conn = self.pool.acquire().await?;
         Ok(sqlx::query_as!(
             Blob,
@@ -124,7 +124,7 @@ WHERE registry_id = $1 AND digest = $2
             registry_id,
             digest,
         )
-        .fetch_one(&mut conn)
+        .fetch_optional(&mut conn)
         .await?)
     }
 
