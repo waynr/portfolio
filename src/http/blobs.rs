@@ -243,10 +243,7 @@ async fn uploads_put(
 
             let location = format!("/v2/{}/blobs/{}", repository.name, session.uuid);
             let mut headers = HeaderMap::new();
-            headers.insert(
-                HeaderName::from_static("Location"),
-                HeaderValue::from_str(&location).unwrap(),
-            );
+            headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
             (StatusCode::CREATED, headers, "").into_response()
         }
         // POST-PUT
@@ -327,13 +324,10 @@ async fn uploads_patch(
 
     metadata.update_session(&session).await?;
 
-    let location = format!("/v2/{}/blobs/{}", repository.name, session.uuid);
+    let location = format!("/v2/{}/blobs/uploads/{}", repository.name, session.uuid);
     let mut headers = HeaderMap::new();
-    headers.insert(
-        HeaderName::from_static("Location"),
-        HeaderValue::from_str(&location).unwrap(),
-    );
-    Ok((StatusCode::CREATED, headers, "").into_response())
+    headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
+    Ok((StatusCode::ACCEPTED, headers, "").into_response())
 }
 
 async fn upload_blob(
@@ -368,10 +362,7 @@ async fn upload_blob(
 
     let location = format!("/v2/{}/blobs/{}", repository.name, digest,);
     let mut headers = HeaderMap::new();
-    headers.insert(
-        HeaderName::from_static("Location"),
-        HeaderValue::from_str(&location).unwrap(),
-    );
+    headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
     Ok((StatusCode::CREATED, headers, "").into_response())
 }
 
@@ -408,11 +399,8 @@ async fn upload_chunk(
 
 async fn upload_session_id(repo_name: &str, metadata: Arc<PostgresMetadata>) -> Result<Response> {
     let session: UploadSession = metadata.new_upload_session().await?;
-    let location = format!("/v2/{}/blobs/{}", repo_name, session.uuid,);
+    let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);
     let mut headers = HeaderMap::new();
-    headers.insert(
-        HeaderName::from_static("Location"),
-        HeaderValue::from_str(&location).unwrap(),
-    );
+    headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
 }
