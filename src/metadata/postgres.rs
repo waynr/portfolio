@@ -147,13 +147,13 @@ SELECT exists(
 
     pub async fn new_upload_session(&self) -> Result<UploadSession> {
         let mut conn = self.pool.acquire().await?;
-        let state: Option<Json<DigestState>> = None;
+        let state = DigestState::default();
         let session = sqlx::query_as!(
             UploadSession,
             r#"
 INSERT INTO upload_sessions ( digest_state )
 VALUES ( $1 )
-RETURNING uuid, start_date, digest_state as "digest_state: Option<Json<DigestState>>", chunk_info as "chunk_info: Option<Json<ChunkInfo>>"
+RETURNING uuid, start_date, digest_state as "digest_state: Json<DigestState>", chunk_info as "chunk_info: Json<ChunkInfo>"
             "#,
             serde_json::to_value(state)?,
         )
@@ -168,7 +168,7 @@ RETURNING uuid, start_date, digest_state as "digest_state: Option<Json<DigestSta
         let session = sqlx::query_as!(
             UploadSession,
             r#"
-SELECT uuid, start_date, digest_state as "digest_state: Option<Json<DigestState>>", chunk_info as "chunk_info: Option<Json<ChunkInfo>>"
+SELECT uuid, start_date, digest_state as "digest_state: Json<DigestState>", chunk_info as "chunk_info: Json<ChunkInfo>"
 FROM upload_sessions
 WHERE uuid = $1
             "#,
