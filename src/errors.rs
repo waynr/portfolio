@@ -109,10 +109,13 @@ impl IntoResponse for Error {
             Error::MissingHeader(_) => (StatusCode::BAD_REQUEST, format!("{}", self)),
             Error::InvalidHeaderValue(_) => (StatusCode::BAD_REQUEST, format!("{}", self)),
             Error::MissingPathParameter(_) => (StatusCode::BAD_REQUEST, format!("{}", self)),
-            _ => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                String::from("something bad happened"),
-            ),
+            _ => {
+                eprintln!("{:?}", self);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    String::from("something bad happened"),
+                )
+            }
         }
         .into_response()
     }
