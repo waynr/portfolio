@@ -1,0 +1,3 @@
+[submodule "distribution-spec"]
+	path = distribution-spec
+	url = git@github.com:opencontainers/distribution-spec
