@@ -17,8 +17,8 @@ use tower::layer::util::Stack;
 
 use crate::{
     errors::{Error, Result},
-    objects::ChunkInfo,
     http::middleware::LogLayer,
+    objects::{ChunkInfo, Part},
 };
 
 #[derive(Deserialize)]
@@ -122,25 +122,53 @@ impl S3 {
         Ok(chunk_info)
     }
 
-    pub async fn upload_chunk(&self, chunk: &mut ChunkInfo, body: Body) -> Result<()> {
-        let _upload_part_output = self
+    pub async fn upload_chunk(
+        &self,
+        session_uuid: &Uuid,
+        chunk: &mut ChunkInfo,
+        content_length: u64,
+        body: Body,
+    ) -> Result<()> {
+        let upload_part_output = self
             .client
             .upload_part()
             .upload_id(chunk.upload_id.clone())
             .part_number(chunk.part_number)
+            .key(session_uuid.to_string())
             .body(body.into())
+            .content_length(content_length as i64)
             .bucket(&self.bucket_name)
             .send()
             .await?;
 
+        let new_part = Part {
+            e_tag: upload_part_output.e_tag,
+            part_number: chunk.part_number,
+        };
+        if let Some(parts) = &mut chunk.parts {
+            parts.push(new_part);
+        } else {
+            chunk.parts = Some(Vec::from([new_part]));
+        }
         chunk.part_number += 1;
         Ok(())
     }
 
     pub async fn finalize_chunked_upload(&self, uuid: &Uuid, chunk: &ChunkInfo) -> Result<()> {
+        let mut mpu = CompletedMultipartUpload::builder();
+        if let Some(parts) = &chunk.parts {
+            for part in parts {
+                let mut pb = CompletedPart::builder();
+                if let Some(e_tag) = &part.e_tag {
+                    pb = pb.e_tag(e_tag);
+                }
+                mpu = mpu.parts(pb.part_number(part.part_number).build());
+            }
+        }
         let _complete_multipart_upload_output = self
             .client
             .complete_multipart_upload()
+            .multipart_upload(mpu.build())
             .upload_id(chunk.upload_id.clone())
             .key(uuid.to_string())
             .bucket(&self.bucket_name)
