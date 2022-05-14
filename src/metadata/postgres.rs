@@ -76,11 +76,7 @@ RETURNING id, name, registry_id
         .await?)
     }
 
-    pub async fn get_repository(
-        &self,
-        registry: &Uuid,
-        repository: &String,
-    ) -> Result<Repository> {
+    pub async fn get_repository(&self, registry: &Uuid, repository: &String) -> Result<Repository> {
         let mut conn = self.pool.acquire().await?;
         Ok(sqlx::query_as!(
             Repository,
