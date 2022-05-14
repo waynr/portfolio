@@ -225,6 +225,7 @@ async fn uploads_put(
             ) = (content_range, content_type, content_length)
             {
                 upload_chunk(
+                    &session.uuid,
                     &mut chunk_info,
                     content_length,
                     content_range,
@@ -309,6 +310,7 @@ async fn uploads_patch(
     };
 
     upload_chunk(
+        &session.uuid,
         &mut chunk_info,
         content_length,
         content_range,
@@ -347,7 +349,7 @@ async fn upload_blob(
     let body = StreamObjectBody::from_body(request.into_body(), digester);
     objects
         .clone()
-        .upload_blob(&uuid, body.into())
+        .upload_blob(&uuid, body.into(), content_length.0)
         .await
         .unwrap();
 
@@ -367,6 +369,7 @@ async fn upload_blob(
 }
 
 async fn upload_chunk(
+    session_uuid: &Uuid,
     chunk_info: &mut ChunkInfo,
     content_length: ContentLength,
     content_range: ContentRange,
@@ -386,7 +389,12 @@ async fn upload_chunk(
 
     objects
         .clone()
-        .upload_chunk(chunk_info, request.into_body())
+        .upload_chunk(
+            session_uuid,
+            chunk_info,
+            content_length.0,
+            request.into_body(),
+        )
         .await?;
 
     chunk_info.last_range_end = range_end;

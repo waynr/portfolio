@@ -87,12 +87,13 @@ impl S3 {
         Ok(StreamBody::new(get_object_output.body))
     }
 
-    pub async fn upload_blob(&self, uuid: &Uuid, body: Body) -> Result<()> {
+    pub async fn upload_blob(&self, uuid: &Uuid, body: Body, content_length: u64) -> Result<()> {
         let _put_object_output = self
             .client
             .put_object()
             .key(uuid.to_string())
             .body(body.into())
+            .content_length(content_length as i64)
             .bucket(&self.bucket_name)
             .send()
             .await?;
@@ -111,6 +112,7 @@ impl S3 {
         let mut chunk_info = ChunkInfo::default();
         if let Some(upload_id) = create_multipart_upload_output.upload_id {
             chunk_info.upload_id = upload_id;
+            chunk_info.part_number += 1;
         } else {
             return Err(Error::ObjectsFailedToInitiateChunkedUpload(
                 "missing upload id",
