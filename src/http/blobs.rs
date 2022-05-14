@@ -40,9 +40,9 @@ pub fn router() -> Router {
 }
 
 async fn get_blob(
-    Path(path_params): Path<HashMap<String, String>>,
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
     Extension(objects): Extension<Arc<S3>>,
+    Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let registry = metadata.get_registry("meow").await?;
     match path_params.get("repository") {
@@ -53,32 +53,25 @@ async fn get_blob(
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
 
-    match metadata.blob_exists(&registry.id, digest).await {
-        Ok(_) => {
-            let blob = metadata.get_blob(&registry.id, digest).await?;
-            let stream_body: StreamBody<ByteStream> = objects.get_blob(&blob.id).await?;
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                HeaderName::from_static("Docker-Content-Digest"),
-                HeaderValue::from_str(digest).unwrap(),
-            );
-            Ok((StatusCode::OK, headers, stream_body).into_response())
-        }
-        Err(e) => match e {
-            Error::SQLXError(ref source) => match source {
-                sqlx::Error::RowNotFound => Err(Error::DistributionSpecError(
-                    DistributionErrorCode::BlobUnknown,
-                )),
-                _ => Err(e),
-            },
-            _ => Err(e),
-        },
+    if let Some(blob) = metadata.get_blob(&registry.id, digest).await? {
+        let stream_body: StreamBody<ByteStream> = objects.get_blob(&blob.id).await?;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderName::from_lowercase(b"docker-content-digest")?,
+            HeaderValue::from_str(digest).unwrap(),
+        );
+        Ok((StatusCode::OK, stream_body).into_response())
+    } else {
+        Err(Error::DistributionSpecError(
+            DistributionErrorCode::BlobUnknown,
+        ))
     }
 }
 
 async fn head_blob(
-    Path(path_params): Path<HashMap<String, String>>,
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
+    Extension(objects): Extension<Arc<S3>>,
+    Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let registry = metadata.get_registry("meow").await?;
     match path_params.get("repository") {
@@ -125,12 +118,12 @@ pub struct UploadSession {
 //   * must include 'ContentLength' query param
 // * initiate upload session for POST-PUT or POST-PATCH-PUT sequence
 async fn uploads_post(
+    Extension(metadata): Extension<Arc<PostgresMetadata>>,
+    Extension(objects): Extension<Arc<S3>>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
-    Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<S3>>,
 ) -> Result<Response> {
     let registry = metadata.get_registry("meow").await?;
     let repository = match path_params.get("repository") {
@@ -198,14 +191,14 @@ async fn uploads_post(
 //   chunk)
 //
 async fn uploads_put(
+    Extension(metadata): Extension<Arc<PostgresMetadata>>,
+    Extension(objects): Extension<Arc<S3>>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
     content_range: Option<TypedHeader<ContentRange>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
-    Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<S3>>,
 ) -> Result<Response> {
     let registry = metadata.get_registry("meow").await?;
     let repository = match path_params.get("repository") {
@@ -290,13 +283,13 @@ async fn uploads_put(
 }
 
 async fn uploads_patch(
+    Extension(metadata): Extension<Arc<PostgresMetadata>>,
+    Extension(objects): Extension<Arc<S3>>,
     Path(path_params): Path<HashMap<String, String>>,
     TypedHeader(content_length): TypedHeader<ContentLength>,
     TypedHeader(content_range): TypedHeader<ContentRange>,
     TypedHeader(content_type): TypedHeader<ContentType>,
     request: Request<Body>,
-    Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<S3>>,
 ) -> Result<Response> {
     let registry = metadata.get_registry("meow").await?;
     let repository = match path_params.get("repository") {
