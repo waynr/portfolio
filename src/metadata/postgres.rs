@@ -131,21 +131,22 @@ WHERE registry_id = $1 AND digest = $2
         .fetch_one(&mut conn)
         .await?)
     }
-    pub async fn blob_exists(&self, registry_id: &Uuid, digest: &str) -> Result<()> {
+
+    pub async fn blob_exists(&self, registry_id: &Uuid, digest: &str) -> Result<bool> {
         let mut conn = self.pool.acquire().await?;
-        sqlx::query!(
+        Ok(sqlx::query!(
             r#"
-SELECT registry_id, digest
-FROM blobs 
-WHERE registry_id = $1 AND digest = $2
+SELECT exists(
+    SELECT 1
+    FROM blobs
+    WHERE registry_id = $1 AND digest = $2
+) as "exists!"
             "#,
             registry_id,
             digest,
         )
         .fetch_one(&mut conn)
-        .await?;
-
-        Ok(())
+        .await?.exists)
     }
 
     pub async fn new_upload_session(&self) -> Result<UploadSession> {

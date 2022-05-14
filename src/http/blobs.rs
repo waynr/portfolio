@@ -82,24 +82,17 @@ async fn head_blob(
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
 
-    match metadata.blob_exists(&registry.id, digest).await {
-        Ok(_) => {
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                HeaderName::from_static("Docker-Content-Digest"),
-                HeaderValue::from_str(digest).unwrap(),
-            );
-            Ok((StatusCode::OK, headers, "").into_response())
-        }
-        Err(e) => match e {
-            Error::SQLXError(ref source) => match source {
-                sqlx::Error::RowNotFound => Err(Error::DistributionSpecError(
-                    DistributionErrorCode::BlobUnknown,
-                )),
-                _ => Err(e),
-            },
-            _ => Err(e),
-        },
+    if metadata.blob_exists(&registry.id, digest).await? {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderName::from_lowercase(b"docker-content-digest")?,
+            HeaderValue::from_str(digest).unwrap(),
+        );
+        Ok((StatusCode::OK, headers, "").into_response())
+    } else {
+        Err(Error::DistributionSpecError(
+            DistributionErrorCode::BlobUnknown,
+        ))
     }
 }
 
