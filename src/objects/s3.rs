@@ -84,6 +84,30 @@ impl S3 {
         Ok(StreamBody::new(get_object_output.body))
     }
 
+    pub async fn blob_exists(&self, key: &str) -> Result<bool> {
+        match self
+            .client
+            .head_object()
+            .key(key)
+            .bucket(&self.bucket_name)
+            .send()
+            .await
+        {
+            Err(e) => match e {
+                aws_sdk_s3::types::SdkError::ServiceError {
+                    err:
+                        aws_sdk_s3::error::HeadObjectError {
+                            kind: aws_sdk_s3::error::HeadObjectErrorKind::NotFound(_),
+                            ..
+                        },
+                    ..
+                } => Ok(false),
+                _ => Err(Error::AWSSDKHeadObjectError(e)),
+            },
+            Ok(_) => Ok(true),
+        }
+    }
+
     pub async fn upload_blob(&self, uuid: &Uuid, body: Body, content_length: u64) -> Result<()> {
         let _put_object_output = self
             .client
