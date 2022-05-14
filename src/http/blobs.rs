@@ -2,18 +2,18 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use ::http::StatusCode;
+use aws_sdk_s3::types::ByteStream;
 use axum::{
     body::StreamBody,
     extract::{Extension, Path, Query, TypedHeader},
     headers::{ContentLength, ContentRange, ContentType},
-    http::header::{HeaderMap, HeaderName, HeaderValue},
+    http::header::{self, HeaderMap, HeaderName, HeaderValue},
     http::Request,
     response::{IntoResponse, Response},
     routing::{get, patch, post},
     Router,
 };
 use hyper::body::Body;
-use aws_sdk_s3::types::ByteStream;
 
 use chrono::NaiveDate;
 use sqlx::types::Json;

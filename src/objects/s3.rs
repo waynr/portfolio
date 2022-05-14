@@ -72,10 +72,7 @@ pub struct S3 {
 }
 
 impl S3 {
-    pub async fn get_blob(
-        &self,
-        uuid: &Uuid,
-    ) -> Result<StreamBody<ByteStream>> {
+    pub async fn get_blob(&self, uuid: &Uuid) -> Result<StreamBody<ByteStream>> {
         let get_object_output = self
             .client
             .get_object()

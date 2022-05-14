@@ -247,8 +247,7 @@ impl PostgresMetadata {
                         Error::SQLXError(ref source) => match source {
                             sqlx::Error::RowNotFound => {
                                 println!("repository not found!");
-                                self
-                                    .insert_repository(&registry.id, &repository_config.name)
+                                self.insert_repository(&registry.id, &repository_config.name)
                                     .await?
                             }
                             _ => return Err(e),
