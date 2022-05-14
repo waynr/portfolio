@@ -8,10 +8,10 @@ pub struct LogLayer {
 }
 
 impl<S> Layer<S> for LogLayer {
-    type Service = LogService<S>;
+    type Service = Logerator<S>;
 
     fn layer(&self, service: S) -> Self::Service {
-        LogService {
+        Logerator {
             target: self.target,
             service,
         }
@@ -19,15 +19,15 @@ impl<S> Layer<S> for LogLayer {
 }
 
 #[derive(Clone)]
-pub struct LogService<S> {
+pub struct Logerator<S> {
     target: &'static str,
     service: S,
 }
 
-impl<S, Request> Service<Request> for LogService<S>
+impl<S, R> Service<R> for Logerator<S>
 where
-    S: Service<Request>,
-    Request: fmt::Debug,
+    S: Service<R>,
+    R: fmt::Debug,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -37,7 +37,7 @@ where
         self.service.poll_ready(cx)
     }
 
-    fn call(&mut self, request: Request) -> Self::Future {
+    fn call(&mut self, request: R) -> Self::Future {
         // Insert log statement here or other functionality
         println!("request = {:?}, target = {:?}", request, self.target);
         self.service.call(request)
