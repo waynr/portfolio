@@ -253,7 +253,7 @@ async fn uploads_put(
 
             if !metadata.blob_exists(&registry.id, digest).await? {
                 metadata
-                    .insert_blob(&registry.id, digest, Some(&session.uuid))
+                    .insert_blob(&registry.id, digest)
                     .await?;
             }
 
@@ -373,7 +373,7 @@ async fn upload_blob(
     // insert metadata
     metadata
         .clone()
-        .insert_blob(&registry.id, digest, None)
+        .insert_blob(&registry.id, digest)
         .await?;
 
     let location = format!("/v2/{}/blobs/{}", repository.name, digest,);
