@@ -19,6 +19,7 @@ use crate::{
     errors::{Error, Result},
     http::middleware::LogLayer,
     objects::{ChunkInfo, Part},
+    OciDigest,
 };
 
 #[derive(Deserialize)]
@@ -72,11 +73,11 @@ pub struct S3 {
 }
 
 impl S3 {
-    pub async fn get_blob(&self, uuid: &Uuid) -> Result<StreamBody<ByteStream>> {
+    pub async fn get_blob(&self, key: &OciDigest) -> Result<StreamBody<ByteStream>> {
         let get_object_output = self
             .client
             .get_object()
-            .key(uuid.to_string())
+            .key(key)
             .bucket(&self.bucket_name)
             .send()
             .await?;
@@ -84,7 +85,7 @@ impl S3 {
         Ok(StreamBody::new(get_object_output.body))
     }
 
-    pub async fn blob_exists(&self, key: &str) -> Result<bool> {
+    pub async fn blob_exists(&self, key: &OciDigest) -> Result<bool> {
         match self
             .client
             .head_object()
@@ -108,11 +109,11 @@ impl S3 {
         }
     }
 
-    pub async fn upload_blob(&self, uuid: &Uuid, body: Body, content_length: u64) -> Result<()> {
+    pub async fn upload_blob(&self, key: &OciDigest, body: Body, content_length: u64) -> Result<()> {
         let _put_object_output = self
             .client
             .put_object()
-            .key(uuid.to_string())
+            .key(key)
             .body(body.into())
             .content_length(content_length as i64)
             .bucket(&self.bucket_name)
@@ -175,7 +176,7 @@ impl S3 {
         Ok(())
     }
 
-    pub async fn finalize_chunked_upload(&self, uuid: &Uuid, chunk: &ChunkInfo) -> Result<()> {
+    pub async fn finalize_chunked_upload(&self, uuid: &Uuid, chunk: &ChunkInfo, dgst: &OciDigest) -> Result<()> {
         let mut mpu = CompletedMultipartUpload::builder();
         if let Some(parts) = &chunk.parts {
             for part in parts {
@@ -192,6 +193,16 @@ impl S3 {
             .multipart_upload(mpu.build())
             .upload_id(chunk.upload_id.clone())
             .key(uuid.to_string())
+            .bucket(&self.bucket_name)
+            .send()
+            .await?;
+
+        let copy_source = format!("{}/{}", uuid.to_string(), &self.bucket_name);
+        let _copy_object_output = self
+            .client
+            .copy_object()
+            .copy_source(copy_source)
+            .key(dgst)
             .bucket(&self.bucket_name)
             .send()
             .await?;

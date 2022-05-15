@@ -28,6 +28,8 @@ pub enum Error {
     AWSSDKGetObjectError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::GetObjectError>),
     #[error("aws sdk head object error")]
     AWSSDKHeadObjectError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::HeadObjectError>),
+    #[error("aws sdk copy object error")]
+    AWSSDKCopyObjectError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CopyObjectError>),
     #[error("aws sdk create multipart upload error")]
     AWSSDKCreateMultiPartUploadError(
         #[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CreateMultipartUploadError>,

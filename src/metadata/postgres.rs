@@ -94,7 +94,7 @@ WHERE reg.id = $1 AND rep.name = $2
         .await?)
     }
 
-    pub async fn insert_blob(&self, registry_id: &Uuid, digest: &str, id: &Uuid) -> Result<Uuid> {
+    pub async fn insert_blob(&self, registry_id: &Uuid, digest: &str, id: Option<&Uuid>) -> Result<Uuid> {
         let mut conn = self.pool.acquire().await?;
         let record = sqlx::query!(
             r#"

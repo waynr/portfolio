@@ -54,7 +54,8 @@ async fn get_blob(
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
 
     if let Some(blob) = metadata.get_blob(&registry.id, digest).await? {
-        let stream_body: StreamBody<ByteStream> = objects.get_blob(&blob.id).await?;
+        let stream_body: StreamBody<ByteStream> =
+            objects.get_blob(&blob.digest.as_str().try_into()?).await?;
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
@@ -198,9 +199,10 @@ async fn uploads_put(
         Some(s) => metadata.get_repository(&registry.id, s).await?,
         None => return Err(Error::MissingPathParameter("repository")),
     };
-    let digest: &String = query_params
+    let digest: &str = query_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
+    let oci_digest: OciDigest = digest.try_into()?;
     let session_uuid = path_params
         .get("session_uuid")
         .map(|s| Uuid::parse_str(s))
@@ -236,10 +238,10 @@ async fn uploads_put(
             }
 
             objects
-                .finalize_chunked_upload(&session.uuid, &chunk_info)
+                .finalize_chunked_upload(&session.uuid, &chunk_info, &oci_digest)
                 .await?;
             metadata
-                .insert_blob(&registry.id, digest, &session.uuid)
+                .insert_blob(&registry.id, digest, Some(&session.uuid))
                 .await?;
 
             let location = format!("/v2/{}/blobs/{}", repository.name, session.uuid);
@@ -344,12 +346,11 @@ async fn upload_blob(
     let oci_digest: OciDigest = digest.try_into()?;
 
     // upload blob
-    let uuid = Uuid::new_v4();
     let digester = oci_digest.digester();
     let body = StreamObjectBody::from_body(request.into_body(), digester);
     objects
         .clone()
-        .upload_blob(&uuid, body.into(), content_length.0)
+        .upload_blob(&oci_digest, body.into(), content_length.0)
         .await
         .unwrap();
 
@@ -359,7 +360,7 @@ async fn upload_blob(
     // insert metadata
     metadata
         .clone()
-        .insert_blob(&registry.id, digest, &uuid)
+        .insert_blob(&registry.id, digest, None)
         .await?;
 
     let location = format!("/v2/{}/blobs/{}", repository.name, digest,);

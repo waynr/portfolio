@@ -44,7 +44,13 @@ impl TryFrom<&str> for OciDigest {
 
 impl From<OciDigest> for String {
     fn from(d: OciDigest) -> String {
-        format!("{}:{}", String::from(d.algorithm), d.encoded)
+        format!("{}:{}", String::from(&d.algorithm), d.encoded)
+    }
+}
+
+impl From<&OciDigest> for String {
+    fn from(d: &OciDigest) -> String {
+        format!("{}:{}", String::from(&d.algorithm), d.encoded)
     }
 }
 
@@ -64,8 +70,8 @@ enum RegisteredImageSpecAlgorithm {
     Sha512,
 }
 
-impl From<RegisteredImageSpecAlgorithm> for String {
-    fn from(a: RegisteredImageSpecAlgorithm) -> String {
+impl From<&RegisteredImageSpecAlgorithm> for String {
+    fn from(a: &RegisteredImageSpecAlgorithm) -> String {
         match a {
             RegisteredImageSpecAlgorithm::Sha512 => String::from("sha512"),
             RegisteredImageSpecAlgorithm::Sha256 => String::from("sha256"),
