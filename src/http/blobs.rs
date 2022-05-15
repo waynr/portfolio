@@ -71,7 +71,6 @@ async fn get_blob(
 
 async fn head_blob(
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<S3>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let registry = metadata.get_registry("meow").await?;
