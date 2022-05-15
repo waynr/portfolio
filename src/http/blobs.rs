@@ -236,12 +236,26 @@ async fn uploads_put(
                 .await?;
             }
 
-            objects
-                .finalize_chunked_upload(&session.uuid, &chunk_info, &oci_digest)
-                .await?;
-            metadata
-                .insert_blob(&registry.id, digest, Some(&session.uuid))
-                .await?;
+            // TODO: what if there is a body but none of the content headers are set? technically
+            // this would be a client bug, but it could also result in data corruption and as such
+            // should probably be handled here. this should probably result in a 400 bad request
+            // error if we can detect it
+
+            if !objects.blob_exists(&oci_digest).await? {
+                objects
+                    .finalize_chunked_upload(&session.uuid, &chunk_info, &oci_digest)
+                    .await?;
+            } else {
+                objects
+                    .abort_chunked_upload(&session.uuid, &chunk_info)
+                    .await?;
+            }
+
+            if !metadata.blob_exists(&registry.id, digest).await? {
+                metadata
+                    .insert_blob(&registry.id, digest, Some(&session.uuid))
+                    .await?;
+            }
 
             let location = format!("/v2/{}/blobs/{}", repository.name, session.uuid);
             let mut headers = HeaderMap::new();
@@ -280,7 +294,7 @@ async fn uploads_patch(
     Path(path_params): Path<HashMap<String, String>>,
     TypedHeader(content_length): TypedHeader<ContentLength>,
     TypedHeader(content_range): TypedHeader<ContentRange>,
-    TypedHeader(content_type): TypedHeader<ContentType>,
+    TypedHeader(_content_type): TypedHeader<ContentType>,
     request: Request<Body>,
 ) -> Result<Response> {
     let registry = metadata.get_registry("meow").await?;

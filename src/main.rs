@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use portfolio::http;
 use portfolio::{Config, MetadataBackend, ObjectsBackend};
-use portfolio::{Error, Result};
+use portfolio::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {

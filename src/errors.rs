@@ -19,7 +19,6 @@ pub enum Error {
     #[error("http invalid header error")]
     HTTPInvalidHeaderName(#[from] http::header::InvalidHeaderName),
 
-
     #[error("aws sdk credentials error")]
     AWSSDKCredentialsError(#[from] aws_types::credentials::CredentialsError),
     #[error("aws sdk put object error")]
@@ -39,6 +38,10 @@ pub enum Error {
     #[error("aws sdk complete multipart upload error")]
     AWSSDKCompleteMultipartUploadError(
         #[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CompleteMultipartUploadError>,
+    ),
+    #[error("aws sdk abort multipart upload error")]
+    AWSSDKAbortMultipartUploadError(
+        #[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::AbortMultipartUploadError>,
     ),
 
     #[error("failed to initiate chunked upload: {0}")]

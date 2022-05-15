@@ -208,4 +208,22 @@ impl S3 {
             .await?;
         Ok(())
     }
+
+    pub async fn abort_chunked_upload(&self, uuid: &Uuid, chunk: &ChunkInfo) -> Result<()> {
+        let _complete_multipart_upload_output = self
+            .client
+            .abort_multipart_upload()
+            .upload_id(chunk.upload_id.clone())
+            .key(uuid.to_string())
+            .bucket(&self.bucket_name)
+            .send()
+            .await?;
+
+        // TODO: list parts to identify any lingering parts that may have been uploading during the
+        // abort? the SDK docs suggest doing this, but i don't think it should be possible for a
+        // given session's parts to still be uploading when we reach this abort so it should be
+        // fine to leave it for now.
+
+        Ok(())
+    }
 }
