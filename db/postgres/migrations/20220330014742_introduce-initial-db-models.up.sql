@@ -58,8 +58,8 @@ CREATE TABLE upload_sessions (
 	uuid UUID PRIMARY key DEFAULT gen_random_uuid(),
 	start_date DATE NOT NULL DEFAULT now(),
 	upload_id VARCHAR(256),
-	chunk_number INT4 NOT NULL,
-	last_range_end INT64 NOT NULL,
+	chunk_number INT4 NOT NULL DEFAULT 1,
+	last_range_end INT64 NOT NULL DEFAULT 0,
 	digest_state JSONB
 );
 

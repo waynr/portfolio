@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::{
     http::notimplemented,
     metadata::{PostgresMetadata, Registry, Repository},
-    objects::{UploadSession, StreamObjectBody, S3},
+    objects::{StreamObjectBody, UploadSession, S3},
     DistributionErrorCode, Error, OciDigest, Result,
 };
 
@@ -239,15 +239,11 @@ async fn uploads_put(
                     .finalize_chunked_upload(&session, chunks, &oci_digest)
                     .await?;
             } else {
-                objects
-                    .abort_chunked_upload(&session)
-                    .await?;
+                objects.abort_chunked_upload(&session).await?;
             }
 
             if !metadata.blob_exists(&registry.id, digest).await? {
-                metadata
-                    .insert_blob(&registry.id, digest)
-                    .await?;
+                metadata.insert_blob(&registry.id, digest).await?;
             }
 
             let location = format!("/v2/{}/blobs/{}", repository.name, session.uuid);
@@ -360,10 +356,9 @@ async fn upload_blob(
     // TODO: validate content length
 
     // insert metadata
-    metadata
-        .clone()
-        .insert_blob(&registry.id, digest)
-        .await?;
+    if !metadata.blob_exists(&registry.id, digest).await? {
+        metadata.clone().insert_blob(&registry.id, digest).await?;
+    }
 
     let location = format!("/v2/{}/blobs/{}", repository.name, digest,);
     let mut headers = HeaderMap::new();
@@ -392,11 +387,7 @@ async fn upload_chunk(
 
     let chunk = objects
         .clone()
-        .upload_chunk(
-            session,
-            content_length.0,
-            request.into_body(),
-        )
+        .upload_chunk(session, content_length.0, request.into_body())
         .await?;
 
     session.last_range_end = range_end;
