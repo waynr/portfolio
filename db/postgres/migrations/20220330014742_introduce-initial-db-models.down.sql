@@ -5,4 +5,5 @@ DROP TABLE manifests;
 DROP TABLE blobs;
 DROP TABLE repositories;
 DROP TABLE registries;
+DROP TABLE chunks;
 DROP TABLE upload_sessions;

@@ -46,6 +46,8 @@ pub enum Error {
 
     #[error("failed to initiate chunked upload: {0}")]
     ObjectsFailedToInitiateChunkedUpload(&'static str),
+    #[error("missing upload id for session: {0}")]
+    ObjectsMissingUploadID(uuid::Uuid),
 
     #[error("error serializing to value")]
     SerdeJsonToValueError(#[from] serde_json::Error),

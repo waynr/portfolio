@@ -57,6 +57,16 @@ CREATE TABLE tags (
 CREATE TABLE upload_sessions (
 	uuid UUID PRIMARY key DEFAULT gen_random_uuid(),
 	start_date DATE NOT NULL DEFAULT now(),
-	digest_state JSONB,
-	chunk_info JSONB
+	upload_id VARCHAR(256),
+	chunk_number INT4 NOT NULL,
+	last_range_end INT64 NOT NULL,
+	digest_state JSONB
+);
+
+-- chunk data by upload session
+CREATE TABLE chunks (
+	chunk_number INT4 NOT NULL,
+	upload_session_uuid UUID NOT NULL REFERENCES upload_sessions(uuid),
+	e_tag VARCHAR(128),
+	UNIQUE (chunk_number, upload_session_uuid)
 );

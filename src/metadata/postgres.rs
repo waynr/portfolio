@@ -5,9 +5,8 @@ use sqlx::Pool;
 use uuid::Uuid;
 
 use crate::errors::{Error, Result};
-use crate::http::blobs::UploadSession;
 use crate::metadata::{Blob, Registry, Repository};
-use crate::objects::ChunkInfo;
+use crate::objects::{Chunk, UploadSession};
 use crate::{DigestState, RegistryDefinition};
 
 #[derive(Deserialize)]
@@ -141,7 +140,8 @@ SELECT exists(
             digest,
         )
         .fetch_one(&mut conn)
-        .await?.exists)
+        .await?
+        .exists)
     }
 
     pub async fn new_upload_session(&self) -> Result<UploadSession> {
@@ -152,7 +152,7 @@ SELECT exists(
             r#"
 INSERT INTO upload_sessions ( digest_state )
 VALUES ( $1 )
-RETURNING uuid, start_date, digest_state as "digest_state: Json<DigestState>", chunk_info as "chunk_info: Json<ChunkInfo>"
+RETURNING uuid, start_date, upload_id, chunk_number, last_range_end, digest_state as "digest_state: Json<DigestState>"
             "#,
             serde_json::to_value(state)?,
         )
@@ -167,7 +167,7 @@ RETURNING uuid, start_date, digest_state as "digest_state: Json<DigestState>", c
         let session = sqlx::query_as!(
             UploadSession,
             r#"
-SELECT uuid, start_date, digest_state as "digest_state: Json<DigestState>", chunk_info as "chunk_info: Json<ChunkInfo>"
+SELECT uuid, start_date, chunk_number, last_range_end, upload_id, digest_state as "digest_state: Json<DigestState>"
 FROM upload_sessions
 WHERE uuid = $1
             "#,
@@ -185,11 +185,10 @@ WHERE uuid = $1
             UploadSession,
             r#"
 UPDATE upload_sessions
-SET digest_state = $1, chunk_info = $2
-WHERE uuid = $3
+SET digest_state = $1
+WHERE uuid = $2
             "#,
             serde_json::to_value(session.digest_state.as_ref())?,
-            serde_json::to_value(session.chunk_info.as_ref())?,
             session.uuid,
         )
         .execute(&mut conn)
@@ -198,18 +197,63 @@ WHERE uuid = $3
         Ok(())
     }
 
-    pub async fn delete_session(&self, uuid: Uuid) -> Result<()> {
+    pub async fn delete_session(&self, session: &UploadSession) -> Result<()> {
         let mut conn = self.pool.acquire().await?;
+        // delete chunks
+        sqlx::query!(
+            r#"
+DELETE
+FROM chunks
+WHERE upload_session_uuid = $1
+            "#,
+            session.uuid,
+        )
+        .execute(&mut conn)
+        .await?;
+
+        // delete session
         sqlx::query!(
             r#"
 DELETE
 FROM upload_sessions
 WHERE uuid = $1
             "#,
-            uuid,
+            session.uuid,
         )
         .execute(&mut conn)
         .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_chunks(&self, session: &UploadSession) -> Result<Vec<Chunk>> {
+        let mut conn = self.pool.acquire().await?;
+        Ok(sqlx::query_as!(
+            Chunk,
+            r#"
+SELECT e_tag, chunk_number
+FROM chunks
+WHERE upload_session_uuid = $1
+            "#,
+            session.uuid,
+            )
+            .fetch_all(&mut conn)
+            .await?)
+    }
+
+    pub async fn insert_chunk(&self, session: &UploadSession, chunk: &Chunk) -> Result<()> {
+        let mut conn = self.pool.acquire().await?;
+        sqlx::query!(
+            r#"
+INSERT INTO chunks (chunk_number, upload_session_uuid, e_tag)
+VALUES ( $1, $2, $3 )
+            "#,
+            chunk.chunk_number,
+            session.uuid,
+            chunk.e_tag,
+            )
+            .execute(&mut conn)
+            .await?;
 
         Ok(())
     }

@@ -7,6 +7,6 @@ mod s3;
 pub use s3::S3Config;
 pub use s3::S3;
 
-mod chunks;
-pub use chunks::ChunkInfo;
-pub use chunks::Part;
+mod session;
+pub use session::UploadSession;
+pub use session::Chunk;

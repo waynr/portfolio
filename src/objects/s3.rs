@@ -11,14 +11,12 @@ use axum::body::StreamBody;
 use http::Uri;
 use hyper::body::Body;
 
-use uuid::Uuid;
-
 use tower::layer::util::Stack;
 
 use crate::{
     errors::{Error, Result},
     http::middleware::LogLayer,
-    objects::{ChunkInfo, Part},
+    objects::{Chunk, UploadSession},
     OciDigest,
 };
 
@@ -109,7 +107,12 @@ impl S3 {
         }
     }
 
-    pub async fn upload_blob(&self, key: &OciDigest, body: Body, content_length: u64) -> Result<()> {
+    pub async fn upload_blob(
+        &self,
+        key: &OciDigest,
+        body: Body,
+        content_length: u64,
+    ) -> Result<()> {
         let _put_object_output = self
             .client
             .put_object()
@@ -122,82 +125,91 @@ impl S3 {
         Ok(())
     }
 
-    pub async fn initiate_chunked_upload(&self, session_uuid: &Uuid) -> Result<ChunkInfo> {
+    pub async fn initiate_chunked_upload(&self, session: &mut UploadSession) -> Result<()> {
         let create_multipart_upload_output = self
             .client
             .create_multipart_upload()
-            .key(session_uuid.to_string())
+            .key(session.uuid.to_string())
             .bucket(&self.bucket_name)
             .send()
             .await?;
 
-        let mut chunk_info = ChunkInfo::default();
         if let Some(upload_id) = create_multipart_upload_output.upload_id {
-            chunk_info.upload_id = upload_id;
-            chunk_info.part_number += 1;
+            session.upload_id = Some(upload_id);
+            session.chunk_number += 1;
         } else {
             return Err(Error::ObjectsFailedToInitiateChunkedUpload(
                 "missing upload id",
             ));
         }
 
-        Ok(chunk_info)
+        Ok(())
     }
 
     pub async fn upload_chunk(
         &self,
-        session_uuid: &Uuid,
-        chunk: &mut ChunkInfo,
+        session: &mut UploadSession,
         content_length: u64,
         body: Body,
-    ) -> Result<()> {
+    ) -> Result<Chunk> {
+        // this state shouldn't be reachable, but if it is then consider it an error so we can
+        // learn about it at runtime (rather than simply ignoring it)
+        let upload_id = session
+            .upload_id
+            .clone()
+            .ok_or_else(|| Error::ObjectsMissingUploadID(session.uuid))?;
         let upload_part_output = self
             .client
             .upload_part()
-            .upload_id(chunk.upload_id.clone())
-            .part_number(chunk.part_number)
-            .key(session_uuid.to_string())
+            .upload_id(upload_id)
+            .part_number(session.chunk_number)
+            .key(session.uuid.to_string())
             .body(body.into())
             .content_length(content_length as i64)
             .bucket(&self.bucket_name)
             .send()
             .await?;
 
-        let new_part = Part {
+        session.chunk_number += 1;
+
+        Ok(Chunk {
             e_tag: upload_part_output.e_tag,
-            part_number: chunk.part_number,
-        };
-        if let Some(parts) = &mut chunk.parts {
-            parts.push(new_part);
-        } else {
-            chunk.parts = Some(Vec::from([new_part]));
-        }
-        chunk.part_number += 1;
-        Ok(())
+            chunk_number: session.chunk_number,
+        })
     }
 
-    pub async fn finalize_chunked_upload(&self, uuid: &Uuid, chunk: &ChunkInfo, dgst: &OciDigest) -> Result<()> {
+    pub async fn finalize_chunked_upload(
+        &self,
+        session: &UploadSession,
+        chunks: Vec<Chunk>,
+        dgst: &OciDigest,
+    ) -> Result<()> {
+        // this state shouldn't be reachable, but if it is then consider it an error so we can
+        // learn about it at runtime (rather than simply ignoring it)
+        let upload_id = session
+            .upload_id
+            .clone()
+            .ok_or_else(|| Error::ObjectsMissingUploadID(session.uuid))?;
+
         let mut mpu = CompletedMultipartUpload::builder();
-        if let Some(parts) = &chunk.parts {
-            for part in parts {
-                let mut pb = CompletedPart::builder();
-                if let Some(e_tag) = &part.e_tag {
-                    pb = pb.e_tag(e_tag);
-                }
-                mpu = mpu.parts(pb.part_number(part.part_number).build());
+        for chunk in chunks {
+            let mut pb = CompletedPart::builder();
+            if let Some(e_tag) = &chunk.e_tag {
+                pb = pb.e_tag(e_tag);
             }
+            mpu = mpu.parts(pb.part_number(chunk.chunk_number).build());
         }
         let _complete_multipart_upload_output = self
             .client
             .complete_multipart_upload()
             .multipart_upload(mpu.build())
-            .upload_id(chunk.upload_id.clone())
-            .key(uuid.to_string())
+            .upload_id(upload_id)
+            .key(session.uuid.to_string())
             .bucket(&self.bucket_name)
             .send()
             .await?;
 
-        let copy_source = format!("{}/{}", uuid.to_string(), &self.bucket_name);
+        let copy_source = format!("{}/{}", session.uuid, &self.bucket_name);
         let _copy_object_output = self
             .client
             .copy_object()
@@ -209,16 +221,19 @@ impl S3 {
         Ok(())
     }
 
-    pub async fn abort_chunked_upload(&self, uuid: &Uuid, chunk: &ChunkInfo) -> Result<()> {
+    pub async fn abort_chunked_upload(&self, session: &UploadSession) -> Result<()> {
+        let upload_id = session
+            .upload_id
+            .clone()
+            .ok_or_else(|| Error::ObjectsMissingUploadID(session.uuid))?;
         let _complete_multipart_upload_output = self
             .client
             .abort_multipart_upload()
-            .upload_id(chunk.upload_id.clone())
-            .key(uuid.to_string())
+            .upload_id(upload_id)
+            .key(session.uuid.to_string())
             .bucket(&self.bucket_name)
             .send()
             .await?;
-
         // TODO: list parts to identify any lingering parts that may have been uploading during the
         // abort? the SDK docs suggest doing this, but i don't think it should be possible for a
         // given session's parts to still be uploading when we reach this abort so it should be

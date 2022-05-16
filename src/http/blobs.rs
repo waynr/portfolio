@@ -15,15 +15,13 @@ use axum::{
 };
 use hyper::body::Body;
 
-use chrono::NaiveDate;
-use sqlx::types::Json;
 use uuid::Uuid;
 
 use crate::{
     http::notimplemented,
     metadata::{PostgresMetadata, Registry, Repository},
-    objects::{ChunkInfo, StreamObjectBody, S3},
-    DigestState, DistributionErrorCode, Error, OciDigest, Result,
+    objects::{UploadSession, StreamObjectBody, S3},
+    DistributionErrorCode, Error, OciDigest, Result,
 };
 
 pub fn router() -> Router {
@@ -94,13 +92,6 @@ async fn head_blob(
             DistributionErrorCode::BlobUnknown,
         ))
     }
-}
-
-pub struct UploadSession {
-    pub uuid: Uuid,
-    pub start_date: NaiveDate,
-    pub digest_state: Option<Json<DigestState>>,
-    pub chunk_info: Option<Json<ChunkInfo>>,
 }
 
 // /v2/<repo>/blobs/upload
@@ -209,29 +200,30 @@ async fn uploads_put(
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
 
     // retrieve the session or fail if it doesn't exist
-    let session = metadata
+    let mut session = metadata
         .get_session(session_uuid)
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
     // determine if this is a monolithic POST-PUT or the final request in a chunked POST-PATCH-PUT
     // sequence
-    let response = match session.chunk_info {
+    let response = match session.upload_id {
         // POST-PATCH-PUT
-        Some(mut chunk_info) => {
+        Some(_) => {
             if let (
                 Some(TypedHeader(content_range)),
-                Some(TypedHeader(content_type)),
+                // TODO: what should we do with ContentType?
+                Some(TypedHeader(_content_type)),
                 Some(TypedHeader(content_length)),
             ) = (content_range, content_type, content_length)
             {
                 upload_chunk(
-                    &session.uuid,
-                    &mut chunk_info,
+                    &mut session,
                     content_length,
                     content_range,
                     request,
                     objects.clone(),
+                    metadata.clone(),
                 )
                 .await?;
             }
@@ -242,12 +234,13 @@ async fn uploads_put(
             // error if we can detect it
 
             if !objects.blob_exists(&oci_digest).await? {
+                let chunks = metadata.get_chunks(&session).await?;
                 objects
-                    .finalize_chunked_upload(&session.uuid, &chunk_info, &oci_digest)
+                    .finalize_chunked_upload(&session, chunks, &oci_digest)
                     .await?;
             } else {
                 objects
-                    .abort_chunked_upload(&session.uuid, &chunk_info)
+                    .abort_chunked_upload(&session)
                     .await?;
             }
 
@@ -277,7 +270,7 @@ async fn uploads_put(
         }
     };
 
-    match metadata.delete_session(session_uuid).await {
+    match metadata.delete_session(&session).await {
         Ok(_) => (),
         Err(e) => {
             // TODO: this should use a logging library
@@ -314,32 +307,28 @@ async fn uploads_patch(
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
-    let mut chunk_info = match session.chunk_info {
-        Some(Json(info)) => info,
+    match session.upload_id {
+        Some(_) => (),
         None => {
             objects
                 .clone()
-                .initiate_chunked_upload(&session.uuid)
+                .initiate_chunked_upload(&mut session)
                 .await?
         }
     };
 
     upload_chunk(
-        &session.uuid,
-        &mut chunk_info,
+        &mut session,
         content_length,
         content_range,
         request,
         objects.clone(),
+        metadata.clone(),
     )
     .await?;
 
-    session.chunk_info = Some(Json(chunk_info));
-
     // TODO: validate content length of chunk
     // TODO: update incremental digest state on session
-
-    metadata.update_session(&session).await?;
 
     let location = format!("/v2/{}/blobs/uploads/{}", repository.name, session.uuid);
     let mut headers = HeaderMap::new();
@@ -383,35 +372,37 @@ async fn upload_blob(
 }
 
 async fn upload_chunk(
-    session_uuid: &Uuid,
-    chunk_info: &mut ChunkInfo,
+    session: &mut UploadSession,
     content_length: ContentLength,
     content_range: ContentRange,
     request: Request<Body>,
     objects: Arc<S3>,
+    metadata: Arc<PostgresMetadata>,
 ) -> Result<()> {
-    let mut range_end: u64 = 0;
+    let mut range_end: i64 = 0;
     // verify the request's ContentRange against the last chunk's end of range
-    if let Some(range) = content_range.bytes_range() {
-        if range.0 != chunk_info.last_range_end {
+    if let Some((begin, end)) = content_range.bytes_range() {
+        if begin as i64 != session.last_range_end {
             return Err(Error::DistributionSpecError(
                 DistributionErrorCode::BlobUploadInvalid,
             ));
         }
-        range_end = range.1;
+        range_end = end as i64;
     }
 
-    objects
+    let chunk = objects
         .clone()
         .upload_chunk(
-            session_uuid,
-            chunk_info,
+            session,
             content_length.0,
             request.into_body(),
         )
         .await?;
 
-    chunk_info.last_range_end = range_end;
+    session.last_range_end = range_end;
+
+    metadata.insert_chunk(&session, &chunk).await?;
+    metadata.update_session(&session).await?;
 
     // TODO: validate content length of chunk
     // TODO: update incremental digest state on session
