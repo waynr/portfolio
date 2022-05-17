@@ -185,11 +185,14 @@ WHERE uuid = $1
             UploadSession,
             r#"
 UPDATE upload_sessions
-SET digest_state = $1
-WHERE uuid = $2
+SET upload_id = $2, chunk_number = $3, last_range_end = $4, digest_state = $5
+WHERE uuid = $1
             "#,
-            serde_json::to_value(session.digest_state.as_ref())?,
             session.uuid,
+            session.upload_id,
+            session.chunk_number,
+            session.last_range_end,
+            serde_json::to_value(session.digest_state.as_ref())?,
         )
         .execute(&mut conn)
         .await?;
@@ -234,6 +237,7 @@ WHERE uuid = $1
 SELECT e_tag, chunk_number
 FROM chunks
 WHERE upload_session_uuid = $1
+ORDER BY chunk_number
             "#,
             session.uuid,
             )

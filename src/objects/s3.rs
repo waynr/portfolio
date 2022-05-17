@@ -136,7 +136,6 @@ impl S3 {
 
         if let Some(upload_id) = create_multipart_upload_output.upload_id {
             session.upload_id = Some(upload_id);
-            session.chunk_number += 1;
         } else {
             return Err(Error::ObjectsFailedToInitiateChunkedUpload(
                 "missing upload id",
@@ -170,12 +169,13 @@ impl S3 {
             .send()
             .await?;
 
-        session.chunk_number += 1;
-
-        Ok(Chunk {
+        let chunk = Chunk {
             e_tag: upload_part_output.e_tag,
             chunk_number: session.chunk_number,
-        })
+        };
+        session.chunk_number += 1;
+
+        Ok(chunk)
     }
 
     pub async fn finalize_chunked_upload(
@@ -209,12 +209,20 @@ impl S3 {
             .send()
             .await?;
 
-        let copy_source = format!("{}/{}", session.uuid, &self.bucket_name);
+        let copy_source = format!("{}/{}", &self.bucket_name, session.uuid);
         let _copy_object_output = self
             .client
             .copy_object()
             .copy_source(copy_source)
             .key(dgst)
+            .bucket(&self.bucket_name)
+            .send()
+            .await?;
+
+        let _delete_object_output = self
+            .client
+            .delete_object()
+            .key(session.uuid.to_string())
             .bucket(&self.bucket_name)
             .send()
             .await?;

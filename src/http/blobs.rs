@@ -245,24 +245,35 @@ async fn uploads_put(
             if !metadata.blob_exists(&registry.id, digest).await? {
                 metadata.insert_blob(&registry.id, digest).await?;
             }
-
-            let location = format!("/v2/{}/blobs/{}", repository.name, session.uuid);
+            let location = format!("/v2/{}/blobs/{}", repository.name, digest);
             let mut headers = HeaderMap::new();
             headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
             (StatusCode::CREATED, headers, "").into_response()
         }
         // POST-PUT
         None => {
-            upload_blob(
-                &registry,
-                &repository,
-                digest,
-                *content_length.ok_or_else(|| Error::MissingHeader("ContentLength"))?,
-                request,
-                metadata.clone(),
-                objects,
-            )
-            .await?
+            match (content_type, content_length) {
+                (Some(TypedHeader(_content_type)), Some(TypedHeader(content_length))) => {
+                    let response = upload_blob(
+                        &registry,
+                        &repository,
+                        digest,
+                        content_length,
+                        request,
+                        metadata.clone(),
+                        objects.clone(),
+                    )
+                    .await?;
+
+                    if !metadata.blob_exists(&registry.id, digest).await? {
+                        metadata.insert_blob(&registry.id, digest).await?;
+                    }
+                    response
+                }
+                _ => {
+                    return Err(Error::DistributionSpecError(DistributionErrorCode::SizeInvalid))
+                }
+            }
         }
     };
 
