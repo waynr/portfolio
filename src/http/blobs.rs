@@ -20,7 +20,8 @@ use uuid::Uuid;
 use crate::{
     http::notimplemented,
     metadata::{PostgresMetadata, Registry, Repository},
-    objects::{StreamObjectBody, UploadSession, S3},
+    objects::{StreamObjectBody, S3},
+    registry::UploadSession,
     DistributionErrorCode, Error, OciDigest, Result,
 };
 

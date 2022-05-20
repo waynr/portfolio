@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::errors::{Error, Result};
 use crate::metadata::{Blob, Registry, Repository};
-use crate::objects::{Chunk, UploadSession};
+use crate::registry::{Chunk, UploadSession};
 use crate::{DigestState, RegistryDefinition};
 
 #[derive(Deserialize)]

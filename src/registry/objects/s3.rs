@@ -16,7 +16,7 @@ use tower::layer::util::Stack;
 use crate::{
     errors::{Error, Result},
     http::middleware::LogLayer,
-    objects::{Chunk, UploadSession},
+    registry::{Chunk, UploadSession},
     OciDigest,
 };
 
