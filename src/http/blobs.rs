@@ -388,7 +388,7 @@ async fn upload_chunk(
     let mut range_end: i64 = 0;
     // verify the request's ContentRange against the last chunk's end of range
     if let Some((begin, end)) = content_range.bytes_range() {
-        if begin as i64 != session.last_range_end {
+        if begin != 0 && begin as i64 != session.last_range_end + 1 {
             return Err(Error::DistributionSpecError(
                 DistributionErrorCode::BlobUploadInvalid,
             ));
