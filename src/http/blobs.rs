@@ -21,6 +21,7 @@ use crate::{
     http::notimplemented,
     metadata::{PostgresMetadata, Registry, Repository},
     objects::{StreamObjectBody, S3},
+    registry::BlobStore,
     registry::UploadSession,
     DistributionErrorCode, Error, OciDigest, Result,
 };
@@ -252,30 +253,30 @@ async fn uploads_put(
             (StatusCode::CREATED, headers, "").into_response()
         }
         // POST-PUT
-        None => {
-            match (content_type, content_length) {
-                (Some(TypedHeader(_content_type)), Some(TypedHeader(content_length))) => {
-                    let response = upload_blob(
-                        &registry,
-                        &repository,
-                        digest,
-                        content_length,
-                        request,
-                        metadata.clone(),
-                        objects.clone(),
-                    )
-                    .await?;
+        None => match (content_type, content_length) {
+            (Some(TypedHeader(_content_type)), Some(TypedHeader(content_length))) => {
+                let response = upload_blob(
+                    &registry,
+                    &repository,
+                    digest,
+                    content_length,
+                    request,
+                    metadata.clone(),
+                    objects.clone(),
+                )
+                .await?;
 
-                    if !metadata.blob_exists(&registry.id, digest).await? {
-                        metadata.insert_blob(&registry.id, digest).await?;
-                    }
-                    response
+                if !metadata.blob_exists(&registry.id, digest).await? {
+                    metadata.insert_blob(&registry.id, digest).await?;
                 }
-                _ => {
-                    return Err(Error::DistributionSpecError(DistributionErrorCode::SizeInvalid))
-                }
+                response
             }
-        }
+            _ => {
+                return Err(Error::DistributionSpecError(
+                    DistributionErrorCode::SizeInvalid,
+                ))
+            }
+        },
     };
 
     match metadata.delete_session(&session).await {
@@ -303,6 +304,7 @@ async fn uploads_patch(
         Some(s) => metadata.get_repository(&registry.id, s).await?,
         None => return Err(Error::MissingPathParameter("repository")),
     };
+
     let session_uuid = path_params
         .get("session_uuid")
         .map(|s| Uuid::parse_str(s))
@@ -315,30 +317,17 @@ async fn uploads_patch(
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
-    match session.upload_id {
-        Some(_) => (),
-        None => {
-            objects
-                .clone()
-                .initiate_chunked_upload(&mut session)
-                .await?
-        }
-    };
+    // verify the request's ContentRange against the last chunk's end of range
+    session.validate_range(content_range.bytes_range())?;
 
-    upload_chunk(
-        &mut session,
-        content_length,
-        content_range,
-        request,
-        objects.clone(),
-        metadata.clone(),
-    )
-    .await?;
+    let store = BlobStore::new(metadata.clone(), objects.clone());
+    let mut writer = store.resume(session).await?;
+    let _written = writer.write(content_length.0, request.into_body());
 
     // TODO: validate content length of chunk
     // TODO: update incremental digest state on session
 
-    let location = format!("/v2/{}/blobs/uploads/{}", repository.name, session.uuid);
+    let location = format!("/v2/{}/blobs/uploads/{}", repository.name, session_uuid);
     let mut headers = HeaderMap::new();
     headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
@@ -386,23 +375,12 @@ async fn upload_chunk(
     objects: Arc<S3>,
     metadata: Arc<PostgresMetadata>,
 ) -> Result<()> {
-    let mut range_end: i64 = 0;
-    // verify the request's ContentRange against the last chunk's end of range
-    if let Some((begin, end)) = content_range.bytes_range() {
-        if begin != 0 && begin as i64 != session.last_range_end + 1 {
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::BlobUploadInvalid,
-            ));
-        }
-        range_end = end as i64;
-    }
+    session.validate_range(content_range.bytes_range())?;
 
     let chunk = objects
         .clone()
         .upload_chunk(session, content_length.0, request.into_body())
         .await?;
-
-    session.last_range_end = range_end;
 
     metadata.insert_chunk(&session, &chunk).await?;
     metadata.update_session(&session).await?;
