@@ -4,6 +4,7 @@ use sqlx::types::Json;
 use sqlx::Pool;
 use uuid::Uuid;
 
+use crate::OciDigest;
 use crate::errors::{Error, Result};
 use crate::metadata::{Blob, Registry, Repository};
 use crate::registry::{Chunk, UploadSession};
@@ -93,7 +94,7 @@ WHERE reg.id = $1 AND rep.name = $2
         .await?)
     }
 
-    pub async fn insert_blob(&self, registry_id: &Uuid, digest: &str) -> Result<Uuid> {
+    pub async fn insert_blob(&self, registry_id: &Uuid, digest: &OciDigest) -> Result<Uuid> {
         let mut conn = self.pool.acquire().await?;
         let record = sqlx::query!(
             r#"
@@ -101,7 +102,7 @@ INSERT INTO blobs ( digest, registry_id )
 VALUES ( $1, $2 )
 RETURNING id
             "#,
-            digest,
+            String::from(digest),
             registry_id,
         )
         .fetch_one(&mut conn)
@@ -110,7 +111,7 @@ RETURNING id
         Ok(record.id)
     }
 
-    pub async fn get_blob(&self, registry_id: &Uuid, digest: &str) -> Result<Option<Blob>> {
+    pub async fn get_blob(&self, registry_id: &Uuid, digest: &OciDigest) -> Result<Option<Blob>> {
         let mut conn = self.pool.acquire().await?;
         Ok(sqlx::query_as!(
             Blob,
@@ -120,13 +121,13 @@ FROM blobs
 WHERE registry_id = $1 AND digest = $2
             "#,
             registry_id,
-            digest,
+            String::from(digest),
         )
         .fetch_optional(&mut conn)
         .await?)
     }
 
-    pub async fn blob_exists(&self, registry_id: &Uuid, digest: &str) -> Result<bool> {
+    pub async fn blob_exists(&self, registry_id: &Uuid, digest: &OciDigest) -> Result<bool> {
         let mut conn = self.pool.acquire().await?;
         Ok(sqlx::query!(
             r#"
@@ -137,7 +138,7 @@ SELECT exists(
 ) as "exists!"
             "#,
             registry_id,
-            digest,
+            String::from(digest),
         )
         .fetch_one(&mut conn)
         .await?

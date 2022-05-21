@@ -49,11 +49,12 @@ async fn get_blob(
         Some(s) => metadata.get_repository(&registry.id, s).await?,
         None => return Err(Error::MissingPathParameter("repository")),
     };
-    let digest: &String = path_params
+    let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
+    let oci_digest: OciDigest = digest.try_into()?;
 
-    if let Some(blob) = metadata.get_blob(&registry.id, digest).await? {
+    if let Some(blob) = metadata.get_blob(&registry.id, &oci_digest).await? {
         let stream_body: StreamBody<ByteStream> =
             objects.get_blob(&blob.digest.as_str().try_into()?).await?;
         let mut headers = HeaderMap::new();
@@ -78,11 +79,12 @@ async fn head_blob(
         Some(s) => metadata.get_repository(&registry.id, s).await?,
         None => return Err(Error::MissingPathParameter("repository")),
     };
-    let digest: &String = path_params
+    let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
+    let oci_digest: OciDigest = digest.try_into()?;
 
-    if metadata.blob_exists(&registry.id, digest).await? {
+    if metadata.blob_exists(&registry.id, &oci_digest).await? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
@@ -212,41 +214,30 @@ async fn uploads_put(
     let response = match session.upload_id {
         // POST-PATCH-PUT
         Some(_) => {
+            let store = BlobStore::new(metadata.clone(), objects.clone(), &registry);
             if let (
+                // TODO: what if there is a body but none of the content headers are set? technically
+                // this would be a client bug, but it could also result in data corruption and as such
+                // should probably be handled here. this should probably result in a 400 bad request
+                // error if we can detect it
                 Some(TypedHeader(content_range)),
                 // TODO: what should we do with ContentType?
                 Some(TypedHeader(_content_type)),
                 Some(TypedHeader(content_length)),
             ) = (content_range, content_type, content_length)
             {
-                upload_chunk(
-                    &mut session,
-                    content_length,
-                    content_range,
-                    request,
-                    objects.clone(),
-                    metadata.clone(),
-                )
-                .await?;
-            }
+                session.validate_range(content_range.bytes_range())?;
 
-            // TODO: what if there is a body but none of the content headers are set? technically
-            // this would be a client bug, but it could also result in data corruption and as such
-            // should probably be handled here. this should probably result in a 400 bad request
-            // error if we can detect it
+                let mut writer = store.resume(&mut session).await?;
+                let _written = writer.write(content_length.0, request.into_body());
 
-            if !objects.blob_exists(&oci_digest).await? {
-                let chunks = metadata.get_chunks(&session).await?;
-                objects
-                    .finalize_chunked_upload(&session, chunks, &oci_digest)
-                    .await?;
+                // TODO: validate content length of chunk
+                // TODO: update incremental digest state on session
             } else {
-                objects.abort_chunked_upload(&session).await?;
+                let mut writer = store.resume(&mut session).await?;
+                writer.finalize(&oci_digest).await?;
             }
 
-            if !metadata.blob_exists(&registry.id, digest).await? {
-                metadata.insert_blob(&registry.id, digest).await?;
-            }
             let location = format!("/v2/{}/blobs/{}", repository.name, digest);
             let mut headers = HeaderMap::new();
             headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
@@ -266,8 +257,8 @@ async fn uploads_put(
                 )
                 .await?;
 
-                if !metadata.blob_exists(&registry.id, digest).await? {
-                    metadata.insert_blob(&registry.id, digest).await?;
+                if !metadata.blob_exists(&registry.id, &oci_digest).await? {
+                    metadata.insert_blob(&registry.id, &oci_digest).await?;
                 }
                 response
             }
@@ -317,11 +308,10 @@ async fn uploads_patch(
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
-    // verify the request's ContentRange against the last chunk's end of range
     session.validate_range(content_range.bytes_range())?;
 
-    let store = BlobStore::new(metadata.clone(), objects.clone());
-    let mut writer = store.resume(session).await?;
+    let store = BlobStore::new(metadata.clone(), objects.clone(), &registry);
+    let mut writer = store.resume(&mut session).await?;
     let _written = writer.write(content_length.0, request.into_body());
 
     // TODO: validate content length of chunk
@@ -357,38 +347,17 @@ async fn upload_blob(
     // TODO: validate content length
 
     // insert metadata
-    if !metadata.blob_exists(&registry.id, digest).await? {
-        metadata.clone().insert_blob(&registry.id, digest).await?;
+    if !metadata.blob_exists(&registry.id, &oci_digest).await? {
+        metadata
+            .clone()
+            .insert_blob(&registry.id, &oci_digest)
+            .await?;
     }
 
     let location = format!("/v2/{}/blobs/{}", repository.name, digest,);
     let mut headers = HeaderMap::new();
     headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
     Ok((StatusCode::CREATED, headers, "").into_response())
-}
-
-async fn upload_chunk(
-    session: &mut UploadSession,
-    content_length: ContentLength,
-    content_range: ContentRange,
-    request: Request<Body>,
-    objects: Arc<S3>,
-    metadata: Arc<PostgresMetadata>,
-) -> Result<()> {
-    session.validate_range(content_range.bytes_range())?;
-
-    let chunk = objects
-        .clone()
-        .upload_chunk(session, content_length.0, request.into_body())
-        .await?;
-
-    metadata.insert_chunk(&session, &chunk).await?;
-    metadata.update_session(&session).await?;
-
-    // TODO: validate content length of chunk
-    // TODO: update incremental digest state on session
-
-    Ok(())
 }
 
 async fn upload_session_id(repo_name: &str, metadata: Arc<PostgresMetadata>) -> Result<Response> {
