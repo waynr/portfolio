@@ -19,8 +19,8 @@ use uuid::Uuid;
 
 use crate::{
     http::notimplemented,
-    metadata::{PostgresMetadata, Registry, Repository},
-    objects::{StreamObjectBody, S3},
+    metadata::PostgresMetadata,
+    objects::S3,
     registry::BlobStore,
     registry::UploadSession,
     DistributionErrorCode, Error, OciDigest, Result,
@@ -147,16 +147,13 @@ async fn uploads_post(
         }
         Some(dgst) => {
             if let Some(TypedHeader(length)) = content_length {
-                upload_blob(
-                    &registry,
-                    &repository,
-                    dgst,
-                    length,
-                    request,
-                    metadata,
-                    objects,
-                )
-                .await
+                let mut store = BlobStore::new(metadata.clone(), objects.clone(), &registry);
+                store.upload(dgst, length.0, request.into_body()).await?;
+
+                let location = format!("/v2/{}/blobs/{}", repository.name, dgst);
+                let mut headers = HeaderMap::new();
+                headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
+                Ok((StatusCode::CREATED, headers, "").into_response())
             } else {
                 Err(Error::MissingHeader("ContentLength"))
             }
@@ -246,21 +243,13 @@ async fn uploads_put(
         // POST-PUT
         None => match (content_type, content_length) {
             (Some(TypedHeader(_content_type)), Some(TypedHeader(content_length))) => {
-                let response = upload_blob(
-                    &registry,
-                    &repository,
-                    digest,
-                    content_length,
-                    request,
-                    metadata.clone(),
-                    objects.clone(),
-                )
-                .await?;
+                let mut store = BlobStore::new(metadata.clone(), objects.clone(), &registry);
+                store.upload(digest, content_length.0, request.into_body()).await?;
 
-                if !metadata.blob_exists(&registry.id, &oci_digest).await? {
-                    metadata.insert_blob(&registry.id, &oci_digest).await?;
-                }
-                response
+                let location = format!("/v2/{}/blobs/{}", repository.name, digest);
+                let mut headers = HeaderMap::new();
+                headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
+                (StatusCode::CREATED, headers, "").into_response()
             }
             _ => {
                 return Err(Error::DistributionSpecError(
@@ -321,43 +310,6 @@ async fn uploads_patch(
     let mut headers = HeaderMap::new();
     headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
-}
-
-async fn upload_blob(
-    registry: &Registry,
-    repository: &Repository,
-    digest: &str,
-    content_length: ContentLength,
-    request: Request<Body>,
-    metadata: Arc<PostgresMetadata>,
-    objects: Arc<S3>,
-) -> Result<Response> {
-    let oci_digest: OciDigest = digest.try_into()?;
-
-    // upload blob
-    let digester = oci_digest.digester();
-    let body = StreamObjectBody::from_body(request.into_body(), digester);
-    objects
-        .clone()
-        .upload_blob(&oci_digest, body.into(), content_length.0)
-        .await
-        .unwrap();
-
-    // TODO: validate digest
-    // TODO: validate content length
-
-    // insert metadata
-    if !metadata.blob_exists(&registry.id, &oci_digest).await? {
-        metadata
-            .clone()
-            .insert_blob(&registry.id, &oci_digest)
-            .await?;
-    }
-
-    let location = format!("/v2/{}/blobs/{}", repository.name, digest,);
-    let mut headers = HeaderMap::new();
-    headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
-    Ok((StatusCode::CREATED, headers, "").into_response())
 }
 
 async fn upload_session_id(repo_name: &str, metadata: Arc<PostgresMetadata>) -> Result<Response> {

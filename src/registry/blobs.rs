@@ -7,6 +7,7 @@ use crate::{
     errors::Result,
     metadata::{PostgresMetadata, Registry},
     objects::S3,
+    objects::StreamObjectBody,
     registry::UploadSession,
 };
 
@@ -42,6 +43,32 @@ impl<'b> BlobStore<'b> {
             session,
             registry: self.registry,
         })
+    }
+
+    pub async fn upload(&mut self, digest: &str, content_length: u64, body: Body) -> Result<()> {
+    let oci_digest: OciDigest = digest.try_into()?;
+
+    // upload blob
+    let digester = oci_digest.digester();
+    let stream_body = StreamObjectBody::from_body(body, digester);
+    self.objects
+        .clone()
+        .upload_blob(&oci_digest, stream_body.into(), content_length)
+        .await
+        .unwrap();
+
+    // TODO: validate digest
+    // TODO: validate content length
+
+    // insert metadata
+    if !self.metadata.blob_exists(&self.registry.id, &oci_digest).await? {
+        self.metadata
+            .clone()
+            .insert_blob(&self.registry.id, &oci_digest)
+            .await?;
+    }
+
+    Ok(())
     }
 }
 
