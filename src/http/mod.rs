@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use axum::{
     extract::{Extension, Path},
@@ -17,8 +16,8 @@ use crate::metadata::PostgresMetadata;
 use crate::objects::ObjectStore;
 
 pub async fn serve<O: ObjectStore>(
-    metadata: Arc<PostgresMetadata>,
-    objects: Arc<O>,
+    metadata: PostgresMetadata,
+    objects: O,
 ) -> Result<()> {
     let blobs = blobs::router::<O>()
         .layer(Extension(metadata.clone()))

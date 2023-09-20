@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::Read;
-use std::sync::Arc;
 
 use portfolio::http;
 use portfolio::{Config, MetadataBackend, ObjectsBackend};
@@ -27,5 +26,5 @@ async fn main() -> Result<()> {
     }
 
     // run HTTP server
-    http::serve(Arc::new(metadata), Arc::new(objects)).await
+    http::serve(metadata, objects).await
 }
