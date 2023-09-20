@@ -80,14 +80,8 @@ impl From<&RegisteredImageSpecAlgorithm> for String {
 }
 
 pub struct Digester {
-    digester: Arc<Mutex<dyn DynDigest>>,
+    digester: Arc<Mutex<dyn DynDigest + Send + Sync>>,
 }
-
-// Arc<Mutex<>> around DynDigest makes Digester Send (can be safely sent to another thread)
-unsafe impl Send for Digester {}
-
-// Arc<Mutex<>> around DynDigest makes Digester Sync (can be safely shared between threads)
-unsafe impl Sync for Digester {}
 
 impl Digester {
     pub fn update(&mut self, data: &[u8]) {
