@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use sqlx::postgres::{PgPoolOptions, Postgres};
-use sqlx::types::Json;
 use sqlx::Pool;
+use sqlx::types::Json;
 use uuid::Uuid;
 
 use crate::OciDigest;

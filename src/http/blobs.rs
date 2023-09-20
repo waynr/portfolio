@@ -18,30 +18,26 @@ use hyper::body::Body;
 use uuid::Uuid;
 
 use crate::{
-    http::notimplemented,
-    metadata::PostgresMetadata,
-    objects::S3,
-    registry::BlobStore,
-    registry::UploadSession,
-    DistributionErrorCode, Error, OciDigest, Result,
+    http::notimplemented, metadata::PostgresMetadata, objects::ObjectStore, registry::BlobStore,
+    registry::UploadSession, DistributionErrorCode, Error, OciDigest, Result,
 };
 
-pub fn router() -> Router {
+pub fn router<O: ObjectStore>() -> Router {
     Router::new()
         .route(
             "/:digest",
-            get(get_blob).delete(notimplemented).head(head_blob),
+            get(get_blob::<O>).delete(notimplemented).head(head_blob),
         )
-        .route("/uploads/", post(uploads_post))
+        .route("/uploads/", post(uploads_post::<O>))
         .route(
             "/uploads/:session_uuid",
-            patch(uploads_patch).put(uploads_put),
+            patch(uploads_patch::<O>).put(uploads_put::<O>),
         )
 }
 
-async fn get_blob(
+async fn get_blob<O: ObjectStore>(
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<S3>>,
+    Extension(objects): Extension<Arc<O>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let registry = metadata.get_registry("meow").await?;
@@ -105,9 +101,9 @@ async fn head_blob(
 //   * must include 'digest' query param
 //   * must include 'ContentLength' query param
 // * initiate upload session for POST-PUT or POST-PATCH-PUT sequence
-async fn uploads_post(
+async fn uploads_post<O: ObjectStore>(
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<S3>>,
+    Extension(objects): Extension<Arc<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     Query(query_params): Query<HashMap<String, String>>,
@@ -175,9 +171,9 @@ async fn uploads_post(
 //   * must include 'digest' query param, referring to the digest of the entire blob (not the final
 //   chunk)
 //
-async fn uploads_put(
+async fn uploads_put<O: ObjectStore>(
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<S3>>,
+    Extension(objects): Extension<Arc<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
@@ -244,7 +240,9 @@ async fn uploads_put(
         None => match (content_type, content_length) {
             (Some(TypedHeader(_content_type)), Some(TypedHeader(content_length))) => {
                 let mut store = BlobStore::new(metadata.clone(), objects.clone(), &registry);
-                store.upload(digest, content_length.0, request.into_body()).await?;
+                store
+                    .upload(digest, content_length.0, request.into_body())
+                    .await?;
 
                 let location = format!("/v2/{}/blobs/{}", repository.name, digest);
                 let mut headers = HeaderMap::new();
@@ -270,9 +268,9 @@ async fn uploads_put(
     Ok(response)
 }
 
-async fn uploads_patch(
+async fn uploads_patch<O: ObjectStore>(
     Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<S3>>,
+    Extension(objects): Extension<Arc<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     TypedHeader(content_length): TypedHeader<ContentLength>,
     TypedHeader(content_range): TypedHeader<ContentRange>,

@@ -3,22 +3,28 @@ use std::sync::Arc;
 use hyper::body::Body;
 
 use crate::{
-    OciDigest,
     errors::Result,
     metadata::{PostgresMetadata, Registry},
-    objects::S3,
+    objects::ObjectStore,
     objects::StreamObjectBody,
     registry::UploadSession,
+    OciDigest,
 };
 
-pub struct BlobStore<'b> {
+pub struct BlobStore<'b, O>
+where
+    O: ObjectStore,
+{
     metadata: Arc<PostgresMetadata>,
-    objects: Arc<S3>,
+    objects: Arc<O>,
     registry: &'b Registry,
 }
 
-impl<'b> BlobStore<'b> {
-    pub fn new(metadata: Arc<PostgresMetadata>, objects: Arc<S3>, registry: &'b Registry) -> Self {
+impl<'b, O> BlobStore<'b, O>
+where
+    O: ObjectStore,
+{
+    pub fn new(metadata: Arc<PostgresMetadata>, objects: Arc<O>, registry: &'b Registry) -> Self {
         Self {
             metadata,
             objects,
@@ -26,7 +32,7 @@ impl<'b> BlobStore<'b> {
         }
     }
 
-    pub async fn resume(&self, session: &'b mut UploadSession) -> Result<BlobWriter<'b>> {
+    pub async fn resume(&self, session: &'b mut UploadSession) -> Result<BlobWriter<'b, O>> {
         match session.upload_id {
             Some(_) => (),
             None => {
@@ -46,41 +52,48 @@ impl<'b> BlobStore<'b> {
     }
 
     pub async fn upload(&mut self, digest: &str, content_length: u64, body: Body) -> Result<()> {
-    let oci_digest: OciDigest = digest.try_into()?;
+        let oci_digest: OciDigest = digest.try_into()?;
 
-    // upload blob
-    let digester = oci_digest.digester();
-    let stream_body = StreamObjectBody::from_body(body, digester);
-    self.objects
-        .clone()
-        .upload_blob(&oci_digest, stream_body.into(), content_length)
-        .await
-        .unwrap();
-
-    // TODO: validate digest
-    // TODO: validate content length
-
-    // insert metadata
-    if !self.metadata.blob_exists(&self.registry.id, &oci_digest).await? {
-        self.metadata
+        // upload blob
+        let digester = oci_digest.digester();
+        let stream_body = StreamObjectBody::from_body(body, digester);
+        self.objects
             .clone()
-            .insert_blob(&self.registry.id, &oci_digest)
-            .await?;
-    }
+            .upload_blob(&oci_digest, stream_body.into(), content_length)
+            .await
+            .unwrap();
 
-    Ok(())
+        // TODO: validate digest
+        // TODO: validate content length
+
+        // insert metadata
+        if !self
+            .metadata
+            .blob_exists(&self.registry.id, &oci_digest)
+            .await?
+        {
+            self.metadata
+                .clone()
+                .insert_blob(&self.registry.id, &oci_digest)
+                .await?;
+        }
+
+        Ok(())
     }
 }
 
-pub struct BlobWriter<'a> {
+pub struct BlobWriter<'a, O: ObjectStore> {
     metadata: Arc<PostgresMetadata>,
-    objects: Arc<S3>,
+    objects: Arc<O>,
 
     registry: &'a Registry,
     session: &'a mut UploadSession,
 }
 
-impl<'a> BlobWriter<'a> {
+impl<'a, O> BlobWriter<'a, O>
+where
+    O: ObjectStore,
+{
     pub async fn write(&mut self, content_length: u64, body: Body) -> Result<u64> {
         let chunk = self
             .objects

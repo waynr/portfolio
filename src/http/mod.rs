@@ -12,10 +12,13 @@ mod manifests;
 pub(crate) mod middleware;
 mod tags;
 use crate::metadata::PostgresMetadata;
-use crate::objects::S3;
+use crate::objects::ObjectStore;
 
-pub async fn serve(metadata: Arc<PostgresMetadata>, objects: Arc<S3>) {
-    let blobs = blobs::router()
+pub async fn serve<O: ObjectStore>(
+    metadata: Arc<PostgresMetadata>,
+    objects: Arc<O>,
+) {
+    let blobs = blobs::router::<O>()
         .layer(Extension(metadata.clone()))
         .layer(Extension(objects.clone()));
     let manifests = manifests::router()

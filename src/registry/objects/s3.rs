@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+use async_trait::async_trait;
 use aws_sdk_s3::client::Builder;
 use aws_sdk_s3::middleware::DefaultMiddleware;
 use aws_sdk_s3::model::{CompletedMultipartUpload, CompletedPart};
@@ -18,6 +19,7 @@ use crate::{
     http::middleware::LogLayer,
     registry::{Chunk, UploadSession},
     OciDigest,
+    objects::traits::ObjectStore,
 };
 
 #[derive(Deserialize)]
@@ -65,13 +67,15 @@ impl S3Config {
     }
 }
 
+#[derive(Clone)]
 pub struct S3 {
     bucket_name: String,
     client: Client,
 }
 
-impl S3 {
-    pub async fn get_blob(&self, key: &OciDigest) -> Result<StreamBody<ByteStream>> {
+#[async_trait]
+impl ObjectStore for S3 {
+    async fn get_blob(&self, key: &OciDigest) -> Result<StreamBody<ByteStream>> {
         let get_object_output = self
             .client
             .get_object()
@@ -83,7 +87,7 @@ impl S3 {
         Ok(StreamBody::new(get_object_output.body))
     }
 
-    pub async fn blob_exists(&self, key: &OciDigest) -> Result<bool> {
+    async fn blob_exists(&self, key: &OciDigest) -> Result<bool> {
         match self
             .client
             .head_object()
@@ -107,7 +111,7 @@ impl S3 {
         }
     }
 
-    pub async fn upload_blob(
+    async fn upload_blob(
         &self,
         key: &OciDigest,
         body: Body,
@@ -125,7 +129,7 @@ impl S3 {
         Ok(())
     }
 
-    pub async fn initiate_chunked_upload(&self, session: &mut UploadSession) -> Result<()> {
+    async fn initiate_chunked_upload(&self, session: &mut UploadSession) -> Result<()> {
         let create_multipart_upload_output = self
             .client
             .create_multipart_upload()
@@ -145,7 +149,7 @@ impl S3 {
         Ok(())
     }
 
-    pub async fn upload_chunk(
+    async fn upload_chunk(
         &self,
         session: &mut UploadSession,
         content_length: u64,
@@ -178,7 +182,7 @@ impl S3 {
         Ok(chunk)
     }
 
-    pub async fn finalize_chunked_upload(
+    async fn finalize_chunked_upload(
         &self,
         session: &UploadSession,
         chunks: Vec<Chunk>,
@@ -229,7 +233,7 @@ impl S3 {
         Ok(())
     }
 
-    pub async fn abort_chunked_upload(&self, session: &UploadSession) -> Result<()> {
+    async fn abort_chunked_upload(&self, session: &UploadSession) -> Result<()> {
         let upload_id = session
             .upload_id
             .clone()
