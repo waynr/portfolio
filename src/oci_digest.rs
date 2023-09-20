@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use digest::{Digest, DynDigest};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Sha512};
@@ -58,8 +56,8 @@ impl OciDigest {
     pub fn digester(&self) -> Digester {
         Digester {
             digester: match self.algorithm {
-                RegisteredImageSpecAlgorithm::Sha256 => Arc::new(Mutex::new(Sha256::new())),
-                RegisteredImageSpecAlgorithm::Sha512 => Arc::new(Mutex::new(Sha512::new())),
+                RegisteredImageSpecAlgorithm::Sha256 => Box::new(Sha256::new()),
+                RegisteredImageSpecAlgorithm::Sha512 => Box::new(Sha512::new()),
             },
         }
     }
@@ -80,12 +78,12 @@ impl From<&RegisteredImageSpecAlgorithm> for String {
 }
 
 pub struct Digester {
-    digester: Arc<Mutex<dyn DynDigest + Send + Sync>>,
+    digester: Box<dyn DynDigest + Send + Sync>,
 }
 
 impl Digester {
     pub fn update(&mut self, data: &[u8]) {
-        self.digester.lock().unwrap().update(data);
+        self.digester.update(data);
     }
 }
 
