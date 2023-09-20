@@ -55,7 +55,7 @@ async fn get_blob<O: ObjectStore>(
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
-            HeaderValue::from_str(digest).unwrap(),
+            HeaderValue::from_str(digest)?,
         );
         Ok((StatusCode::OK, stream_body).into_response())
     } else {
@@ -83,7 +83,7 @@ async fn head_blob(
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
-            HeaderValue::from_str(digest).unwrap(),
+            HeaderValue::from_str(digest)?,
         );
         Ok((StatusCode::OK, headers, "").into_response())
     } else {
@@ -147,7 +147,7 @@ async fn uploads_post<O: ObjectStore>(
 
                 let location = format!("/v2/{}/blobs/{}", repository.name, dgst);
                 let mut headers = HeaderMap::new();
-                headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
+                headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
                 Ok((StatusCode::CREATED, headers, "").into_response())
             } else {
                 Err(Error::MissingHeader("ContentLength"))
@@ -232,7 +232,7 @@ async fn uploads_put<O: ObjectStore>(
 
             let location = format!("/v2/{}/blobs/{}", repository.name, digest);
             let mut headers = HeaderMap::new();
-            headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
+            headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
             (StatusCode::CREATED, headers, "").into_response()
         }
         // POST-PUT
@@ -245,7 +245,7 @@ async fn uploads_put<O: ObjectStore>(
 
                 let location = format!("/v2/{}/blobs/{}", repository.name, digest);
                 let mut headers = HeaderMap::new();
-                headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
+                headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
                 (StatusCode::CREATED, headers, "").into_response()
             }
             _ => {
@@ -305,7 +305,7 @@ async fn uploads_patch<O: ObjectStore>(
 
     let location = format!("/v2/{}/blobs/uploads/{}", repository.name, session_uuid);
     let mut headers = HeaderMap::new();
-    headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
+    headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
 }
 
@@ -313,6 +313,6 @@ async fn upload_session_id(repo_name: &str, metadata: PostgresMetadata) -> Resul
     let session: UploadSession = metadata.new_upload_session().await?;
     let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);
     let mut headers = HeaderMap::new();
-    headers.insert(header::LOCATION, HeaderValue::from_str(&location).unwrap());
+    headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
 }

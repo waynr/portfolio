@@ -11,13 +11,15 @@ pub(crate) mod blobs;
 mod manifests;
 pub(crate) mod middleware;
 mod tags;
+
+use crate::errors::Result;
 use crate::metadata::PostgresMetadata;
 use crate::objects::ObjectStore;
 
 pub async fn serve<O: ObjectStore>(
     metadata: Arc<PostgresMetadata>,
     objects: Arc<O>,
-) {
+) -> Result<()> {
     let blobs = blobs::router::<O>()
         .layer(Extension(metadata.clone()))
         .layer(Extension(objects.clone()));
@@ -34,10 +36,10 @@ pub async fn serve<O: ObjectStore>(
         .nest("/v2/:repository/manifests", manifests)
         .nest("/v2/:repository/tags", tags);
 
-    axum::Server::bind(&"0.0.0.0:13030".parse().unwrap())
+    axum::Server::bind(&"0.0.0.0:13030".parse()?)
         .serve(app.into_make_service())
-        .await
-        .unwrap();
+        .await?;
+    Ok(())
 }
 
 async fn notimplemented(Path(params): Path<HashMap<String, String>>) -> String {

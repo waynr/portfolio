@@ -27,6 +27,5 @@ async fn main() -> Result<()> {
     }
 
     // run HTTP server
-    http::serve(Arc::new(metadata), Arc::new(objects)).await;
-    Ok(())
+    http::serve(Arc::new(metadata), Arc::new(objects)).await
 }

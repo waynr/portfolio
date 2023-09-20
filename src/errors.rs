@@ -6,6 +6,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("{0}")]
+    AddrParseError(#[from] std::net::AddrParseError),
+
     #[error("sqlx error")]
     SQLXError(#[from] sqlx::Error),
     #[error("sqlx migration error")]
@@ -16,8 +19,12 @@ pub enum Error {
     IOError(#[from] std::io::Error),
     #[error("http error")]
     HTTPError(#[from] http::Error),
-    #[error("http invalid header error")]
+    #[error("http invalid header name")]
     HTTPInvalidHeaderName(#[from] http::header::InvalidHeaderName),
+    #[error("http invalid header value")]
+    HTTPInvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
+    #[error("{0}")]
+    HyperError(#[from] hyper::Error),
 
     #[error("aws sdk credentials error")]
     AWSSDKCredentialsError(#[from] aws_types::credentials::CredentialsError),

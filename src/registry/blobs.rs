@@ -56,8 +56,7 @@ where
         let stream_body = StreamObjectBody::from_body(body, digester);
         self.objects
             .upload_blob(&oci_digest, stream_body.into(), content_length)
-            .await
-            .unwrap();
+            .await?;
 
         // TODO: validate digest
         // TODO: validate content length
