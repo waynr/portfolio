@@ -3,36 +3,45 @@ networks:
     driver: bridge
 services:
   region1:
-    image: cockroachdb/cockroach:v21.2.7
+    image: cockroachdb/cockroach:v23.1.10
     networks:
       - roachnet
     command:
       - start
       - --insecure
-      - --join=region1,region2,region3
+      - --accept-sql-without-tls
+      - --join=region1:26257,region2:26257,region3:26257
+      - --listen-addr=region1:26257
+      - --sql-addr=region1:26258
     ports:
-      - 26257:26257
+      - 26258:26258
       - 18080:18080
     volumes:
       - region1:/cockroach/cockrach-data
   region2:
-    image: cockroachdb/cockroach:v21.2.7
+    image: cockroachdb/cockroach:v23.1.10
     networks:
       - roachnet
     command:
       - start
       - --insecure
-      - --join=region1,region2,region3
+      - --accept-sql-without-tls
+      - --join=region1:26257,region2:26257,region3:26257
+      - --listen-addr=region2:26257
+      - --sql-addr=region2:26258
     volumes:
       - region1:/cockroach/cockrach-data
   region3:
-    image: cockroachdb/cockroach:v21.2.7
+    image: cockroachdb/cockroach:v23.1.10
     networks:
       - roachnet
     command:
       - start
       - --insecure
-      - --join=region1,region2,region3
+      - --accept-sql-without-tls
+      - --join=region1:26257,region2:26257,region3:26257
+      - --listen-addr=region3:26257
+      - --sql-addr=region3:26258
     volumes:
       - region1:/cockroach/cockrach-data
 volumes:
