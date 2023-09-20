@@ -159,7 +159,7 @@ impl ObjectStore for S3 {
         // learn about it at runtime (rather than simply ignoring it)
         let upload_id = session
             .upload_id
-            .clone()
+            .as_ref()
             .ok_or_else(|| Error::ObjectsMissingUploadID(session.uuid))?;
         let upload_part_output = self
             .client
@@ -192,7 +192,7 @@ impl ObjectStore for S3 {
         // learn about it at runtime (rather than simply ignoring it)
         let upload_id = session
             .upload_id
-            .clone()
+            .as_ref()
             .ok_or_else(|| Error::ObjectsMissingUploadID(session.uuid))?;
 
         let mut mpu = CompletedMultipartUpload::builder();
@@ -236,7 +236,7 @@ impl ObjectStore for S3 {
     async fn abort_chunked_upload(&self, session: &UploadSession) -> Result<()> {
         let upload_id = session
             .upload_id
-            .clone()
+            .as_ref()
             .ok_or_else(|| Error::ObjectsMissingUploadID(session.uuid))?;
         let _complete_multipart_upload_output = self
             .client

@@ -35,7 +35,6 @@ where
             Some(_) => (),
             None => {
                 self.objects
-                    .clone()
                     .initiate_chunked_upload(session)
                     .await?
             }
@@ -56,7 +55,6 @@ where
         let digester = oci_digest.digester();
         let stream_body = StreamObjectBody::from_body(body, digester);
         self.objects
-            .clone()
             .upload_blob(&oci_digest, stream_body.into(), content_length)
             .await
             .unwrap();
@@ -71,7 +69,6 @@ where
             .await?
         {
             self.metadata
-                .clone()
                 .insert_blob(&self.registry.id, &oci_digest)
                 .await?;
         }
@@ -95,7 +92,6 @@ where
     pub async fn write(&mut self, content_length: u64, body: Body) -> Result<u64> {
         let chunk = self
             .objects
-            .clone()
             .upload_chunk(self.session, content_length, body)
             .await?;
 
