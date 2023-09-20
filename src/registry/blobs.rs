@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use hyper::body::Body;
 
 use crate::{
@@ -15,8 +13,8 @@ pub struct BlobStore<'b, O>
 where
     O: ObjectStore,
 {
-    metadata: Arc<PostgresMetadata>,
-    objects: Arc<O>,
+    metadata: PostgresMetadata,
+    objects: O,
     registry: &'b Registry,
 }
 
@@ -24,7 +22,7 @@ impl<'b, O> BlobStore<'b, O>
 where
     O: ObjectStore,
 {
-    pub fn new(metadata: Arc<PostgresMetadata>, objects: Arc<O>, registry: &'b Registry) -> Self {
+    pub fn new(metadata: PostgresMetadata, objects: O, registry: &'b Registry) -> Self {
         Self {
             metadata,
             objects,
@@ -83,8 +81,8 @@ where
 }
 
 pub struct BlobWriter<'a, O: ObjectStore> {
-    metadata: Arc<PostgresMetadata>,
-    objects: Arc<O>,
+    metadata: PostgresMetadata,
+    objects: O,
 
     registry: &'a Registry,
     session: &'a mut UploadSession,

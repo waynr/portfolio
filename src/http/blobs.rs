@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use ::http::StatusCode;
 use aws_sdk_s3::types::ByteStream;
@@ -36,8 +35,8 @@ pub fn router<O: ObjectStore>() -> Router {
 }
 
 async fn get_blob<O: ObjectStore>(
-    Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<O>>,
+    Extension(metadata): Extension<PostgresMetadata>,
+    Extension(objects): Extension<O>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let registry = metadata.get_registry("meow").await?;
@@ -67,7 +66,7 @@ async fn get_blob<O: ObjectStore>(
 }
 
 async fn head_blob(
-    Extension(metadata): Extension<Arc<PostgresMetadata>>,
+    Extension(metadata): Extension<PostgresMetadata>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let registry = metadata.get_registry("meow").await?;
@@ -102,8 +101,8 @@ async fn head_blob(
 //   * must include 'ContentLength' query param
 // * initiate upload session for POST-PUT or POST-PATCH-PUT sequence
 async fn uploads_post<O: ObjectStore>(
-    Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<O>>,
+    Extension(metadata): Extension<PostgresMetadata>,
+    Extension(objects): Extension<O>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     Query(query_params): Query<HashMap<String, String>>,
@@ -172,8 +171,8 @@ async fn uploads_post<O: ObjectStore>(
 //   chunk)
 //
 async fn uploads_put<O: ObjectStore>(
-    Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<O>>,
+    Extension(metadata): Extension<PostgresMetadata>,
+    Extension(objects): Extension<O>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
@@ -269,8 +268,8 @@ async fn uploads_put<O: ObjectStore>(
 }
 
 async fn uploads_patch<O: ObjectStore>(
-    Extension(metadata): Extension<Arc<PostgresMetadata>>,
-    Extension(objects): Extension<Arc<O>>,
+    Extension(metadata): Extension<PostgresMetadata>,
+    Extension(objects): Extension<O>,
     Path(path_params): Path<HashMap<String, String>>,
     TypedHeader(content_length): TypedHeader<ContentLength>,
     TypedHeader(content_range): TypedHeader<ContentRange>,
@@ -310,7 +309,7 @@ async fn uploads_patch<O: ObjectStore>(
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
 }
 
-async fn upload_session_id(repo_name: &str, metadata: Arc<PostgresMetadata>) -> Result<Response> {
+async fn upload_session_id(repo_name: &str, metadata: PostgresMetadata) -> Result<Response> {
     let session: UploadSession = metadata.new_upload_session().await?;
     let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);
     let mut headers = HeaderMap::new();

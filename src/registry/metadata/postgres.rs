@@ -24,6 +24,7 @@ impl PostgresConfig {
     }
 }
 
+#[derive(Clone)]
 pub struct PostgresMetadata {
     pool: Pool<Postgres>,
 }
