@@ -182,7 +182,7 @@ RETURNING uuid, start_date, upload_id, chunk_number, last_range_end, digest_stat
         Ok(session)
     }
 
-    pub async fn get_session(&self, uuid: Uuid) -> Result<UploadSession> {
+    pub async fn get_session(&self, uuid: &Uuid) -> Result<UploadSession> {
         let mut conn = self.pool.acquire().await?;
         let session = sqlx::query_as!(
             UploadSession,

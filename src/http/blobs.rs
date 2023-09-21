@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::{
     http::notimplemented, metadata::PostgresMetadata, objects::ObjectStore,
-    registry::registries::Registry, registry::BlobStore, registry::UploadSession,
+    registry::registries::Registry, registry::UploadSession,
     DistributionErrorCode, Error, OciDigest, Result,
 };
 
@@ -210,11 +210,18 @@ async fn uploads_put<O: ObjectStore>(
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
 ) -> Result<Response> {
-    let registry = metadata.get_registry("meow").await?;
-    let repository = match path_params.get("repository") {
-        Some(s) => metadata.get_repository(&registry.id, s).await?,
+    let registry = Registry::new("meow".to_string(), metadata, objects).await?;
+    let repo_name = match path_params.get("repository") {
+        Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
     };
+
+    if !registry.repository_exists(repo_name).await? {
+        return Err(Error::DistributionSpecError(
+            DistributionErrorCode::NameUnknown,
+        ));
+    }
+
     let digest: &str = query_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
@@ -226,8 +233,8 @@ async fn uploads_put<O: ObjectStore>(
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
 
     // retrieve the session or fail if it doesn't exist
-    let mut session = metadata
-        .get_session(session_uuid)
+    let mut session = registry
+        .get_upload_session(&session_uuid)
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
@@ -236,7 +243,7 @@ async fn uploads_put<O: ObjectStore>(
     let response = match session.upload_id {
         // POST-PATCH-PUT
         Some(_) => {
-            let store = BlobStore::new(metadata.clone(), objects.clone(), &registry);
+            let store = registry.get_blob_store();
             if let (
                 // TODO: what if there is a body but none of the content headers are set? technically
                 // this would be a client bug, but it could also result in data corruption and as such
@@ -260,7 +267,7 @@ async fn uploads_put<O: ObjectStore>(
                 writer.finalize(&oci_digest).await?;
             }
 
-            let location = format!("/v2/{}/blobs/{}", repository.name, digest);
+            let location = format!("/v2/{}/blobs/{}", repo_name, digest);
             let mut headers = HeaderMap::new();
             headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
             (StatusCode::CREATED, headers, "").into_response()
@@ -268,12 +275,12 @@ async fn uploads_put<O: ObjectStore>(
         // POST-PUT
         None => match (content_type, content_length) {
             (Some(TypedHeader(_content_type)), Some(TypedHeader(content_length))) => {
-                let mut store = BlobStore::new(metadata.clone(), objects.clone(), &registry);
+                let mut store = registry.get_blob_store();
                 store
                     .upload(digest, content_length.0, request.into_body())
                     .await?;
 
-                let location = format!("/v2/{}/blobs/{}", repository.name, digest);
+                let location = format!("/v2/{}/blobs/{}", repo_name, digest);
                 let mut headers = HeaderMap::new();
                 headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
                 (StatusCode::CREATED, headers, "").into_response()
@@ -286,7 +293,7 @@ async fn uploads_put<O: ObjectStore>(
         },
     };
 
-    match metadata.delete_session(&session).await {
+    match registry.delete_session(&session).await {
         Ok(_) => (),
         Err(e) => {
             // TODO: this should use a logging library
@@ -306,11 +313,17 @@ async fn uploads_patch<O: ObjectStore>(
     TypedHeader(_content_type): TypedHeader<ContentType>,
     request: Request<Body>,
 ) -> Result<Response> {
-    let registry = metadata.get_registry("meow").await?;
-    let repository = match path_params.get("repository") {
-        Some(s) => metadata.get_repository(&registry.id, s).await?,
+    let registry = Registry::new("meow".to_string(), metadata, objects).await?;
+    let repo_name = match path_params.get("repository") {
+        Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
     };
+
+    if !registry.repository_exists(repo_name).await? {
+        return Err(Error::DistributionSpecError(
+            DistributionErrorCode::NameUnknown,
+        ));
+    }
 
     let session_uuid = path_params
         .get("session_uuid")
@@ -319,21 +332,21 @@ async fn uploads_patch<O: ObjectStore>(
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
 
     // retrieve the session or fail if it doesn't exist
-    let mut session = metadata
-        .get_session(session_uuid)
+    let mut session = registry
+        .get_upload_session(&session_uuid)
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
     session.validate_range(content_range.bytes_range())?;
 
-    let store = BlobStore::new(metadata.clone(), objects.clone(), &registry);
+    let store = registry.get_blob_store();
     let mut writer = store.resume(&mut session).await?;
     let _written = writer.write(content_length.0, request.into_body());
 
     // TODO: validate content length of chunk
     // TODO: update incremental digest state on session
 
-    let location = format!("/v2/{}/blobs/uploads/{}", repository.name, session_uuid);
+    let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session_uuid);
     let mut headers = HeaderMap::new();
     headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
     Ok((StatusCode::ACCEPTED, headers, "").into_response())

@@ -1,3 +1,5 @@
+use uuid::Uuid;
+
 use crate::errors::Result;
 use crate::metadata::{PostgresMetadata, Registry as RegistryMetadata};
 use crate::objects::ObjectStore;
@@ -39,5 +41,15 @@ where
 
     pub async fn new_upload_session(&self) -> Result<UploadSession> {
         self.metadata.new_upload_session().await
+    }
+
+    pub async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<UploadSession> {
+        self.metadata
+            .get_session(session_uuid)
+            .await
+    }
+
+    pub async fn delete_session(&self, session: &UploadSession) -> Result<()> {
+        self.metadata.delete_session(session).await
     }
 }
