@@ -2,6 +2,7 @@ use crate::errors::Result;
 use crate::metadata::{PostgresMetadata, Registry as RegistryMetadata};
 use crate::objects::ObjectStore;
 use crate::registry::blobs::BlobStore;
+use crate::registry::UploadSession;
 
 pub struct Registry<O>
 where
@@ -34,5 +35,9 @@ where
 
     pub fn get_blob_store(&self) -> BlobStore<O> {
         BlobStore::new(self.metadata.clone(), self.objects.clone(), &self.registry)
+    }
+
+    pub async fn new_upload_session(&self) -> Result<UploadSession> {
+        self.metadata.new_upload_session().await
     }
 }

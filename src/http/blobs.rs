@@ -24,7 +24,9 @@ pub fn router<O: ObjectStore>() -> Router {
     Router::new()
         .route(
             "/:digest",
-            get(get_blob::<O>).delete(notimplemented).head(head_blob::<O>),
+            get(get_blob::<O>)
+                .delete(notimplemented)
+                .head(head_blob::<O>),
         )
         .route("/uploads/", post(uploads_post::<O>))
         .route(
@@ -124,11 +126,18 @@ async fn uploads_post<O: ObjectStore>(
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
 ) -> Result<Response> {
-    let registry = metadata.get_registry("meow").await?;
-    let repository = match path_params.get("repository") {
-        Some(s) => metadata.get_repository(&registry.id, s).await?,
+    let registry = Registry::new("meow".to_string(), metadata, objects).await?;
+    let repo_name = match path_params.get("repository") {
+        Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
     };
+
+    if !registry.repository_exists(repo_name).await? {
+        return Err(Error::DistributionSpecError(
+            DistributionErrorCode::NameUnknown,
+        ));
+    }
+
     match query_params.get("digest") {
         None => {
             match content_length {
@@ -154,14 +163,19 @@ async fn uploads_post<O: ObjectStore>(
                     }
                 }
             }
-            upload_session_id(&repository.name, metadata).await
+            let session: UploadSession = registry.new_upload_session().await?;
+
+            let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);
+            let mut headers = HeaderMap::new();
+            headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+            Ok((StatusCode::ACCEPTED, headers, "").into_response())
         }
         Some(dgst) => {
             if let Some(TypedHeader(length)) = content_length {
-                let mut store = BlobStore::new(metadata.clone(), objects.clone(), &registry);
+                let mut store = registry.get_blob_store();
                 store.upload(dgst, length.0, request.into_body()).await?;
 
-                let location = format!("/v2/{}/blobs/{}", repository.name, dgst);
+                let location = format!("/v2/{}/blobs/{}", &repo_name, dgst);
                 let mut headers = HeaderMap::new();
                 headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
                 Ok((StatusCode::CREATED, headers, "").into_response())
@@ -320,14 +334,6 @@ async fn uploads_patch<O: ObjectStore>(
     // TODO: update incremental digest state on session
 
     let location = format!("/v2/{}/blobs/uploads/{}", repository.name, session_uuid);
-    let mut headers = HeaderMap::new();
-    headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
-    Ok((StatusCode::ACCEPTED, headers, "").into_response())
-}
-
-async fn upload_session_id(repo_name: &str, metadata: PostgresMetadata) -> Result<Response> {
-    let session: UploadSession = metadata.new_upload_session().await?;
-    let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);
     let mut headers = HeaderMap::new();
     headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
