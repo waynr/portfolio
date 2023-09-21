@@ -21,7 +21,7 @@ impl<O> Registry<O>
 where
     O: ObjectStore,
 {
-    pub async fn new(name: String, metadata: PostgresMetadata, objects: O) -> Result<Self> {
+    pub async fn new(name: &str, metadata: PostgresMetadata, objects: O) -> Result<Self> {
         let registry = metadata.get_registry(name).await?;
         Ok(Self {
             objects,

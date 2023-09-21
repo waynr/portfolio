@@ -2,8 +2,8 @@ use std::fs::File;
 use std::io::Read;
 
 use portfolio::http;
-use portfolio::{Config, MetadataBackend, ObjectsBackend};
 use portfolio::Result;
+use portfolio::{Config, MetadataBackend, ObjectsBackend};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,6 +25,8 @@ async fn main() -> Result<()> {
         metadata.initialize_static_registries(registries).await?;
     }
 
+    let portfolio = portfolio::Portfolio::new(objects, metadata);
+
     // run HTTP server
-    http::serve(metadata, objects).await
+    http::serve(portfolio).await
 }

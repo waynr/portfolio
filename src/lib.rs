@@ -17,3 +17,7 @@ pub(crate) use oci_digest::DigestState;
 pub mod registry;
 pub use registry::metadata;
 pub use registry::objects;
+pub use registry::registries;
+
+mod portfolio;
+pub use portfolio::Portfolio;

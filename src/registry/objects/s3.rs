@@ -17,12 +17,12 @@ use tower::layer::util::Stack;
 use crate::{
     errors::{Error, Result},
     http::middleware::LogLayer,
+    objects::traits::ObjectStore,
     registry::{Chunk, UploadSession},
     OciDigest,
-    objects::traits::ObjectStore,
 };
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct S3Config {
     secret_key: String,
     access_key: String,
@@ -111,12 +111,7 @@ impl ObjectStore for S3 {
         }
     }
 
-    async fn upload_blob(
-        &self,
-        key: &OciDigest,
-        body: Body,
-        content_length: u64,
-    ) -> Result<()> {
+    async fn upload_blob(&self, key: &OciDigest, body: Body, content_length: u64) -> Result<()> {
         let _put_object_output = self
             .client
             .put_object()

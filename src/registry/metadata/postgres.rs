@@ -10,7 +10,7 @@ use crate::metadata::{Blob, Registry, Repository};
 use crate::registry::{Chunk, UploadSession};
 use crate::{DigestState, RegistryDefinition};
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct PostgresConfig {
     connection_string: String,
 }
