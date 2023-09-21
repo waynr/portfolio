@@ -1,3 +1,5 @@
+use aws_sdk_s3::types::ByteStream;
+use axum::body::StreamBody;
 use hyper::body::Body;
 
 use crate::{
@@ -33,11 +35,7 @@ where
     pub async fn resume(&self, session: &'b mut UploadSession) -> Result<BlobWriter<'b, O>> {
         match session.upload_id {
             Some(_) => (),
-            None => {
-                self.objects
-                    .initiate_chunked_upload(session)
-                    .await?
-            }
+            None => self.objects.initiate_chunked_upload(session).await?,
         };
 
         Ok(BlobWriter {
@@ -73,6 +71,18 @@ where
         }
 
         Ok(())
+    }
+
+    pub async fn get_blob(&self, key: &OciDigest) -> Result<Option<StreamBody<ByteStream>>> {
+        if let Some(blob) = self.metadata.get_blob(&self.registry.id, key).await? {
+            Ok(Some(
+                self.objects
+                    .get_blob(&blob.digest.as_str().try_into()?)
+                    .await?,
+            ))
+        } else {
+            Ok(None)
+        }
     }
 }
 

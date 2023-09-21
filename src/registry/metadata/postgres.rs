@@ -128,6 +128,24 @@ WHERE registry_id = $1 AND digest = $2
         .await?)
     }
 
+    pub async fn repository_exists(&self, registry_id: &Uuid, name: &String) -> Result<bool> {
+        let mut conn = self.pool.acquire().await?;
+        Ok(sqlx::query!(
+            r#"
+SELECT exists(
+    SELECT 1
+    FROM repositories
+    WHERE registry_id = $1 AND name = $2
+) as "exists!"
+            "#,
+            registry_id,
+            String::from(name),
+        )
+        .fetch_one(&mut conn)
+        .await?
+        .exists)
+    }
+
     pub async fn blob_exists(&self, registry_id: &Uuid, digest: &OciDigest) -> Result<bool> {
         let mut conn = self.pool.acquire().await?;
         Ok(sqlx::query!(

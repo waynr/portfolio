@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use ::http::StatusCode;
-use aws_sdk_s3::types::ByteStream;
 use axum::{
-    body::StreamBody,
     extract::{Extension, Path, Query, TypedHeader},
     headers::{ContentLength, ContentRange, ContentType},
     http::header::{self, HeaderMap, HeaderName, HeaderValue},
@@ -17,8 +15,9 @@ use hyper::body::Body;
 use uuid::Uuid;
 
 use crate::{
-    http::notimplemented, metadata::PostgresMetadata, objects::ObjectStore, registry::BlobStore,
-    registry::UploadSession, DistributionErrorCode, Error, OciDigest, Result,
+    http::notimplemented, metadata::PostgresMetadata, objects::ObjectStore,
+    registry::registries::Registry, registry::BlobStore, registry::UploadSession,
+    DistributionErrorCode, Error, OciDigest, Result,
 };
 
 pub fn router<O: ObjectStore>() -> Router {
@@ -39,19 +38,26 @@ async fn get_blob<O: ObjectStore>(
     Extension(objects): Extension<O>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
-    let registry = metadata.get_registry("meow").await?;
-    match path_params.get("repository") {
-        Some(s) => metadata.get_repository(&registry.id, s).await?,
+    let registry = Registry::new("meow".to_string(), metadata, objects).await?;
+    let repo_name = match path_params.get("repository") {
+        Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
     };
+
+    if !registry.repository_exists(repo_name).await? {
+        return Err(Error::DistributionSpecError(
+            DistributionErrorCode::NameUnknown,
+        ));
+    }
+
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
     let oci_digest: OciDigest = digest.try_into()?;
 
-    if let Some(blob) = metadata.get_blob(&registry.id, &oci_digest).await? {
-        let stream_body: StreamBody<ByteStream> =
-            objects.get_blob(&blob.digest.as_str().try_into()?).await?;
+    let blob_store = registry.get_blob_store();
+
+    if let Some(stream_body) = blob_store.get_blob(&oci_digest).await? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,

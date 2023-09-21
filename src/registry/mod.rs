@@ -1,3 +1,6 @@
+pub mod registries;
+pub use registries::Registry;
+
 pub mod blobs;
 pub use blobs::BlobStore;
 
