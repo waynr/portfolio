@@ -84,6 +84,10 @@ where
             Ok(None)
         }
     }
+
+    pub async fn blob_exists(&self, key: &OciDigest) -> Result<bool> {
+        self.metadata.blob_exists(&self.registry.id, key).await
+    }
 }
 
 pub struct BlobWriter<'a, O: ObjectStore> {

@@ -24,7 +24,7 @@ pub fn router<O: ObjectStore>() -> Router {
     Router::new()
         .route(
             "/:digest",
-            get(get_blob::<O>).delete(notimplemented).head(head_blob),
+            get(get_blob::<O>).delete(notimplemented).head(head_blob::<O>),
         )
         .route("/uploads/", post(uploads_post::<O>))
         .route(
@@ -71,21 +71,31 @@ async fn get_blob<O: ObjectStore>(
     }
 }
 
-async fn head_blob(
+async fn head_blob<O: ObjectStore>(
     Extension(metadata): Extension<PostgresMetadata>,
+    Extension(objects): Extension<O>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
-    let registry = metadata.get_registry("meow").await?;
-    match path_params.get("repository") {
-        Some(s) => metadata.get_repository(&registry.id, s).await?,
+    let registry = Registry::new("meow".to_string(), metadata, objects).await?;
+    let repo_name = match path_params.get("repository") {
+        Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
     };
+
+    if !registry.repository_exists(repo_name).await? {
+        return Err(Error::DistributionSpecError(
+            DistributionErrorCode::NameUnknown,
+        ));
+    }
+
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
     let oci_digest: OciDigest = digest.try_into()?;
 
-    if metadata.blob_exists(&registry.id, &oci_digest).await? {
+    let blob_store = registry.get_blob_store();
+
+    if blob_store.blob_exists(&oci_digest).await? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
