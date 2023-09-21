@@ -1,5 +1,6 @@
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub struct Registry {
     pub(crate) id: Uuid,
     pub name: String,

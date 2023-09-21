@@ -14,20 +14,19 @@ mod tags;
 use crate::errors::Result;
 use crate::metadata::PostgresMetadata;
 use crate::objects::ObjectStore;
+use crate::registry::Registry;
 
 pub async fn serve<O: ObjectStore>(
     metadata: PostgresMetadata,
     objects: O,
 ) -> Result<()> {
+    let registry = Registry::new("meow".to_string(), metadata, objects).await?;
     let blobs = blobs::router::<O>()
-        .layer(Extension(metadata.clone()))
-        .layer(Extension(objects.clone()));
+        .layer(Extension(registry.clone()));
     let manifests = manifests::router()
-        .layer(Extension(metadata.clone()))
-        .layer(Extension(objects.clone()));
+        .layer(Extension(registry.clone()));
     let tags = tags::router()
-        .layer(Extension(metadata.clone()))
-        .layer(Extension(objects.clone()));
+        .layer(Extension(registry.clone()));
 
     let app = Router::new()
         .route("/v2", get(hello_world))

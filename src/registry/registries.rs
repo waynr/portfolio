@@ -6,6 +6,7 @@ use crate::objects::ObjectStore;
 use crate::registry::blobs::BlobStore;
 use crate::registry::UploadSession;
 
+#[derive(Clone)]
 pub struct Registry<O>
 where
     O: ObjectStore,

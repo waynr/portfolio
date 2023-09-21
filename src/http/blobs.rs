@@ -15,7 +15,7 @@ use hyper::body::Body;
 use uuid::Uuid;
 
 use crate::{
-    http::notimplemented, metadata::PostgresMetadata, objects::ObjectStore,
+    http::notimplemented, objects::ObjectStore,
     registry::registries::Registry, registry::UploadSession,
     DistributionErrorCode, Error, OciDigest, Result,
 };
@@ -36,11 +36,9 @@ pub fn router<O: ObjectStore>() -> Router {
 }
 
 async fn get_blob<O: ObjectStore>(
-    Extension(metadata): Extension<PostgresMetadata>,
-    Extension(objects): Extension<O>,
+    Extension(registry): Extension<Registry<O>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
-    let registry = Registry::new("meow".to_string(), metadata, objects).await?;
     let repo_name = match path_params.get("repository") {
         Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
@@ -74,11 +72,9 @@ async fn get_blob<O: ObjectStore>(
 }
 
 async fn head_blob<O: ObjectStore>(
-    Extension(metadata): Extension<PostgresMetadata>,
-    Extension(objects): Extension<O>,
+    Extension(registry): Extension<Registry<O>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
-    let registry = Registry::new("meow".to_string(), metadata, objects).await?;
     let repo_name = match path_params.get("repository") {
         Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
@@ -119,14 +115,12 @@ async fn head_blob<O: ObjectStore>(
 //   * must include 'ContentLength' query param
 // * initiate upload session for POST-PUT or POST-PATCH-PUT sequence
 async fn uploads_post<O: ObjectStore>(
-    Extension(metadata): Extension<PostgresMetadata>,
-    Extension(objects): Extension<O>,
+    Extension(registry): Extension<Registry<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
 ) -> Result<Response> {
-    let registry = Registry::new("meow".to_string(), metadata, objects).await?;
     let repo_name = match path_params.get("repository") {
         Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
@@ -201,8 +195,7 @@ async fn uploads_post<O: ObjectStore>(
 //   chunk)
 //
 async fn uploads_put<O: ObjectStore>(
-    Extension(metadata): Extension<PostgresMetadata>,
-    Extension(objects): Extension<O>,
+    Extension(registry): Extension<Registry<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
@@ -210,7 +203,6 @@ async fn uploads_put<O: ObjectStore>(
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
 ) -> Result<Response> {
-    let registry = Registry::new("meow".to_string(), metadata, objects).await?;
     let repo_name = match path_params.get("repository") {
         Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
@@ -305,15 +297,13 @@ async fn uploads_put<O: ObjectStore>(
 }
 
 async fn uploads_patch<O: ObjectStore>(
-    Extension(metadata): Extension<PostgresMetadata>,
-    Extension(objects): Extension<O>,
+    Extension(registry): Extension<Registry<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     TypedHeader(content_length): TypedHeader<ContentLength>,
     TypedHeader(content_range): TypedHeader<ContentRange>,
     TypedHeader(_content_type): TypedHeader<ContentType>,
     request: Request<Body>,
 ) -> Result<Response> {
-    let registry = Registry::new("meow".to_string(), metadata, objects).await?;
     let repo_name = match path_params.get("repository") {
         Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
