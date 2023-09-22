@@ -1,8 +1,26 @@
 networks:
+  minionet:
+    driver: bridge
   roachnet:
     driver: bridge
 services:
-  region1:
+  minio1:
+    image: quay.io/minio/minio
+    networks:
+      - minionet
+    command:
+      - server
+      - /data2
+    ports:
+      - 9000:9000
+      - 9090:9090
+    volumes:
+      - minio2:/data2
+    environment:
+      - MINIO_ROOT_USER=root
+      - MINIO_ROOT_PASSWORD=password
+      - MINIO_CONSOLE_ADDRESS=127.0.0.1:9090
+  roach1:
     image: cockroachdb/cockroach:v23.1.10
     networks:
       - roachnet
@@ -10,15 +28,15 @@ services:
       - start
       - --insecure
       - --accept-sql-without-tls
-      - --join=region1:26257,region2:26257,region3:26257
-      - --listen-addr=region1:26257
-      - --sql-addr=region1:26258
+      - --join=roach1:26257,roach2:26257,roach3:26257
+      - --listen-addr=roach1:26257
+      - --sql-addr=roach1:26258
     ports:
       - 26258:26258
       - 18080:18080
     volumes:
-      - region1:/cockroach/cockrach-data
-  region2:
+      - roach1:/cockroach/cockrach-data
+  roach2:
     image: cockroachdb/cockroach:v23.1.10
     networks:
       - roachnet
@@ -26,12 +44,12 @@ services:
       - start
       - --insecure
       - --accept-sql-without-tls
-      - --join=region1:26257,region2:26257,region3:26257
-      - --listen-addr=region2:26257
-      - --sql-addr=region2:26258
+      - --join=roach1:26257,roach2:26257,roach3:26257
+      - --listen-addr=roach2:26257
+      - --sql-addr=roach2:26258
     volumes:
-      - region1:/cockroach/cockrach-data
-  region3:
+      - roach2:/cockroach/cockrach-data
+  roach3:
     image: cockroachdb/cockroach:v23.1.10
     networks:
       - roachnet
@@ -39,12 +57,13 @@ services:
       - start
       - --insecure
       - --accept-sql-without-tls
-      - --join=region1:26257,region2:26257,region3:26257
-      - --listen-addr=region3:26257
-      - --sql-addr=region3:26258
+      - --join=roach1:26257,roach2:26257,roach3:26257
+      - --listen-addr=roach3:26257
+      - --sql-addr=roach3:26258
     volumes:
-      - region1:/cockroach/cockrach-data
+      - roach3:/cockroach/cockrach-data
 volumes:
-  region1:
-  region2:
-  region3:
+  roach1:
+  roach2:
+  roach3:
+  minio2:

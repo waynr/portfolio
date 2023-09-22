@@ -1,3 +1,2 @@
 /target
-dev-config.yml
-dev-config*.yml
+dev-config-*.yml
