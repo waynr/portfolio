@@ -7,9 +7,3 @@ objects:
   access_key: meowmeow
   hostname: localhost:9000
   bucket_name: portfolio-experiment
-
-static_registries:
-  - name: meow
-    repositories:
-      - name: woof
-      - name: hello
