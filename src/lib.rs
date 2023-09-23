@@ -2,6 +2,7 @@ mod config;
 pub use config::Config;
 pub use config::MetadataBackend;
 pub use config::ObjectsBackend;
+pub use config::RegistryDefinition;
 
 pub mod errors;
 pub use errors::{DistributionErrorCode, Error, Result};

@@ -7,3 +7,9 @@ objects:
   access_key: dev-password
   hostname: localhost:9000
   bucket_name: portfolio-dev
+
+static_registries:
+  - name: meow
+    repositories:
+      - name: woof
+      - name: hello
