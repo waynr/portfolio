@@ -30,6 +30,7 @@ init-cockroachdb:
   docker exec -it portfolio-roach1-1 \
     ./cockroach --host=roach1:26257 init --insecure
 
+export DATABASE_URL := "postgresql://root@localhost:26258/defaultdb?sslmode=disable"
 sqlx-migrate:
   sqlx migrate --source db/postgres/migrations run
 
