@@ -300,7 +300,7 @@ async fn uploads_patch<O: ObjectStore>(
     Extension(registry): Extension<Registry<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     TypedHeader(content_length): TypedHeader<ContentLength>,
-    TypedHeader(content_range): TypedHeader<ContentRange>,
+    content_range: Option<TypedHeader<ContentRange>>,
     TypedHeader(_content_type): TypedHeader<ContentType>,
     request: Request<Body>,
 ) -> Result<Response> {
@@ -327,7 +327,9 @@ async fn uploads_patch<O: ObjectStore>(
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
-    session.validate_range(content_range.bytes_range())?;
+    if let Some(TypedHeader(content_range)) = content_range {
+        session.validate_range(content_range.bytes_range())?;
+    }
 
     let store = registry.get_blob_store();
     let mut writer = store.resume(&mut session).await?;
