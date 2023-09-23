@@ -1,22 +1,21 @@
 use serde::Deserialize;
 
 use async_trait::async_trait;
-use aws_sdk_s3::client::Builder;
-use aws_sdk_s3::middleware::DefaultMiddleware;
-use aws_sdk_s3::model::{CompletedMultipartUpload, CompletedPart};
-use aws_sdk_s3::types::ByteStream;
-use aws_sdk_s3::{Client, Config, Credentials, Endpoint, Region};
-use aws_smithy_client::erase::DynMiddleware;
-use aws_types::credentials::{ProvideCredentials, SharedCredentialsProvider};
+use aws_credential_types::provider::{ProvideCredentials, SharedCredentialsProvider};
+use aws_credential_types::Credentials;
+use aws_sdk_s3::config::Region;
+use aws_sdk_s3::error::SdkError;
+use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
+use aws_sdk_s3::Client;
 use axum::body::StreamBody;
-use http::Uri;
+use http::{StatusCode, Uri};
 use hyper::body::Body;
 
-use tower::layer::util::Stack;
-
+pub(crate) mod logging;
 use crate::{
     errors::{Error, Result},
-    http::middleware::LogLayer,
+    objects::s3::logging::LoggingInterceptor,
     objects::traits::ObjectStore,
     registry::{Chunk, UploadSession},
     OciDigest,
@@ -43,26 +42,27 @@ impl S3Config {
             .provide_credentials()
             .await?,
         );
+
         let uri = Uri::builder()
             .scheme("https")
             .authority(self.hostname.as_str())
             .path_and_query("/")
             .build()?;
-        let config = Config::builder()
+
+        let sdk_config = aws_config::load_from_env().await;
+
+        let config = aws_sdk_s3::config::Builder::from(&sdk_config)
             .region(Region::new("us-east-1"))
             .credentials_provider(scp)
-            .endpoint_resolver(Endpoint::mutable(uri))
+            .endpoint_url(uri.to_string())
+            .interceptor(LoggingInterceptor)
             .build();
 
-        let middleware = Stack::new(LogLayer { target: "meow" }, DefaultMiddleware::new());
-        let inner_client = Builder::new()
-            .rustls()
-            .middleware(DynMiddleware::new(middleware))
-            .build();
+        let s3_client = aws_sdk_s3::Client::from_conf(config);
 
         Ok(S3 {
             bucket_name: self.bucket_name.clone(),
-            client: Client::with_config(inner_client, config),
+            client: s3_client,
         })
     }
 }
@@ -96,17 +96,14 @@ impl ObjectStore for S3 {
             .send()
             .await
         {
-            Err(e) => match e {
-                aws_sdk_s3::types::SdkError::ServiceError {
-                    err:
-                        aws_sdk_s3::error::HeadObjectError {
-                            kind: aws_sdk_s3::error::HeadObjectErrorKind::NotFound(_),
-                            ..
-                        },
-                    ..
-                } => Ok(false),
-                _ => Err(Error::AWSSDKHeadObjectError(e)),
-            },
+            Err(SdkError::ServiceError(e)) => {
+                let http = e.raw();
+                match http.status() {
+                    StatusCode::NOT_FOUND => Ok(false),
+                    _ => Err(SdkError::ServiceError(e).into()),
+                }
+            }
+            Err(e) => Err(Error::AWSSDKHeadObjectError(e)),
             Ok(_) => Ok(true),
         }
     }

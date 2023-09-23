@@ -1,4 +1,4 @@
-use aws_sdk_s3::types::ByteStream;
+use aws_sdk_s3::primitives::ByteStream;
 use axum::body::StreamBody;
 use hyper::body::Body;
 

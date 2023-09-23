@@ -1,5 +1,5 @@
 use axum::body::StreamBody;
-use aws_sdk_s3::types::ByteStream;
+use aws_sdk_s3::primitives::ByteStream;
 use async_trait::async_trait;
 use hyper::body::Body;
 

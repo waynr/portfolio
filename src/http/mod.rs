@@ -12,7 +12,6 @@ use axum::{
 
 pub(crate) mod blobs;
 mod manifests;
-pub(crate) mod middleware;
 mod tags;
 
 use crate::errors::Result;

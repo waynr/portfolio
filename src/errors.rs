@@ -26,32 +26,56 @@ pub enum Error {
     #[error("{0}")]
     HyperError(#[from] hyper::Error),
 
-    #[error("aws sdk credentials error")]
-    AWSSDKCredentialsError(#[from] aws_types::credentials::CredentialsError),
+    // #[error("aws sdk credentials error")]
+    // AWSSDKCredentialsError(#[from] aws_types::credentials::CredentialsError),
     #[error("aws sdk put object error")]
-    AWSSDKPutObjectError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::PutObjectError>),
+    AWSSDKPutObjectError(
+        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::put_object::PutObjectError>,
+    ),
     #[error("aws sdk get object error")]
-    AWSSDKGetObjectError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::GetObjectError>),
+    AWSSDKGetObjectError(
+        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError>,
+    ),
     #[error("aws sdk head object error")]
-    AWSSDKHeadObjectError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::HeadObjectError>),
+    AWSSDKHeadObjectError(
+        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::head_object::HeadObjectError>,
+    ),
     #[error("aws sdk copy object error")]
-    AWSSDKCopyObjectError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CopyObjectError>),
+    AWSSDKCopyObjectError(
+        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::copy_object::CopyObjectError>,
+    ),
     #[error("aws sdk delete object error")]
-    AWSSDKDeleteObjectError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::DeleteObjectError>),
+    AWSSDKDeleteObjectError(
+        #[from]
+        aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::delete_object::DeleteObjectError>,
+    ),
     #[error("aws sdk create multipart upload error")]
     AWSSDKCreateMultiPartUploadError(
-        #[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CreateMultipartUploadError>,
+        #[from]
+        aws_sdk_s3::error::SdkError<
+            aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadError,
+        >,
     ),
     #[error("aws sdk upload part error")]
-    AWSSDKUploadPartError(#[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::UploadPartError>),
+    AWSSDKUploadPartError(
+        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::upload_part::UploadPartError>,
+    ),
     #[error("aws sdk complete multipart upload error")]
     AWSSDKCompleteMultipartUploadError(
-        #[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::CompleteMultipartUploadError>,
+        #[from]
+        aws_sdk_s3::error::SdkError<
+            aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError,
+        >,
     ),
     #[error("aws sdk abort multipart upload error")]
     AWSSDKAbortMultipartUploadError(
-        #[from] aws_sdk_s3::types::SdkError<aws_sdk_s3::error::AbortMultipartUploadError>,
+        #[from]
+        aws_sdk_s3::error::SdkError<
+            aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError,
+        >,
     ),
+    #[error("aws sdk credentials error")]
+    AWSSDKCredentialsError(#[from] aws_credential_types::provider::error::CredentialsError),
 
     #[error("failed to initiate chunked upload: {0}")]
     ObjectsFailedToInitiateChunkedUpload(&'static str),
