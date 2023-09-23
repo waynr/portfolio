@@ -2,6 +2,7 @@ devenv-up:
   docker compose up -d
   just init-minio
   just init-cockroachdb
+  just sqlx-migrate
 
 devenv-down:
   docker compose down
@@ -15,6 +16,9 @@ init-minio:
 init-cockroachdb:
   docker exec -it portfolio-roach1-1 \
     ./cockroach --host=roach1:26257 init --insecure
+
+sqlx-migrate:
+  sqlx migrate --source db/postgres/migrations run
 
 we-build:
   watchexec \
