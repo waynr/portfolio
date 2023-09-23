@@ -22,6 +22,7 @@ sqlx-migrate:
 
 we-build:
   watchexec \
+    -c \
     -w src \
     -w Cargo.toml \
     -w justfile \
