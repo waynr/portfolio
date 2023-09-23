@@ -10,12 +10,15 @@ services:
       - minionet
     command:
       - server
-      - /data2
+      - /data
     ports:
       - 9000:9000
       - 9090:9090
     volumes:
-      - minio2:/data2
+      - minio1:/data
+      - type: bind
+        source: ./scripts
+        target: /portfolio/scripts
     environment:
       - MINIO_ROOT_USER=root
       - MINIO_ROOT_PASSWORD=password
@@ -66,4 +69,4 @@ volumes:
   roach1:
   roach2:
   roach3:
-  minio2:
+  minio1:

@@ -1,9 +1,9 @@
 metadata:
   type: Postgres
-  connection_string: postgresql://root@localhost:26257/defaultdb?sslmode=disable
+  connection_string: postgresql://root@localhost:26258/defaultdb?sslmode=disable
 objects:
   type: S3
-  secret_key: wayne
-  access_key: meowmeow
+  secret_key: portfolio-dev
+  access_key: dev-password
   hostname: localhost:9000
-  bucket_name: portfolio-experiment
+  bucket_name: portfolio-dev
