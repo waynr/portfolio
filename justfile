@@ -12,6 +12,7 @@ conformance-blobs $OCI_TEST_PUSH="1":
 
 devenv-up:
   docker compose up -d
+  sleep 1
   just init-minio
   just init-cockroachdb
   just sqlx-migrate
