@@ -27,6 +27,7 @@ pub struct S3Config {
     access_key: String,
     hostname: String,
     bucket_name: String,
+    region: String,
 }
 
 impl S3Config {
@@ -52,7 +53,7 @@ impl S3Config {
         let sdk_config = aws_config::load_from_env().await;
 
         let config = aws_sdk_s3::config::Builder::from(&sdk_config)
-            .region(Region::new("us-east-1"))
+            .region(Region::new(self.region.clone()))
             .credentials_provider(scp)
             .endpoint_url(uri.to_string())
             .interceptor(LoggingInterceptor)
