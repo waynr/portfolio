@@ -18,13 +18,16 @@ pub struct UploadSession {
 impl UploadSession {
     /// verify the request's ContentRange against the last chunk's end of range
     pub fn validate_range(&mut self, content_range: &ContentRange) -> Result<()> {
-        let ContentRange { start, end } = content_range;
-        if *start != 0 && *start as i64 != self.last_range_end + 1 {
+        let ContentRange { start, end: _ } = content_range;
+        if *start == 0 && self.chunk_number == 1 {
+            return Ok(())
+        }
+        if *start as i64 != self.last_range_end + 1 {
+            tracing::debug!("{content_range:?} is invalid");
             return Err(Error::DistributionSpecError(
                 DistributionErrorCode::BlobUploadInvalid,
             ));
         }
-        self.last_range_end = *end as i64;
         Ok(())
     }
 }
