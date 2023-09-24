@@ -32,11 +32,16 @@ export DATABASE_URL := "postgresql://root@localhost:26258/defaultdb?sslmode=disa
 sqlx-migrate:
   sqlx migrate --source db/postgres/migrations run
 
-we-build:
+build-and-run config:
+  cargo build
+  ./target/debug/portfolio --config-file {{config}}
+
+we-build config:
   watchexec \
     -c \
     -w src \
     -w Cargo.toml \
     -w justfile \
     -e toml,rs \
-    'cargo build --all'
+    --restart \
+    just build-and-run {{config}}
