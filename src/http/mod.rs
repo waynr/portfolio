@@ -49,8 +49,8 @@ pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
         .nest("/v2/:repository/tags", tags)
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(trace::DefaultMakeSpan::new())
-                .on_response(trace::DefaultOnResponse::new()),
+                .on_response(trace::DefaultOnResponse::new())
+                .on_request(trace::DefaultOnRequest::new()),
         )
         .route_layer(axum_middleware::from_fn_with_state(portfolio.clone(), auth));
 

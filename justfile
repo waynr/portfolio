@@ -35,7 +35,7 @@ sqlx-migrate:
 build:
   cargo build
 
-run config $RUST_LOG="info,tower_http=trace,sqlx::query=off":
+run config $RUST_LOG="info,portfolio=debug,tower_http=debug,sqlx::query=off":
   ./target/debug/portfolio --config-file {{config}}
 
 build-and-run config:
