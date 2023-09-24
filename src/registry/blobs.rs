@@ -49,11 +49,24 @@ where
     pub async fn upload(&mut self, digest: &str, content_length: u64, body: Body) -> Result<()> {
         let oci_digest: OciDigest = digest.try_into()?;
 
+        let uuid = match self
+            .metadata
+            .get_blob(&self.registry.id, &oci_digest)
+            .await?
+        {
+            Some(b) => b.id,
+            None => {
+                self.metadata
+                    .insert_blob(&self.registry.id, &oci_digest)
+                    .await?
+            }
+        };
+
         // upload blob
         let digester = oci_digest.digester();
         let stream_body = StreamObjectBody::from_body(body, digester);
         self.objects
-            .upload_blob(&oci_digest, stream_body.into(), content_length)
+            .upload_blob(&uuid, stream_body.into(), content_length)
             .await?;
 
         // TODO: validate digest
@@ -75,11 +88,7 @@ where
 
     pub async fn get_blob(&self, key: &OciDigest) -> Result<Option<StreamBody<ByteStream>>> {
         if let Some(blob) = self.metadata.get_blob(&self.registry.id, key).await? {
-            Ok(Some(
-                self.objects
-                    .get_blob(&blob.digest.as_str().try_into()?)
-                    .await?,
-            ))
+            Ok(Some(self.objects.get_blob(&blob.id).await?))
         } else {
             Ok(None)
         }
@@ -116,18 +125,28 @@ where
     }
 
     pub async fn finalize(&mut self, digest: &OciDigest) -> Result<()> {
-        if !self.objects.blob_exists(digest).await? {
+        let uuid = match self
+            .metadata
+            .get_blob(&self.registry.id, &digest)
+            .await?
+        {
+            Some(b) => b.id,
+            None => {
+                self.metadata
+                    .insert_blob(&self.registry.id, &digest)
+                    .await?
+            }
+        };
+
+        if !self.objects.blob_exists(&uuid).await? {
             let chunks = self.metadata.get_chunks(self.session).await?;
             self.objects
-                .finalize_chunked_upload(self.session, chunks, digest)
+                .finalize_chunked_upload(self.session, chunks, &uuid)
                 .await?;
         } else {
             self.objects.abort_chunked_upload(self.session).await?;
         }
 
-        if !self.metadata.blob_exists(&self.registry.id, digest).await? {
-            self.metadata.insert_blob(&self.registry.id, digest).await?;
-        }
         Ok(())
     }
 }

@@ -11,6 +11,7 @@ use aws_sdk_s3::Client;
 use axum::body::StreamBody;
 use http::{StatusCode, Uri};
 use hyper::body::Body;
+use uuid::Uuid;
 
 pub(crate) mod logging;
 use crate::{
@@ -18,7 +19,6 @@ use crate::{
     objects::s3::logging::LoggingInterceptor,
     objects::traits::ObjectStore,
     registry::{Chunk, UploadSession},
-    OciDigest,
 };
 
 #[derive(Clone, Deserialize)]
@@ -76,11 +76,11 @@ pub struct S3 {
 
 #[async_trait]
 impl ObjectStore for S3 {
-    async fn get_blob(&self, key: &OciDigest) -> Result<StreamBody<ByteStream>> {
+    async fn get_blob(&self, key: &Uuid) -> Result<StreamBody<ByteStream>> {
         let get_object_output = self
             .client
             .get_object()
-            .key(key)
+            .key(key.to_string())
             .bucket(&self.bucket_name)
             .send()
             .await?;
@@ -88,11 +88,11 @@ impl ObjectStore for S3 {
         Ok(StreamBody::new(get_object_output.body))
     }
 
-    async fn blob_exists(&self, key: &OciDigest) -> Result<bool> {
+    async fn blob_exists(&self, key: &Uuid) -> Result<bool> {
         match self
             .client
             .head_object()
-            .key(key)
+            .key(key.to_string())
             .bucket(&self.bucket_name)
             .send()
             .await
@@ -109,11 +109,11 @@ impl ObjectStore for S3 {
         }
     }
 
-    async fn upload_blob(&self, key: &OciDigest, body: Body, content_length: u64) -> Result<()> {
+    async fn upload_blob(&self, key: &Uuid, body: Body, content_length: u64) -> Result<()> {
         let _put_object_output = self
             .client
             .put_object()
-            .key(key)
+            .key(key.to_string())
             .body(body.into())
             .content_length(content_length as i64)
             .bucket(&self.bucket_name)
@@ -179,7 +179,7 @@ impl ObjectStore for S3 {
         &self,
         session: &UploadSession,
         chunks: Vec<Chunk>,
-        dgst: &OciDigest,
+        key: &Uuid,
     ) -> Result<()> {
         // this state shouldn't be reachable, but if it is then consider it an error so we can
         // learn about it at runtime (rather than simply ignoring it)
@@ -187,6 +187,9 @@ impl ObjectStore for S3 {
             .upload_id
             .as_ref()
             .ok_or_else(|| Error::ObjectsMissingUploadID(session.uuid))?;
+
+        let session_uuid = session.uuid.to_string();
+        let key = key.to_string();
 
         let mut mpu = CompletedMultipartUpload::builder();
         for chunk in chunks {
@@ -201,7 +204,7 @@ impl ObjectStore for S3 {
             .complete_multipart_upload()
             .multipart_upload(mpu.build())
             .upload_id(upload_id)
-            .key(session.uuid.to_string())
+            .key(&session_uuid)
             .bucket(&self.bucket_name)
             .send()
             .await?;
@@ -211,7 +214,7 @@ impl ObjectStore for S3 {
             .client
             .copy_object()
             .copy_source(copy_source)
-            .key(dgst)
+            .key(key)
             .bucket(&self.bucket_name)
             .send()
             .await?;
@@ -219,7 +222,7 @@ impl ObjectStore for S3 {
         let _delete_object_output = self
             .client
             .delete_object()
-            .key(session.uuid.to_string())
+            .key(&session_uuid)
             .bucket(&self.bucket_name)
             .send()
             .await?;
