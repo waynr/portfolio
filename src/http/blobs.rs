@@ -10,13 +10,18 @@ use axum::{
     routing::{get, patch, post},
     Router,
 };
+use headers::Header;
 use hyper::body::Body;
 
 use uuid::Uuid;
 
 use crate::{
-    http::notimplemented, objects::ObjectStore, registry::registries::Registry,
-    registry::UploadSession, DistributionErrorCode, Error, OciDigest, Result,
+    http::headers::{ContentRange, Range},
+    http::notimplemented,
+    objects::ObjectStore,
+    registry::registries::Registry,
+    registry::UploadSession,
+    DistributionErrorCode, Error, OciDigest, Result,
 };
 
 pub fn router<O: ObjectStore>() -> Router {
@@ -198,7 +203,7 @@ async fn uploads_put<O: ObjectStore>(
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
-    content_range: Option<TypedHeader<crate::http::headers::ContentRange>>,
+    content_range: Option<TypedHeader<ContentRange>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
 ) -> Result<Response> {
@@ -236,7 +241,7 @@ async fn uploads_put<O: ObjectStore>(
         Some(_) => {
             let store = registry.get_blob_store();
             if let Some(TypedHeader(content_range)) = content_range {
-                session.validate_range(content_range)?;
+                session.validate_range(&content_range)?;
             }
 
             if let (
@@ -300,7 +305,7 @@ async fn uploads_patch<O: ObjectStore>(
     Extension(registry): Extension<Registry<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     TypedHeader(content_length): TypedHeader<ContentLength>,
-    content_range: Option<TypedHeader<crate::http::headers::ContentRange>>,
+    content_range: Option<TypedHeader<ContentRange>>,
     TypedHeader(_content_type): TypedHeader<ContentType>,
     request: Request<Body>,
 ) -> Result<Response> {
@@ -327,19 +332,31 @@ async fn uploads_patch<O: ObjectStore>(
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
-    if let Some(TypedHeader(content_range)) = content_range {
-        session.validate_range(content_range)?;
-    }
+    let range: Option<Range> = if let Some(TypedHeader(content_range)) = content_range {
+        session.validate_range(&content_range)?;
+        Some(content_range.into())
+    } else {
+        None
+    };
 
     let store = registry.get_blob_store();
-    let mut writer = store.resume(&mut session).await?;
-    let _written = writer.write(content_length.0, request.into_body());
+    {
+        let mut writer = store.resume(&mut session).await?;
+        let _written = writer.write(content_length.0, request.into_body());
+    }
 
     // TODO: validate content length of chunk
     // TODO: update incremental digest state on session
 
-    let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session_uuid);
     let mut headers = HeaderMap::new();
+
+    let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session_uuid);
     headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+
+    if let Some(range) = range {
+        let range: String = (&range).into();
+        headers.insert(Range::name(), HeaderValue::from_str(&range).expect("meow"));
+    }
+
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
 }

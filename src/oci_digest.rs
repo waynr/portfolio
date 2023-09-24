@@ -87,7 +87,7 @@ impl Digester {
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DigestState {
     sha256_state: Box<[u8]>,
     sha512_state: Box<[u8]>,

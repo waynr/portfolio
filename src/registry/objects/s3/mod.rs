@@ -171,6 +171,7 @@ impl ObjectStore for S3 {
             chunk_number: session.chunk_number,
         };
         session.chunk_number += 1;
+        session.last_range_end += content_length as i64;
 
         Ok(chunk)
     }
