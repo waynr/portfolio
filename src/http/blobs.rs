@@ -35,7 +35,9 @@ pub fn router<O: ObjectStore>() -> Router {
         .route("/uploads/", post(uploads_post::<O>))
         .route(
             "/uploads/:session_uuid",
-            patch(uploads_patch::<O>).put(uploads_put::<O>),
+            patch(uploads_patch::<O>)
+                .put(uploads_put::<O>)
+                .get(uploads_get::<O>),
         )
 }
 
@@ -358,4 +360,40 @@ async fn uploads_patch<O: ObjectStore>(
     }
 
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
+}
+
+async fn uploads_get<O: ObjectStore>(
+    Extension(registry): Extension<Registry<O>>,
+    Path(path_params): Path<HashMap<String, String>>,
+) -> Result<Response> {
+    let repo_name = match path_params.get("repository") {
+        Some(s) => s,
+        None => return Err(Error::MissingPathParameter("repository")),
+    };
+
+    let session_uuid = path_params
+        .get("session_uuid")
+        .map(|s| Uuid::parse_str(s))
+        .transpose()?
+        .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
+
+    // retrieve the session or fail if it doesn't exist
+    let session = registry
+        .get_upload_session(&session_uuid)
+        .await
+        .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
+
+    let mut headers = HeaderMap::new();
+
+    let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session_uuid);
+    headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+
+    let range = Range {
+        start: 0,
+        end: session.last_range_end as u64,
+    };
+    let range: String = (&range).into();
+    headers.insert(Range::name(), HeaderValue::from_str(&range).expect("meow"));
+
+    Ok((StatusCode::NO_CONTENT, headers, "").into_response())
 }
