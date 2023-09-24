@@ -11,7 +11,7 @@ conformance-push focus="" $OCI_TEST_PUSH="1":
 conformance focus="":
   pushd distribution-spec/conformance \
     && go test -c \
-    && ./conformance.test -test.failfast  -ginkgo.focus={{focus}}
+    && ./conformance.test -test.failfast -ginkgo.fail-fast -ginkgo.focus="{{focus}}"
 
 devenv-up:
   docker compose up -d
