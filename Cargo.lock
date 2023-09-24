@@ -1114,18 +1114,17 @@ dependencies = [
 
 [[package]]
 name = "headers"
-version = "0.3.7"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cff78e5788be1e0ab65b04d306b2ed5092c815ec97ec70f4ebd5aee158aa55d"
+checksum = "06683b93020a07e3dbcf5f8c0f6d40080d725bea7936fc01ad345c01b97dc270"
 dependencies = [
- "base64 0.13.0",
- "bitflags",
+ "base64 0.21.4",
  "bytes",
  "headers-core",
  "http",
  "httpdate",
  "mime",
- "sha-1 0.10.0",
+ "sha1",
 ]
 
 [[package]]
@@ -1674,6 +1673,7 @@ dependencies = [
  "clap",
  "digest 0.10.3",
  "futures-core",
+ "headers",
  "http",
  "http-body",
  "hyper",
@@ -2032,17 +2032,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sha-1"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "028f48d513f9678cda28f6e4064755b3fbb2af6acd672f2c209b62323f7aea0f"
-dependencies = [
- "cfg-if",
- "cpufeatures",
- "digest 0.10.3",
-]
-
-[[package]]
 name = "sha1"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2181,7 +2170,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
- "sha-1 0.9.8",
+ "sha-1",
  "sha2 0.9.9",
  "smallvec",
  "sqlformat",

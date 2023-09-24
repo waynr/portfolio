@@ -29,6 +29,8 @@ uuid = { version = "~0.8", features = [ "v4" ] }
 
 http = "0.2"
 http-body = "0.4"
+headers = "0.3.9"
+
 aws-config = "0.56.1"
 aws-types = "0.56.1"
 aws-credential-types = "0.56.1"

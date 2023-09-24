@@ -10,6 +10,8 @@ use axum::{
     Router,
 };
 
+pub mod headers;
+
 pub(crate) mod blobs;
 mod manifests;
 mod tags;

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ::http::StatusCode;
 use axum::{
     extract::{Extension, Path, Query, TypedHeader},
-    headers::{ContentLength, ContentRange, ContentType},
+    headers::{ContentLength, ContentType},
     http::header::{self, HeaderMap, HeaderName, HeaderValue},
     http::Request,
     response::{IntoResponse, Response},
@@ -15,9 +15,8 @@ use hyper::body::Body;
 use uuid::Uuid;
 
 use crate::{
-    http::notimplemented, objects::ObjectStore,
-    registry::registries::Registry, registry::UploadSession,
-    DistributionErrorCode, Error, OciDigest, Result,
+    http::notimplemented, objects::ObjectStore, registry::registries::Registry,
+    registry::UploadSession, DistributionErrorCode, Error, OciDigest, Result,
 };
 
 pub fn router<O: ObjectStore>() -> Router {
@@ -199,7 +198,7 @@ async fn uploads_put<O: ObjectStore>(
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
-    content_range: Option<TypedHeader<ContentRange>>,
+    content_range: Option<TypedHeader<crate::http::headers::ContentRange>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
 ) -> Result<Response> {
@@ -236,19 +235,20 @@ async fn uploads_put<O: ObjectStore>(
         // POST-PATCH-PUT
         Some(_) => {
             let store = registry.get_blob_store();
+            if let Some(TypedHeader(content_range)) = content_range {
+                session.validate_range(content_range)?;
+            }
+
             if let (
                 // TODO: what if there is a body but none of the content headers are set? technically
                 // this would be a client bug, but it could also result in data corruption and as such
                 // should probably be handled here. this should probably result in a 400 bad request
                 // error if we can detect it
-                Some(TypedHeader(content_range)),
                 // TODO: what should we do with ContentType?
                 Some(TypedHeader(_content_type)),
                 Some(TypedHeader(content_length)),
-            ) = (content_range, content_type, content_length)
+            ) = (content_type, content_length)
             {
-                session.validate_range(content_range.bytes_range())?;
-
                 let mut writer = store.resume(&mut session).await?;
                 let _written = writer.write(content_length.0, request.into_body());
 
@@ -300,7 +300,7 @@ async fn uploads_patch<O: ObjectStore>(
     Extension(registry): Extension<Registry<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     TypedHeader(content_length): TypedHeader<ContentLength>,
-    content_range: Option<TypedHeader<ContentRange>>,
+    content_range: Option<TypedHeader<crate::http::headers::ContentRange>>,
     TypedHeader(_content_type): TypedHeader<ContentType>,
     request: Request<Body>,
 ) -> Result<Response> {
@@ -328,7 +328,7 @@ async fn uploads_patch<O: ObjectStore>(
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
     if let Some(TypedHeader(content_range)) = content_range {
-        session.validate_range(content_range.bytes_range())?;
+        session.validate_range(content_range)?;
     }
 
     let store = registry.get_blob_store();
