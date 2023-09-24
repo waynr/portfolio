@@ -341,7 +341,7 @@ async fn uploads_patch<O: ObjectStore>(
     let store = registry.get_blob_store();
     {
         let mut writer = store.resume(&mut session).await?;
-        let _written = writer.write(content_length.0, request.into_body());
+        let _written = writer.write(content_length.0, request.into_body()).await?;
     }
 
     // TODO: validate content length of chunk
