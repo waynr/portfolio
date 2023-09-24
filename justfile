@@ -5,13 +5,13 @@ export OCI_DEBUG := "1"
 #export OCI_USERNAME="myuser"
 #export OCI_PASSWORD="mypass"
 
-conformance-push $OCI_TEST_PUSH="1":
-  just conformance
+conformance-push focus="" $OCI_TEST_PUSH="1":
+  just conformance '{{focus}}'
 
-conformance:
+conformance focus="":
   pushd distribution-spec/conformance \
     && go test -c \
-    && ./conformance.test -test.failfast
+    && ./conformance.test -test.failfast  -ginkgo.focus={{focus}}
 
 devenv-up:
   docker compose up -d
