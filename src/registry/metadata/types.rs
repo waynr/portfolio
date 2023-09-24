@@ -15,6 +15,7 @@ pub struct Repository {
 pub struct Blob {
     pub id: Uuid,
     pub registry_id: Uuid,
+    pub uploaded: bool,
     pub digest: String,
 }
 

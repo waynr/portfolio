@@ -57,7 +57,7 @@ where
             Some(b) => b.id,
             None => {
                 self.metadata
-                    .insert_blob(&self.registry.id, &oci_digest)
+                    .insert_blob(&self.registry.id, &oci_digest, false)
                     .await?
             }
         };
@@ -72,16 +72,7 @@ where
         // TODO: validate digest
         // TODO: validate content length
 
-        // insert metadata
-        if !self
-            .metadata
-            .blob_exists(&self.registry.id, &oci_digest)
-            .await?
-        {
-            self.metadata
-                .insert_blob(&self.registry.id, &oci_digest)
-                .await?;
-        }
+        self.metadata.update_blob(&uuid, true).await?;
 
         Ok(())
     }
@@ -125,15 +116,11 @@ where
     }
 
     pub async fn finalize(&mut self, digest: &OciDigest) -> Result<()> {
-        let uuid = match self
-            .metadata
-            .get_blob(&self.registry.id, &digest)
-            .await?
-        {
+        let uuid = match self.metadata.get_blob(&self.registry.id, &digest).await? {
             Some(b) => b.id,
             None => {
                 self.metadata
-                    .insert_blob(&self.registry.id, &digest)
+                    .insert_blob(&self.registry.id, &digest, false)
                     .await?
             }
         };
@@ -146,6 +133,8 @@ where
         } else {
             self.objects.abort_chunked_upload(self.session).await?;
         }
+
+        self.metadata.update_blob(&uuid, true).await?;
 
         Ok(())
     }

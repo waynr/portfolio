@@ -19,6 +19,7 @@ CREATE TABLE repositories (
 CREATE TABLE blobs (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	digest VARCHAR(256) NOT NULL,
+	uploaded BOOL NOT NULL,
 	registry_id UUID NOT NULL REFERENCES registries (id),
 	UNIQUE (id, registry_id)
 );

@@ -1,13 +1,13 @@
 use serde::Deserialize;
 use sqlx::postgres::{PgPoolOptions, Postgres};
-use sqlx::Pool;
 use sqlx::types::Json;
+use sqlx::Pool;
 use uuid::Uuid;
 
-use crate::OciDigest;
 use crate::errors::{Error, Result};
 use crate::metadata::{Blob, Registry, Repository};
 use crate::registry::{Chunk, UploadSession};
+use crate::OciDigest;
 use crate::{DigestState, RegistryDefinition};
 
 #[derive(Clone, Deserialize)]
@@ -95,16 +95,22 @@ WHERE reg.id = $1 AND rep.name = $2
         .await?)
     }
 
-    pub async fn insert_blob(&self, registry_id: &Uuid, digest: &OciDigest) -> Result<Uuid> {
+    pub async fn insert_blob(
+        &self,
+        registry_id: &Uuid,
+        digest: &OciDigest,
+        uploaded: bool,
+    ) -> Result<Uuid> {
         let mut conn = self.pool.acquire().await?;
         let record = sqlx::query!(
             r#"
-INSERT INTO blobs ( digest, registry_id )
-VALUES ( $1, $2 )
+INSERT INTO blobs ( digest, registry_id, uploaded )
+VALUES ( $1, $2, $3 )
 RETURNING id
             "#,
             String::from(digest),
             registry_id,
+            uploaded,
         )
         .fetch_one(&mut conn)
         .await?;
@@ -112,12 +118,29 @@ RETURNING id
         Ok(record.id)
     }
 
+    pub async fn update_blob(&self, uuid: &Uuid, uploaded: bool) -> Result<()> {
+        let mut conn = self.pool.acquire().await?;
+        sqlx::query!(
+            r#"
+UPDATE blobs
+SET uploaded = $2
+WHERE id = $1
+            "#,
+            uuid,
+            uploaded,
+        )
+        .execute(&mut conn)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn get_blob(&self, registry_id: &Uuid, digest: &OciDigest) -> Result<Option<Blob>> {
         let mut conn = self.pool.acquire().await?;
         Ok(sqlx::query_as!(
             Blob,
             r#"
-SELECT id, digest, registry_id
+SELECT id, digest, uploaded, registry_id
 FROM blobs
 WHERE registry_id = $1 AND digest = $2
             "#,
@@ -260,9 +283,9 @@ WHERE upload_session_uuid = $1
 ORDER BY chunk_number
             "#,
             session.uuid,
-            )
-            .fetch_all(&mut conn)
-            .await?)
+        )
+        .fetch_all(&mut conn)
+        .await?)
     }
 
     pub async fn insert_chunk(&self, session: &UploadSession, chunk: &Chunk) -> Result<()> {
@@ -275,9 +298,9 @@ VALUES ( $1, $2, $3 )
             chunk.chunk_number,
             session.uuid,
             chunk.e_tag,
-            )
-            .execute(&mut conn)
-            .await?;
+        )
+        .execute(&mut conn)
+        .await?;
 
         Ok(())
     }
