@@ -38,7 +38,7 @@ impl S3Config {
                 self.secret_key.clone(),
                 None,
                 None,
-                "portfolio-hardcoded",
+                "portfolio",
             )
             .provide_credentials()
             .await?,
