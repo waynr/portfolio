@@ -13,7 +13,7 @@ impl aws_sdk_s3::config::Interceptor for LoggingInterceptor {
         _cfg: &mut aws_sdk_s3::config::ConfigBag,
     ) -> Result<(), aws_sdk_s3::error::BoxError> {
         let request = context.request();
-        println!("read_after_serialization: request = {request:?}");
+        tracing::trace!("read_after_serialization: request = {request:?}");
         Ok(())
     }
 
@@ -24,7 +24,7 @@ impl aws_sdk_s3::config::Interceptor for LoggingInterceptor {
         _cfg: &mut aws_sdk_s3::config::ConfigBag,
     ) -> Result<(), aws_sdk_s3::error::BoxError> {
         let response = context.response();
-        println!("read_after_deserialization: response = {response:?}");
+        tracing::trace!("read_after_deserialization: response = {response:?}");
         Ok(())
     }
 }

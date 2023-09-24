@@ -18,6 +18,17 @@ struct Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_target(true)
+        .compact()
+        .init();
+
+    tracing::info!("info enabled");
+    tracing::warn!("warning enabled");
+    tracing::debug!("debug enabled");
+    tracing::trace!("trace enabled");
+
     // load configuration
     let mut dev_config = File::open(cli.config_file.unwrap_or("./dev-config.yml".into()))?;
     let mut s = String::new();

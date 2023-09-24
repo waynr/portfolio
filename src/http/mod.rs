@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 
 use axum::{
-    extract::State,
     extract::Path,
+    extract::State,
     http::{Request, StatusCode},
     middleware::{self as axum_middleware, Next},
     response::Response,
     routing::get,
     Router,
 };
+use tower_http::trace::{self, TraceLayer};
 
 pub mod headers;
 
@@ -46,6 +47,11 @@ pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
         .nest("/v2/:repository/blobs", blobs)
         .nest("/v2/:repository/manifests", manifests)
         .nest("/v2/:repository/tags", tags)
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(trace::DefaultMakeSpan::new())
+                .on_response(trace::DefaultOnResponse::new()),
+        )
         .route_layer(axum_middleware::from_fn_with_state(portfolio.clone(), auth));
 
     axum::Server::bind(&"0.0.0.0:13030".parse()?)
