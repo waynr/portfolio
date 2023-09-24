@@ -293,8 +293,7 @@ async fn uploads_put<O: ObjectStore>(
     match registry.delete_session(&session).await {
         Ok(_) => (),
         Err(e) => {
-            // TODO: this should use a logging library
-            eprintln!("{:?}", e);
+            tracing::warn!("failed to delete session: {e:?}");
         }
     };
 

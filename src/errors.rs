@@ -155,7 +155,7 @@ impl IntoResponse for Error {
             Error::InvalidHeaderValue(_) => (StatusCode::BAD_REQUEST, format!("{}", self)),
             Error::MissingPathParameter(_) => (StatusCode::BAD_REQUEST, format!("{}", self)),
             _ => {
-                eprintln!("{:?}", self);
+                tracing::warn!("{:?}", self);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     String::from("something bad happened"),

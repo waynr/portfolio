@@ -315,16 +315,14 @@ impl PostgresMetadata {
         for registry_config in registries {
             let registry = match self.get_registry(&registry_config.name).await {
                 Ok(r) => r,
-                Err(e) => match e {
-                    Error::SQLXError(ref source) => match source {
-                        sqlx::Error::RowNotFound => {
-                            println!("registry not found!");
-                            self.insert_registry(&registry_config.name).await?
-                        }
-                        _ => return Err(e),
-                    },
-                    _ => return Err(e),
-                },
+                Err(Error::SQLXError(sqlx::Error::RowNotFound)) => {
+                    tracing::info!(
+                        "static registry '{}' not found, inserting into DB",
+                        registry_config.name
+                    );
+                    self.insert_registry(&registry_config.name).await?
+                }
+                Err(e) => return Err(e),
             };
 
             for repository_config in registry_config.repositories {
@@ -333,17 +331,16 @@ impl PostgresMetadata {
                     .await
                 {
                     Ok(r) => r,
-                    Err(e) => match e {
-                        Error::SQLXError(ref source) => match source {
-                            sqlx::Error::RowNotFound => {
-                                println!("repository not found!");
-                                self.insert_repository(&registry.id, &repository_config.name)
-                                    .await?
-                            }
-                            _ => return Err(e),
-                        },
-                        _ => return Err(e),
-                    },
+                    Err(Error::SQLXError(sqlx::Error::RowNotFound)) => {
+                        tracing::info!(
+                            "static repository '{}' for registry '{}' not found, inserting into DB",
+                            repository_config.name,
+                            registry_config.name
+                        );
+                        self.insert_repository(&registry.id, &repository_config.name)
+                            .await?
+                    }
+                    Err(e) => return Err(e),
                 };
             }
         }
