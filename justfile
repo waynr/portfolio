@@ -32,9 +32,15 @@ export DATABASE_URL := "postgresql://root@localhost:26258/defaultdb?sslmode=disa
 sqlx-migrate:
   sqlx migrate --source db/postgres/migrations run
 
-build-and-run config:
+build:
   cargo build
+
+run config $RUST_LOG="info,tower_http=trace,sqlx::query=off":
   ./target/debug/portfolio --config-file {{config}}
+
+build-and-run config:
+    just build
+    just run {{config}}
 
 we-build config:
   watchexec \
