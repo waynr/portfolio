@@ -1,14 +1,25 @@
+use std::path::PathBuf;
 use std::fs::File;
 use std::io::Read;
+
+use clap::Parser;
 
 use portfolio::http;
 use portfolio::Result;
 use portfolio::{Config, MetadataBackend, ObjectsBackend};
 
+#[derive(Parser)]
+struct Cli {
+    #[arg(short, long)]
+    config_file: Option<PathBuf>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
     // load configuration
-    let mut dev_config = File::open("./dev-config.yml")?;
+    let mut dev_config = File::open(cli.config_file.unwrap_or("./dev-config.yml".into()))?;
     let mut s = String::new();
     dev_config.read_to_string(&mut s)?;
     let config: Config = serde_yaml::from_str(&s)?;
