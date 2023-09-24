@@ -5,10 +5,13 @@ export OCI_DEBUG := "1"
 #export OCI_USERNAME="myuser"
 #export OCI_PASSWORD="mypass"
 
-conformance-blobs $OCI_TEST_PUSH="1":
+conformance-push $OCI_TEST_PUSH="1":
+  just conformance
+
+conformance:
   pushd distribution-spec/conformance \
     && go test -c \
-    && ./conformance.test -test.failfast -ginkgo.focus="Blob Upload Streamed"
+    && ./conformance.test -test.failfast
 
 devenv-up:
   docker compose up -d
