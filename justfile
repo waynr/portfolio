@@ -13,7 +13,6 @@ conformance-blobs $OCI_TEST_PUSH="1":
 devenv-up:
   docker compose up -d
   sleep 1
-  just init-minio
   just init-cockroachdb
   just sqlx-migrate
 
@@ -21,10 +20,6 @@ devenv-down:
   docker compose down
   docker volume ls -f name=portfolio -q \
     | xargs docker volume rm
-
-init-minio:
-  docker exec -it portfolio-minio1-1 \
-    bash -x /portfolio/scripts/minio-init.bash
 
 init-cockroachdb:
   docker exec -it portfolio-roach1-1 \

@@ -1,28 +1,7 @@
 networks:
-  minionet:
-    driver: bridge
   roachnet:
     driver: bridge
 services:
-  minio1:
-    image: quay.io/minio/minio
-    networks:
-      - minionet
-    command:
-      - server
-      - /data
-    ports:
-      - 9000:9000
-      - 9090:9090
-    volumes:
-      - minio1:/data
-      - type: bind
-        source: ./scripts
-        target: /portfolio/scripts
-    environment:
-      - MINIO_ROOT_USER=root
-      - MINIO_ROOT_PASSWORD=password
-      - MINIO_CONSOLE_ADDRESS=127.0.0.1:9090
   roach1:
     image: cockroachdb/cockroach:v23.1.10
     networks:
@@ -69,4 +48,3 @@ volumes:
   roach1:
   roach2:
   roach3:
-  minio1:
