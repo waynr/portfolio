@@ -56,3 +56,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"]}
 
 # OCI & Distribution Spec
 oci-spec = "0.5"
+
+[dev-dependencies]
+
+rstest = "0.17.0"

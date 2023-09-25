@@ -5,6 +5,7 @@ use sha2::{Sha256, Sha512};
 use crate::{Error, Result};
 
 // https://github.com/opencontainers/image-spec/blob/main/descriptor.md#digests
+#[derive(Debug, PartialEq)]
 pub struct OciDigest {
     algorithm: RegisteredImageSpecAlgorithm,
     encoded: String,
@@ -21,8 +22,9 @@ impl TryFrom<&str> for OciDigest {
             Some(a) => a,
             None => return Err(Error::InvalidDigest(s.to_string())),
         };
-        let encoded: &str = match s.get(i..) {
-            Some(e) => e,
+        let encoded: &str = match s.get(i+1..) {
+            Some(e) if e.len() > 0 => e,
+            Some(_) => return Err(Error::InvalidDigest(s.to_string())),
             None => return Err(Error::InvalidDigest(s.to_string())),
         };
         let algorithm = match algo {
@@ -63,6 +65,7 @@ impl OciDigest {
     }
 }
 
+#[derive(Debug, PartialEq)]
 enum RegisteredImageSpecAlgorithm {
     Sha256,
     Sha512,
@@ -91,4 +94,44 @@ impl Digester {
 pub struct DigestState {
     sha256_state: Box<[u8]>,
     sha512_state: Box<[u8]>,
+}
+
+#[cfg(test)]
+mod test {
+    use rstest::*;
+
+    use super::*;
+
+    #[rstest]
+    #[case::meow("sha256:meow", Ok(OciDigest {
+        algorithm: RegisteredImageSpecAlgorithm::Sha256,
+        encoded: String::from("meow"),
+    }))]
+    #[case::meow("sha512:meow", Ok(OciDigest {
+        algorithm: RegisteredImageSpecAlgorithm::Sha512,
+        encoded: String::from("meow"),
+    }))]
+    #[case::meow("sha666:meow", Err(Error::InvalidDigest(String::from("sha666:meow"))))]
+    #[case::meow("sha256meow", Err(Error::InvalidDigest(String::from("sha256meow"))))]
+    #[case::meow("sha256:", Err(Error::InvalidDigest(String::from("sha256:"))))]
+    #[case::meow(":meow", Err(Error::InvalidDigest(String::from(":meow"))))]
+    fn validate_try_from(#[case] input: &str, #[case] expected: Result<OciDigest>) {
+        let actual: Result<OciDigest> = input.try_into();
+        match (expected, actual) {
+            (Ok(exp), Ok(act)) => {
+                assert_eq!(exp, act);
+            },
+            (Ok(s), Err(e)) => {
+                assert!(false, "expected Ok( {s:?} ) got Err( {e:?} )");
+            },
+            (Err(exp), Err(act)) => {
+                let exp = format!("{exp}");
+                let act = format!("{act}");
+                assert_eq!(exp, act);
+            },
+            (Err(e), Ok(s)) => {
+                assert!(false, "expected Err( {e:?} ) got Ok( {s:?} )");
+            },
+        }
+    }
 }
