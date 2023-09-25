@@ -176,11 +176,12 @@ SELECT exists(
 SELECT exists(
     SELECT 1
     FROM blobs
-    WHERE registry_id = $1 AND digest = $2
+    WHERE registry_id = $1 AND digest = $2 AND uploaded = $3
 ) as "exists!"
             "#,
             registry_id,
             String::from(digest),
+            true,
         )
         .fetch_one(&mut conn)
         .await?

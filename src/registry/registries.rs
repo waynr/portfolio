@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
 use crate::errors::Result;
-use crate::metadata::{PostgresMetadata, Registry as RegistryMetadata};
+use crate::metadata::{PostgresMetadata, Registry as RegistryMetadata, Repository};
 use crate::objects::ObjectStore;
 use crate::registry::blobs::BlobStore;
 use crate::registry::UploadSession;
@@ -52,5 +52,9 @@ where
 
     pub async fn delete_session(&self, session: &UploadSession) -> Result<()> {
         self.metadata.delete_session(session).await
+    }
+
+    pub async fn create_repository(&self, name: &String) -> Result<Repository> {
+        self.metadata.insert_repository(&self.registry.id, name).await
     }
 }

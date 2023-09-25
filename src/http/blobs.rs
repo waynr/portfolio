@@ -133,9 +133,31 @@ async fn uploads_post<O: ObjectStore>(
     };
 
     if !registry.repository_exists(repo_name).await? {
-        return Err(Error::DistributionSpecError(
-            DistributionErrorCode::NameUnknown,
-        ));
+        registry.create_repository(repo_name).await?;
+    }
+
+    let mount = query_params.get("mount");
+    let from = query_params.get("from");
+    match (mount, from) {
+        (Some(digest), Some(_dontcare)) => {
+            let mut headers = HeaderMap::new();
+            let oci_digest: OciDigest = digest.as_str().try_into()?;
+
+            let store = registry.get_blob_store();
+            if !store.blob_exists(&oci_digest).await? {
+                let session: UploadSession = registry.new_upload_session().await?;
+
+                let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);
+                let mut headers = HeaderMap::new();
+                headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+                return Ok((StatusCode::ACCEPTED, headers, "").into_response())
+            }
+
+            let location = format!("/v2/{}/blobs/{}", &repo_name, digest);
+            headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+            return Ok((StatusCode::CREATED, headers, "").into_response());
+        }
+        (_, _) => {}
     }
 
     match query_params.get("digest") {
