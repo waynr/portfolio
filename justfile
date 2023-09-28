@@ -8,6 +8,9 @@ export OCI_DEBUG := "1"
 conformance-push focus="" $OCI_TEST_PUSH="1":
   just conformance '{{focus}}'
 
+conformance-pull focus="" $OCI_TEST_PULL="1":
+  just conformance '{{focus}}'
+
 conformance focus="":
   pushd distribution-spec/conformance \
     && go test -c \
@@ -23,6 +26,10 @@ devenv-down:
   docker compose down
   docker volume ls -f name=portfolio -q \
     | xargs docker volume rm
+
+devenv-cycle:
+  just devenv-down
+  just devenv-up
 
 init-cockroachdb:
   docker exec -it portfolio-roach1-1 \
