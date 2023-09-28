@@ -1,11 +1,8 @@
-use std::collections::HashMap;
-
 use axum::{
-    extract::Path,
     extract::State,
     http::{Request, StatusCode},
     middleware::{self as axum_middleware, Next},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::get,
     Router,
 };
@@ -60,8 +57,8 @@ pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
     Ok(())
 }
 
-async fn notimplemented(Path(params): Path<HashMap<String, String>>) -> String {
-    format!("not implemented\n{:?}", params)
+async fn notimplemented() -> Result<Response> {
+    Ok((StatusCode::NOT_IMPLEMENTED, "").into_response())
 }
 
 async fn hello_world() -> String {
