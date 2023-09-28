@@ -39,7 +39,7 @@ async fn auth<B, O: ObjectStore>(
 //pub async fn serve<O: ObjectStore>(metadata: PostgresMetadata, objects: O) -> Result<()> {
 pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
     let blobs = blobs::router::<O>();
-    let manifests = manifests::router();
+    let manifests = manifests::router::<O>();
     let tags = tags::router();
 
     let app = Router::new()

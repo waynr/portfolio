@@ -29,8 +29,10 @@ CREATE TABLE blobs (
 CREATE TABLE manifests (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	registry_id UUID NOT NULL REFERENCES registries (id),
+	config_blob_id UUID NOT NULL REFERENCEs blobs(id),
+	media_type VARCHAR(512) NOT NULL,
+	artifact_type VARCHAR(512) DEFAULT NULL,
 	repository_id UUID NOT NULL REFERENCES repositories (id),
-	config UUID NOT NULL REFERENCES blobs (id),
 	digest VARCHAR(256) UNIQUE NOT NULL
 );
 

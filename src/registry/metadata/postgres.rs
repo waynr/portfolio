@@ -5,7 +5,7 @@ use sqlx::Pool;
 use uuid::Uuid;
 
 use crate::errors::{Error, Result};
-use crate::metadata::{Blob, Registry, Repository};
+use crate::metadata::{Blob, ImageManifest, ManifestRef, Registry, Repository};
 use crate::registry::{Chunk, UploadSession};
 use crate::OciDigest;
 use crate::{DigestState, RegistryDefinition};
@@ -186,6 +186,104 @@ SELECT exists(
         .fetch_one(&mut *conn)
         .await?
         .exists)
+    }
+
+    pub async fn get_manifest(
+        &self,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        manifest_ref: &ManifestRef,
+    ) -> Result<Option<ImageManifest>> {
+        let manifest = match manifest_ref {
+            ManifestRef::Digest(d) => {
+                self.get_manifest_by_digest(registry_id, repository_id, &d)
+                    .await?
+            }
+            ManifestRef::Tag(s) => {
+                self.get_manifest_by_tag(registry_id, repository_id, &s)
+                    .await?
+            }
+        };
+
+        Ok(manifest)
+    }
+
+    pub async fn get_manifest_by_digest(
+        &self,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        digest: &OciDigest,
+    ) -> Result<Option<ImageManifest>> {
+        let mut conn = self.pool.acquire().await?;
+        let row = sqlx::query!(
+            r#"
+SELECT m.id, m.registry_id, m.repository_id, m.config_blob_id, m.media_type, m.artifact_type, m.digest
+FROM manifests m 
+WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
+            "#,
+            registry_id,
+            repository_id,
+            String::from(digest),
+        )
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        if let Some(row) = row {
+            let manifest = ImageManifest {
+                id: row.id.into(),
+                registry_id: row.registry_id.into(),
+                repository_id: row.repository_id.into(),
+                config_blob_id: row.config_blob_id.into(),
+                digest: row.digest.as_str().try_into()?,
+                media_type: row.media_type.as_str().into(),
+                artifact_type: row.artifact_type.map(|v| v.as_str().into()),
+                body: None,
+            };
+
+            Ok(Some(manifest))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn get_manifest_by_tag(
+        &self,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        tag: &str,
+    ) -> Result<Option<ImageManifest>> {
+        let mut conn = self.pool.acquire().await?;
+        let row = sqlx::query!(
+            r#"
+SELECT m.id, m.registry_id, m.repository_id, m.config_blob_id, m.media_type, m.artifact_type, m.digest
+FROM manifests m 
+JOIN tags t 
+ON m.id = t.manifest_id
+WHERE m.registry_id = $1 AND m.repository_id = $2 AND t.name = $3
+            "#,
+            registry_id,
+            repository_id,
+            tag,
+        )
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        if let Some(row) = row {
+            let manifest = ImageManifest {
+                id: row.id.into(),
+                registry_id: row.registry_id.into(),
+                repository_id: row.repository_id.into(),
+                config_blob_id: row.config_blob_id.into(),
+                digest: row.digest.as_str().try_into()?,
+                media_type: row.media_type.as_str().into(),
+                artifact_type: row.artifact_type.map(|v| v.as_str().into()),
+                body: None,
+            };
+
+            Ok(Some(manifest))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn new_upload_session(&self) -> Result<UploadSession> {

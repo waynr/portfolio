@@ -4,6 +4,9 @@ pub use registries::Registry;
 pub mod blobs;
 pub use blobs::BlobStore;
 
+pub mod manifests;
+pub use manifests::ManifestStore;
+
 pub mod metadata;
 pub mod objects;
 
