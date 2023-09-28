@@ -23,10 +23,10 @@ tokio = { version = "1.17", features = [ "full" ] }
 tower = "0.4"
 tower-http = { version = "0.4", features = ["trace"] }
 
-sqlx = { version = "0.5", features = [ "runtime-tokio-native-tls", "postgres", "migrate", "json", "chrono", "uuid" ] }
+sqlx = { version = "0.7.2", features = [ "runtime-tokio-native-tls", "postgres", "migrate", "json", "chrono", "uuid" ] }
 #sqlx = { path = "../sqlx", features = [ "runtime-tokio-native-tls", "postgres", "migrate" ] }
 chrono = "~0.4"
-uuid = { version = "~0.8", features = [ "v4" ] }
+uuid = { version = "1.4", features = [ "v4" ] }
 
 http = "0.2"
 http-body = "0.4"

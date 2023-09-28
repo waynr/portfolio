@@ -42,7 +42,7 @@ RETURNING id, name
             "#,
             name,
         )
-        .fetch_one(&mut conn)
+        .fetch_one(&mut *conn)
         .await?)
     }
 
@@ -57,7 +57,7 @@ WHERE name = $1
             "#,
             name.to_string(),
         )
-        .fetch_one(&mut conn)
+        .fetch_one(&mut *conn)
         .await?)
     }
 
@@ -73,7 +73,7 @@ RETURNING id, name, registry_id
             name,
             registry_id
         )
-        .fetch_one(&mut conn)
+        .fetch_one(&mut *conn)
         .await?)
     }
 
@@ -91,7 +91,7 @@ WHERE reg.id = $1 AND rep.name = $2
             registry,
             repository,
         )
-        .fetch_one(&mut conn)
+        .fetch_one(&mut *conn)
         .await?)
     }
 
@@ -112,7 +112,7 @@ RETURNING id
             registry_id,
             uploaded,
         )
-        .fetch_one(&mut conn)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(record.id)
@@ -129,7 +129,7 @@ WHERE id = $1
             uuid,
             uploaded,
         )
-        .execute(&mut conn)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())
@@ -147,7 +147,7 @@ WHERE registry_id = $1 AND digest = $2
             registry_id,
             String::from(digest),
         )
-        .fetch_optional(&mut conn)
+        .fetch_optional(&mut *conn)
         .await?)
     }
 
@@ -164,7 +164,7 @@ SELECT exists(
             registry_id,
             String::from(name),
         )
-        .fetch_one(&mut conn)
+        .fetch_one(&mut *conn)
         .await?
         .exists)
     }
@@ -183,7 +183,7 @@ SELECT exists(
             String::from(digest),
             true,
         )
-        .fetch_one(&mut conn)
+        .fetch_one(&mut *conn)
         .await?
         .exists)
     }
@@ -200,7 +200,7 @@ RETURNING uuid, start_date, upload_id, chunk_number, last_range_end, digest_stat
             "#,
             serde_json::to_value(state)?,
         )
-        .fetch_one(&mut conn)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(session)
@@ -217,7 +217,7 @@ WHERE uuid = $1
             "#,
             uuid,
             )
-            .fetch_one(&mut conn)
+            .fetch_one(&mut *conn)
             .await?;
 
         Ok(session)
@@ -238,7 +238,7 @@ WHERE uuid = $1
             session.last_range_end,
             serde_json::to_value(session.digest_state.as_ref())?,
         )
-        .execute(&mut conn)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())
@@ -255,7 +255,7 @@ WHERE upload_session_uuid = $1
             "#,
             session.uuid,
         )
-        .execute(&mut conn)
+        .execute(&mut *conn)
         .await?;
 
         // delete session
@@ -267,7 +267,7 @@ WHERE uuid = $1
             "#,
             session.uuid,
         )
-        .execute(&mut conn)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())
@@ -285,7 +285,7 @@ ORDER BY chunk_number
             "#,
             session.uuid,
         )
-        .fetch_all(&mut conn)
+        .fetch_all(&mut *conn)
         .await?)
     }
 
@@ -300,7 +300,7 @@ VALUES ( $1, $2, $3 )
             session.uuid,
             chunk.e_tag,
         )
-        .execute(&mut conn)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())
