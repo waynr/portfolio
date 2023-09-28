@@ -69,7 +69,7 @@ async fn get_blob<O: ObjectStore>(
             HeaderName::from_lowercase(b"docker-content-digest")?,
             HeaderValue::from_str(digest)?,
         );
-        Ok((StatusCode::OK, stream_body).into_response())
+        Ok((StatusCode::OK, headers, stream_body).into_response())
     } else {
         Err(Error::DistributionSpecError(
             DistributionErrorCode::BlobUnknown,
