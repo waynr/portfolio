@@ -5,7 +5,7 @@ use sqlx::Pool;
 use uuid::Uuid;
 
 use crate::errors::{Error, Result};
-use crate::metadata::{Blob, ImageManifest, ManifestRef, Registry, Repository};
+use crate::metadata::{Blob, Manifest, ManifestRef, Registry, Repository};
 use crate::registry::{Chunk, UploadSession};
 use crate::OciDigest;
 use crate::{DigestState, RegistryDefinition};
@@ -193,7 +193,7 @@ SELECT exists(
         registry_id: &Uuid,
         repository_id: &Uuid,
         manifest_ref: &ManifestRef,
-    ) -> Result<Option<ImageManifest>> {
+    ) -> Result<Option<Manifest>> {
         let manifest = match manifest_ref {
             ManifestRef::Digest(d) => {
                 self.get_manifest_by_digest(registry_id, repository_id, &d)
@@ -213,7 +213,7 @@ SELECT exists(
         registry_id: &Uuid,
         repository_id: &Uuid,
         digest: &OciDigest,
-    ) -> Result<Option<ImageManifest>> {
+    ) -> Result<Option<Manifest>> {
         let mut conn = self.pool.acquire().await?;
         let row = sqlx::query!(
             r#"
@@ -229,7 +229,7 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
         .await?;
 
         if let Some(row) = row {
-            let manifest = ImageManifest {
+            let manifest = Manifest {
                 id: row.id.into(),
                 registry_id: row.registry_id.into(),
                 repository_id: row.repository_id.into(),
@@ -251,7 +251,7 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
         registry_id: &Uuid,
         repository_id: &Uuid,
         tag: &str,
-    ) -> Result<Option<ImageManifest>> {
+    ) -> Result<Option<Manifest>> {
         let mut conn = self.pool.acquire().await?;
         let row = sqlx::query!(
             r#"
@@ -269,7 +269,7 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND t.name = $3
         .await?;
 
         if let Some(row) = row {
-            let manifest = ImageManifest {
+            let manifest = Manifest {
                 id: row.id.into(),
                 registry_id: row.registry_id.into(),
                 repository_id: row.repository_id.into(),

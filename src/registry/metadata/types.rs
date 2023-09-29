@@ -35,7 +35,7 @@ pub enum ManifestRef {
 impl std::str::FromStr for ManifestRef {
     type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         if let Ok(dgst) = OciDigest::try_from(s) {
             return Ok(Self::Digest(dgst));
         }
@@ -52,7 +52,7 @@ impl std::str::FromStr for ManifestRef {
     }
 }
 
-pub struct ImageManifest {
+pub struct Manifest {
     pub id: Uuid,
     pub registry_id: Uuid,
     pub repository_id: Uuid,
