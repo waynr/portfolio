@@ -13,12 +13,9 @@ use headers::{ContentLength, ContentType};
 use http::StatusCode;
 
 use crate::{
-    http::notimplemented,
-    metadata::ManifestRef,
-    objects::ObjectStore,
-    registry::registries::Registry,
-    registry::manifests::ManifestSpec,
-    DistributionErrorCode, Error, Result,
+    http::notimplemented, metadata::ManifestRef, objects::ObjectStore,
+    registry::manifests::ManifestSpec, registry::registries::Registry, DistributionErrorCode,
+    Error, Result,
 };
 
 pub fn router<O: ObjectStore>() -> Router {
@@ -162,10 +159,40 @@ async fn put_manifest<O: ObjectStore>(
     // when cycling from the serialized form to a deserialized form and back again, we take a
     // slight memory hit by deserializing it non-destructively from &Bytes such that we can still
     // pass the &Bytes on to the storage backend unmodified.
-    let manifest = ManifestSpec::try_from(&bytes).map_err(|e| {
+    let mut manifest = ManifestSpec::try_from(&bytes).map_err(|e| {
         tracing::warn!("error deserializing manifest: {e:?}");
         Error::DistributionSpecError(DistributionErrorCode::ManifestInvalid)
     })?;
+
+    match (manifest.media_type(), content_type) {
+        (Some(_mt), None) => {
+            // > If a manifest includes a mediaType field, clients MUST set the Content-Type header
+            // to the value specified by the mediaType field.
+            tracing::warn!("client neglected to include content type in header");
+            return Err(Error::MissingHeader("content-type"));
+        }
+        (Some(mt), Some(TypedHeader(ct))) => {
+            if mt != ct.to_string().as_str().into() {
+                return Err(Error::DistributionSpecError(
+                    DistributionErrorCode::ManifestInvalid,
+                ));
+            }
+        }
+        (None, Some(TypedHeader(ct))) => {
+            let s = ct.to_string();
+            manifest.set_media_type(s.as_str());
+        }
+        (None, None) => {
+            tracing::warn!(
+                "neither mediaType content-type header included for manifest: {:?}",
+                bytes
+            );
+            manifest.infer_media_type()?;
+            if let Some(m) = manifest.media_type() {
+                tracing::warn!("inferred media type as: {m}");
+            }
+        }
+    }
 
     if let Some(TypedHeader(content_length)) = content_length {
         if content_length.0 > 4 * 1024 * 1024 {
