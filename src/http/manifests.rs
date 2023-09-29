@@ -166,10 +166,12 @@ async fn put_manifest<O: ObjectStore>(
 
     match (manifest.media_type(), content_type) {
         (Some(_mt), None) => {
+            // in theory we should error here, but it's going to be a pain in the ass if any
+            // clients out there actually do neglect to include a content type so the best thing to
+            // do is just allow it. relevant spec wording:
             // > If a manifest includes a mediaType field, clients MUST set the Content-Type header
             // to the value specified by the mediaType field.
             tracing::warn!("client neglected to include content type in header");
-            return Err(Error::MissingHeader("content-type"));
         }
         (Some(mt), Some(TypedHeader(ct))) => {
             if mt != ct.to_string().as_str().into() {
