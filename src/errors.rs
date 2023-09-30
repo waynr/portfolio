@@ -100,6 +100,10 @@ pub enum Error {
     #[error("invalid header value: {0}")]
     InvalidHeaderValue(&'static str),
 
+    // metadata errors
+    #[error("PostgresMetadataTx already rolled back or committed")]
+    PostgresMetadataTxInactive,
+
     // distribution error codes
     // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
     #[error("distribution spec error")]

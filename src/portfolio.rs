@@ -1,5 +1,5 @@
 use crate::{
-    errors::Result, metadata::PostgresMetadata, objects::ObjectStore,
+    errors::Result, metadata::PostgresMetadataPool, objects::ObjectStore,
     registries::Registry,
 };
 
@@ -9,11 +9,11 @@ where
     O: ObjectStore,
 {
     objects: O,
-    metadata: PostgresMetadata,
+    metadata: PostgresMetadataPool,
 }
 
 impl<O: ObjectStore> Portfolio<O> {
-    pub fn new(objects: O, metadata: PostgresMetadata) -> Self {
+    pub fn new(objects: O, metadata: PostgresMetadataPool) -> Self {
         Self {
             objects,
             metadata,

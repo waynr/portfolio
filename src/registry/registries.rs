@@ -2,7 +2,7 @@ use uuid::Uuid;
 
 use crate::errors::Result;
 use crate::metadata::{
-    PostgresMetadata, Registry as RegistryMetadata, Repository as RepositoryMetadata,
+    PostgresMetadataPool, Registry as RegistryMetadata, Repository as RepositoryMetadata,
 };
 use crate::objects::ObjectStore;
 use crate::registry::blobs::BlobStore;
@@ -15,7 +15,7 @@ where
     O: ObjectStore,
 {
     objects: O,
-    metadata: PostgresMetadata,
+    metadata: PostgresMetadataPool,
 
     registry: RegistryMetadata,
 }
@@ -24,8 +24,9 @@ impl<O> Registry<O>
 where
     O: ObjectStore,
 {
-    pub async fn new(name: &str, metadata: PostgresMetadata, objects: O) -> Result<Self> {
-        let registry = metadata.get_registry(name).await?;
+    pub async fn new(name: &str, metadata: PostgresMetadataPool, objects: O) -> Result<Self> {
+        let mut conn = metadata.get_conn().await?;
+        let registry = conn.get_registry(name).await?;
         Ok(Self {
             objects,
             metadata,
@@ -34,16 +35,13 @@ where
     }
 
     pub async fn repository_exists(&self, name: &String) -> Result<bool> {
-        self.metadata
-            .repository_exists(&self.registry.id, name)
-            .await
+        let mut conn = self.metadata.get_conn().await?;
+        conn.repository_exists(&self.registry.id, name).await
     }
 
     pub async fn get_repository(&self, name: &String) -> Result<Repository<O>> {
-        let repository = self
-            .metadata
-            .get_repository(&self.registry.id, name)
-            .await?;
+        let mut conn = self.metadata.get_conn().await?;
+        let repository = conn.get_repository(&self.registry.id, name).await?;
 
         Ok(Repository {
             registry: self.clone(),
@@ -56,19 +54,29 @@ where
     }
 
     pub async fn new_upload_session(&self) -> Result<UploadSession> {
-        self.metadata.new_upload_session().await
+        self.metadata.get_conn().await?.new_upload_session().await
     }
 
     pub async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<UploadSession> {
-        self.metadata.get_session(session_uuid).await
+        self.metadata
+            .get_conn()
+            .await?
+            .get_session(session_uuid)
+            .await
     }
 
     pub async fn delete_session(&self, session: &UploadSession) -> Result<()> {
-        self.metadata.delete_session(session).await
+        self.metadata
+            .get_conn()
+            .await?
+            .delete_session(session)
+            .await
     }
 
     pub async fn create_repository(&self, name: &String) -> Result<RepositoryMetadata> {
         self.metadata
+            .get_conn()
+            .await?
             .insert_repository(&self.registry.id, name)
             .await
     }

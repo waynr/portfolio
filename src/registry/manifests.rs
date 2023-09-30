@@ -4,7 +4,7 @@ use oci_spec::image::{ImageIndex, ImageManifest, MediaType};
 
 use crate::{
     errors::{DistributionErrorCode, Error, Result},
-    metadata::{Manifest, ManifestRef, PostgresMetadata, Repository},
+    metadata::{Manifest, ManifestRef, PostgresMetadataPool, Repository},
     objects::ObjectStore,
 };
 
@@ -12,7 +12,7 @@ pub struct ManifestStore<'r, O>
 where
     O: ObjectStore,
 {
-    metadata: PostgresMetadata,
+    metadata: PostgresMetadataPool,
     objects: O,
     repository: &'r Repository,
 }
@@ -21,7 +21,7 @@ impl<'r, O> ManifestStore<'r, O>
 where
     O: ObjectStore,
 {
-    pub fn new(metadata: PostgresMetadata, objects: O, repository: &'r Repository) -> Self {
+    pub fn new(metadata: PostgresMetadataPool, objects: O, repository: &'r Repository) -> Self {
         Self {
             metadata,
             objects,
@@ -30,8 +30,8 @@ where
     }
 
     pub async fn get_manifest(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
-        if let Some(mut manifest) = self
-            .metadata
+        let mut conn = self.metadata.get_conn().await?;
+        if let Some(mut manifest) = conn
             .get_manifest(&self.repository.registry_id, &self.repository.id, key)
             .await?
         {
@@ -44,8 +44,8 @@ where
     }
 
     pub async fn manifest_exists(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
-        if let Some(manifest) = self
-            .metadata
+        let mut conn = self.metadata.get_conn().await?;
+        if let Some(manifest) = conn
             .get_manifest(&self.repository.registry_id, &self.repository.id, key)
             .await?
         {

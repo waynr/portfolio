@@ -1,6 +1,6 @@
 mod postgres;
 pub use postgres::PostgresConfig;
-pub use postgres::PostgresMetadata;
+pub use postgres::PostgresMetadataPool;
 
 mod traits;
 

@@ -1,8 +1,11 @@
+use oci_spec::image::Descriptor;
 use serde::Deserialize;
-use sqlx::postgres::{PgPoolOptions, Postgres};
-use sqlx::types::Json;
-use sqlx::Pool;
-use uuid::Uuid;
+use sqlx::{
+    postgres::{PgPoolOptions, Postgres},
+    types::{Json, Uuid},
+    pool::PoolConnection,
+    Pool, Transaction,
+};
 
 use crate::errors::{Error, Result};
 use crate::metadata::{Blob, Manifest, ManifestRef, Registry, Repository};
@@ -16,23 +19,34 @@ pub struct PostgresConfig {
 }
 
 impl PostgresConfig {
-    pub async fn new_metadata(&self) -> Result<PostgresMetadata> {
+    pub async fn new_metadata(&self) -> Result<PostgresMetadataPool> {
         let pool = PgPoolOptions::new()
             .connect(&self.connection_string)
             .await?;
-        Ok(PostgresMetadata { pool })
+        Ok(PostgresMetadataPool { pool })
     }
 }
 
 #[derive(Clone)]
-pub struct PostgresMetadata {
+pub struct PostgresMetadataPool {
     pool: Pool<Postgres>,
 }
 
+impl PostgresMetadataPool {
+    pub async fn get_conn(&self) -> Result<PostgresMetadataConn> {
+        Ok(PostgresMetadataConn {
+            conn: self.pool.acquire().await?,
+        })
+    }
+}
+
+pub struct PostgresMetadataConn {
+    conn: PoolConnection<Postgres>,
+}
+
 // basic DB interaction methods
-impl PostgresMetadata {
-    pub async fn insert_registry(&self, name: &String) -> Result<Registry> {
-        let mut conn = self.pool.acquire().await?;
+impl PostgresMetadataConn {
+    pub async fn insert_registry(&mut self, name: &String) -> Result<Registry> {
         Ok(sqlx::query_as!(
             Registry,
             r#"
@@ -42,12 +56,11 @@ RETURNING id, name
             "#,
             name,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *self.conn)
         .await?)
     }
 
-    pub async fn get_registry(&self, name: impl ToString) -> Result<Registry> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn get_registry(&mut self, name: impl ToString) -> Result<Registry> {
         Ok(sqlx::query_as!(
             Registry,
             r#"
@@ -57,12 +70,11 @@ WHERE name = $1
             "#,
             name.to_string(),
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *self.conn)
         .await?)
     }
 
-    pub async fn insert_repository(&self, registry_id: &Uuid, name: &String) -> Result<Repository> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn insert_repository(&mut self, registry_id: &Uuid, name: &String) -> Result<Repository> {
         Ok(sqlx::query_as!(
             Repository,
             r#"
@@ -73,12 +85,11 @@ RETURNING id, name, registry_id
             name,
             registry_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *self.conn)
         .await?)
     }
 
-    pub async fn get_repository(&self, registry: &Uuid, repository: &String) -> Result<Repository> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn get_repository(&mut self, registry: &Uuid, repository: &String) -> Result<Repository> {
         Ok(sqlx::query_as!(
             Repository,
             r#"
@@ -91,17 +102,16 @@ WHERE reg.id = $1 AND rep.name = $2
             registry,
             repository,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *self.conn)
         .await?)
     }
 
     pub async fn insert_blob(
-        &self,
+        &mut self,
         registry_id: &Uuid,
         digest: &OciDigest,
         uploaded: bool,
     ) -> Result<Uuid> {
-        let mut conn = self.pool.acquire().await?;
         let record = sqlx::query!(
             r#"
 INSERT INTO blobs ( digest, registry_id, uploaded )
@@ -112,14 +122,13 @@ RETURNING id
             registry_id,
             uploaded,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *self.conn)
         .await?;
 
         Ok(record.id)
     }
 
-    pub async fn update_blob(&self, uuid: &Uuid, uploaded: bool) -> Result<()> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn update_blob(&mut self, uuid: &Uuid, uploaded: bool) -> Result<()> {
         sqlx::query!(
             r#"
 UPDATE blobs
@@ -129,14 +138,13 @@ WHERE id = $1
             uuid,
             uploaded,
         )
-        .execute(&mut *conn)
+        .execute(&mut *self.conn)
         .await?;
 
         Ok(())
     }
 
-    pub async fn get_blob(&self, registry_id: &Uuid, digest: &OciDigest) -> Result<Option<Blob>> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn get_blob(&mut self, registry_id: &Uuid, digest: &OciDigest) -> Result<Option<Blob>> {
         Ok(sqlx::query_as!(
             Blob,
             r#"
@@ -147,12 +155,11 @@ WHERE registry_id = $1 AND digest = $2
             registry_id,
             String::from(digest),
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *self.conn)
         .await?)
     }
 
-    pub async fn repository_exists(&self, registry_id: &Uuid, name: &String) -> Result<bool> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn repository_exists(&mut self, registry_id: &Uuid, name: &String) -> Result<bool> {
         Ok(sqlx::query!(
             r#"
 SELECT exists(
@@ -164,13 +171,12 @@ SELECT exists(
             registry_id,
             String::from(name),
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *self.conn)
         .await?
         .exists)
     }
 
-    pub async fn blob_exists(&self, registry_id: &Uuid, digest: &OciDigest) -> Result<bool> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn blob_exists(&mut self, registry_id: &Uuid, digest: &OciDigest) -> Result<bool> {
         Ok(sqlx::query!(
             r#"
 SELECT exists(
@@ -183,13 +189,13 @@ SELECT exists(
             String::from(digest),
             true,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *self.conn)
         .await?
         .exists)
     }
 
     pub async fn get_manifest(
-        &self,
+        &mut self,
         registry_id: &Uuid,
         repository_id: &Uuid,
         manifest_ref: &ManifestRef,
@@ -209,12 +215,11 @@ SELECT exists(
     }
 
     pub async fn get_manifest_by_digest(
-        &self,
+        &mut self,
         registry_id: &Uuid,
         repository_id: &Uuid,
         digest: &OciDigest,
     ) -> Result<Option<Manifest>> {
-        let mut conn = self.pool.acquire().await?;
         let row = sqlx::query!(
             r#"
 SELECT m.id, m.registry_id, m.repository_id, m.config_blob_id, m.media_type, m.artifact_type, m.digest
@@ -225,7 +230,7 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
             repository_id,
             String::from(digest),
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *self.conn)
         .await?;
 
         if let Some(row) = row {
@@ -247,12 +252,11 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
     }
 
     pub async fn get_manifest_by_tag(
-        &self,
+        &mut self,
         registry_id: &Uuid,
         repository_id: &Uuid,
         tag: &str,
     ) -> Result<Option<Manifest>> {
-        let mut conn = self.pool.acquire().await?;
         let row = sqlx::query!(
             r#"
 SELECT m.id, m.registry_id, m.repository_id, m.config_blob_id, m.media_type, m.artifact_type, m.digest
@@ -265,7 +269,7 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND t.name = $3
             repository_id,
             tag,
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *self.conn)
         .await?;
 
         if let Some(row) = row {
@@ -286,8 +290,7 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND t.name = $3
         }
     }
 
-    pub async fn new_upload_session(&self) -> Result<UploadSession> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn new_upload_session(&mut self) -> Result<UploadSession> {
         let state = DigestState::default();
         let session = sqlx::query_as!(
             UploadSession,
@@ -298,14 +301,13 @@ RETURNING uuid, start_date, upload_id, chunk_number, last_range_end, digest_stat
             "#,
             serde_json::to_value(state)?,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *self.conn)
         .await?;
 
         Ok(session)
     }
 
-    pub async fn get_session(&self, uuid: &Uuid) -> Result<UploadSession> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn get_session(&mut self, uuid: &Uuid) -> Result<UploadSession> {
         let session = sqlx::query_as!(
             UploadSession,
             r#"
@@ -315,14 +317,13 @@ WHERE uuid = $1
             "#,
             uuid,
             )
-            .fetch_one(&mut *conn)
+            .fetch_one(&mut *self.conn)
             .await?;
 
         Ok(session)
     }
 
-    pub async fn update_session(&self, session: &UploadSession) -> Result<()> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn update_session(&mut self, session: &UploadSession) -> Result<()> {
         sqlx::query_as!(
             UploadSession,
             r#"
@@ -336,14 +337,13 @@ WHERE uuid = $1
             session.last_range_end,
             serde_json::to_value(session.digest_state.as_ref())?,
         )
-        .execute(&mut *conn)
+        .execute(&mut *self.conn)
         .await?;
 
         Ok(())
     }
 
-    pub async fn delete_session(&self, session: &UploadSession) -> Result<()> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn delete_session(&mut self, session: &UploadSession) -> Result<()> {
         // delete chunks
         sqlx::query!(
             r#"
@@ -353,7 +353,7 @@ WHERE upload_session_uuid = $1
             "#,
             session.uuid,
         )
-        .execute(&mut *conn)
+        .execute(&mut *self.conn)
         .await?;
 
         // delete session
@@ -365,14 +365,13 @@ WHERE uuid = $1
             "#,
             session.uuid,
         )
-        .execute(&mut *conn)
+        .execute(&mut *self.conn)
         .await?;
 
         Ok(())
     }
 
-    pub async fn get_chunks(&self, session: &UploadSession) -> Result<Vec<Chunk>> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn get_chunks(&mut self, session: &UploadSession) -> Result<Vec<Chunk>> {
         Ok(sqlx::query_as!(
             Chunk,
             r#"
@@ -383,12 +382,11 @@ ORDER BY chunk_number
             "#,
             session.uuid,
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *self.conn)
         .await?)
     }
 
-    pub async fn insert_chunk(&self, session: &UploadSession, chunk: &Chunk) -> Result<()> {
-        let mut conn = self.pool.acquire().await?;
+    pub async fn insert_chunk(&mut self, session: &UploadSession, chunk: &Chunk) -> Result<()> {
         sqlx::query!(
             r#"
 INSERT INTO chunks (chunk_number, upload_session_uuid, e_tag)
@@ -398,7 +396,7 @@ VALUES ( $1, $2, $3 )
             session.uuid,
             chunk.e_tag,
         )
-        .execute(&mut *conn)
+        .execute(&mut *self.conn)
         .await?;
 
         Ok(())
@@ -406,7 +404,7 @@ VALUES ( $1, $2, $3 )
 }
 
 // higher level DB interaction methods
-impl PostgresMetadata {
+impl PostgresMetadataConn {
     pub async fn initialize_static_registries(
         &mut self,
         registries: Vec<RegistryDefinition>,

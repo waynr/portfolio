@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
     let config: Config = serde_yaml::from_str(&s)?;
 
     // initialize persistence layer
-    let mut metadata = match config.metadata {
+    let metadata = match config.metadata {
         MetadataBackend::Postgres(cfg) => cfg.new_metadata().await?,
     };
     let objects = match config.objects {
@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
     };
 
     if let Some(registries) = config.static_registries {
-        metadata.initialize_static_registries(registries).await?;
+        metadata.get_conn().await?.initialize_static_registries(registries).await?;
     }
 
     let portfolio = portfolio::Portfolio::new(objects, metadata);

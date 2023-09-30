@@ -4,7 +4,7 @@ use hyper::body::Body;
 
 use crate::{
     errors::Result,
-    metadata::{PostgresMetadata, Registry},
+    metadata::{PostgresMetadataPool, Registry},
     objects::ObjectStore,
     objects::StreamObjectBody,
     registry::UploadSession,
@@ -15,7 +15,7 @@ pub struct BlobStore<'b, O>
 where
     O: ObjectStore,
 {
-    metadata: PostgresMetadata,
+    metadata: PostgresMetadataPool,
     objects: O,
     registry: &'b Registry,
 }
@@ -24,7 +24,7 @@ impl<'b, O> BlobStore<'b, O>
 where
     O: ObjectStore,
 {
-    pub fn new(metadata: PostgresMetadata, objects: O, registry: &'b Registry) -> Self {
+    pub fn new(metadata: PostgresMetadataPool, objects: O, registry: &'b Registry) -> Self {
         Self {
             metadata,
             objects,
@@ -49,15 +49,11 @@ where
     pub async fn upload(&mut self, digest: &str, content_length: u64, body: Body) -> Result<()> {
         let oci_digest: OciDigest = digest.try_into()?;
 
-        let uuid = match self
-            .metadata
-            .get_blob(&self.registry.id, &oci_digest)
-            .await?
-        {
+        let mut conn = self.metadata.get_conn().await?;
+        let uuid = match conn.get_blob(&self.registry.id, &oci_digest).await? {
             Some(b) => b.id,
             None => {
-                self.metadata
-                    .insert_blob(&self.registry.id, &oci_digest, false)
+                conn.insert_blob(&self.registry.id, &oci_digest, false)
                     .await?
             }
         };
@@ -72,13 +68,19 @@ where
         // TODO: validate digest
         // TODO: validate content length
 
-        self.metadata.update_blob(&uuid, true).await?;
+        conn.update_blob(&uuid, true).await?;
 
         Ok(())
     }
 
     pub async fn get_blob(&self, key: &OciDigest) -> Result<Option<StreamBody<ByteStream>>> {
-        if let Some(blob) = self.metadata.get_blob(&self.registry.id, key).await? {
+        if let Some(blob) = self
+            .metadata
+            .get_conn()
+            .await?
+            .get_blob(&self.registry.id, key)
+            .await?
+        {
             Ok(Some(self.objects.get_blob(&blob.id).await?))
         } else {
             Ok(None)
@@ -86,12 +88,16 @@ where
     }
 
     pub async fn blob_exists(&self, key: &OciDigest) -> Result<bool> {
-        self.metadata.blob_exists(&self.registry.id, key).await
+        self.metadata
+            .get_conn()
+            .await?
+            .blob_exists(&self.registry.id, key)
+            .await
     }
 }
 
 pub struct BlobWriter<'a, O: ObjectStore> {
-    metadata: PostgresMetadata,
+    metadata: PostgresMetadataPool,
     objects: O,
 
     registry: &'a Registry,
@@ -108,25 +114,23 @@ where
             .upload_chunk(self.session, content_length, body)
             .await?;
 
-        self.metadata.insert_chunk(self.session, &chunk).await?;
-        self.metadata.update_session(self.session).await?;
+        let mut conn = self.metadata.get_conn().await?;
+        conn.insert_chunk(self.session, &chunk).await?;
+        conn.update_session(self.session).await?;
 
         // TODO: return uploaded content length here
         Ok(0)
     }
 
     pub async fn finalize(&mut self, digest: &OciDigest) -> Result<()> {
-        let uuid = match self.metadata.get_blob(&self.registry.id, &digest).await? {
+        let mut conn = self.metadata.get_conn().await?;
+        let uuid = match conn.get_blob(&self.registry.id, &digest).await? {
             Some(b) => b.id,
-            None => {
-                self.metadata
-                    .insert_blob(&self.registry.id, &digest, false)
-                    .await?
-            }
+            None => conn.insert_blob(&self.registry.id, &digest, false).await?,
         };
 
         if !self.objects.blob_exists(&uuid).await? {
-            let chunks = self.metadata.get_chunks(self.session).await?;
+            let chunks = conn.get_chunks(self.session).await?;
             self.objects
                 .finalize_chunked_upload(self.session, chunks, &uuid)
                 .await?;
@@ -134,7 +138,7 @@ where
             self.objects.abort_chunked_upload(self.session).await?;
         }
 
-        self.metadata.update_blob(&uuid, true).await?;
+        conn.update_blob(&uuid, true).await?;
 
         Ok(())
     }
