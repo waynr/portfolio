@@ -1,9 +1,9 @@
 use oci_spec::image::Descriptor;
 use serde::Deserialize;
 use sqlx::{
+    pool::PoolConnection, PgConnection,
     postgres::{PgPoolOptions, Postgres},
     types::{Json, Uuid},
-    pool::PoolConnection,
     Pool, Transaction,
 };
 
@@ -44,9 +44,10 @@ pub struct PostgresMetadataConn {
     conn: PoolConnection<Postgres>,
 }
 
-// basic DB interaction methods
-impl PostgresMetadataConn {
-    pub async fn insert_registry(&mut self, name: &String) -> Result<Registry> {
+struct Queries {}
+
+impl Queries {
+    pub async fn insert_registry(executor: &mut PgConnection, name: &String) -> Result<Registry> {
         Ok(sqlx::query_as!(
             Registry,
             r#"
@@ -56,8 +57,15 @@ RETURNING id, name
             "#,
             name,
         )
-        .fetch_one(&mut *self.conn)
+        .fetch_one(executor)
         .await?)
+    }
+}
+
+// basic DB interaction methods
+impl PostgresMetadataConn {
+    pub async fn insert_registry(&mut self, name: &String) -> Result<Registry> {
+        Queries::insert_registry(&mut *self.conn, name).await
     }
 
     pub async fn get_registry(&mut self, name: impl ToString) -> Result<Registry> {
