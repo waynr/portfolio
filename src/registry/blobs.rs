@@ -129,14 +129,15 @@ where
     }
 
     pub async fn finalize(&mut self, digest: &OciDigest) -> Result<()> {
-        let mut conn = self.metadata.get_conn().await?;
-        let uuid = match conn.get_blob(&self.registry.id, &digest).await? {
+        // TODO: validate digest
+        let mut tx = self.metadata.get_tx().await?;
+        let uuid = match tx.get_blob(&self.registry.id, &digest).await? {
             Some(b) => b.id,
-            None => conn.insert_blob(&self.registry.id, &digest, false).await?,
+            None => tx.insert_blob(&self.registry.id, &digest, false).await?,
         };
 
         if !self.objects.blob_exists(&uuid).await? {
-            let chunks = conn.get_chunks(self.session).await?;
+            let chunks = tx.get_chunks(self.session).await?;
             self.objects
                 .finalize_chunked_upload(self.session, chunks, &uuid)
                 .await?;
@@ -144,8 +145,8 @@ where
             self.objects.abort_chunked_upload(self.session).await?;
         }
 
-        conn.update_blob(&uuid, true).await?;
+        tx.update_blob(&uuid, true).await?;
 
-        Ok(())
+        tx.commit().await
     }
 }

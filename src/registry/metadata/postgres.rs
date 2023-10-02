@@ -55,6 +55,67 @@ pub struct PostgresMetadataConn {
 struct Queries {}
 
 impl Queries {
+    pub async fn insert_blob(
+        executor: &mut PgConnection,
+        registry_id: &Uuid,
+        digest: &OciDigest,
+        uploaded: bool,
+    ) -> Result<Uuid> {
+        let record = sqlx::query!(
+            r#"
+INSERT INTO blobs ( digest, registry_id, uploaded )
+VALUES ( $1, $2, $3 )
+RETURNING id
+            "#,
+            String::from(digest),
+            registry_id,
+            uploaded,
+        )
+        .fetch_one(executor)
+        .await?;
+
+        Ok(record.id)
+    }
+
+    pub async fn update_blob(
+        executor: &mut PgConnection,
+        uuid: &Uuid,
+        uploaded: bool,
+    ) -> Result<()> {
+        sqlx::query!(
+            r#"
+UPDATE blobs
+SET uploaded = $2
+WHERE id = $1
+            "#,
+            uuid,
+            uploaded,
+        )
+        .execute(executor)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_blob(
+        executor: &mut PgConnection,
+        registry_id: &Uuid,
+        digest: &OciDigest,
+    ) -> Result<Option<Blob>> {
+        Ok(sqlx::query_as!(
+            Blob,
+            r#"
+SELECT id, digest, uploaded, registry_id
+FROM blobs
+WHERE registry_id = $1 AND digest = $2
+            "#,
+            registry_id,
+            String::from(digest),
+        )
+        .fetch_optional(executor)
+        .await?)
+    }
+
     pub async fn get_blobs(
         executor: &mut PgConnection,
         registry_id: &Uuid,
@@ -144,6 +205,21 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest IN ($3)
         tag: &str,
     ) -> Result<()> {
         todo!();
+    }
+
+    pub async fn get_chunks(executor: &mut PgConnection, session: &UploadSession) -> Result<Vec<Chunk>> {
+        Ok(sqlx::query_as!(
+            Chunk,
+            r#"
+SELECT e_tag, chunk_number
+FROM chunks
+WHERE upload_session_uuid = $1
+ORDER BY chunk_number
+            "#,
+            session.uuid,
+        )
+        .fetch_all(executor)
+        .await?)
     }
 }
 
@@ -240,19 +316,7 @@ RETURNING id
     }
 
     pub async fn update_blob(&mut self, uuid: &Uuid, uploaded: bool) -> Result<()> {
-        sqlx::query!(
-            r#"
-UPDATE blobs
-SET uploaded = $2
-WHERE id = $1
-            "#,
-            uuid,
-            uploaded,
-        )
-        .execute(&mut *self.conn)
-        .await?;
-
-        Ok(())
+        Queries::update_blob(&mut *self.conn, uuid, uploaded).await
     }
 
     pub async fn get_blob(
@@ -260,18 +324,7 @@ WHERE id = $1
         registry_id: &Uuid,
         digest: &OciDigest,
     ) -> Result<Option<Blob>> {
-        Ok(sqlx::query_as!(
-            Blob,
-            r#"
-SELECT id, digest, uploaded, registry_id
-FROM blobs
-WHERE registry_id = $1 AND digest = $2
-            "#,
-            registry_id,
-            String::from(digest),
-        )
-        .fetch_optional(&mut *self.conn)
-        .await?)
+        Queries::get_blob(&mut *self.conn, registry_id, digest).await
     }
 
     pub async fn repository_exists(&mut self, registry_id: &Uuid, name: &String) -> Result<bool> {
@@ -485,18 +538,7 @@ WHERE uuid = $1
     }
 
     pub async fn get_chunks(&mut self, session: &UploadSession) -> Result<Vec<Chunk>> {
-        Ok(sqlx::query_as!(
-            Chunk,
-            r#"
-SELECT e_tag, chunk_number
-FROM chunks
-WHERE upload_session_uuid = $1
-ORDER BY chunk_number
-            "#,
-            session.uuid,
-        )
-        .fetch_all(&mut *self.conn)
-        .await?)
+        Queries::get_chunks(&mut *self.conn, session).await
     }
 
     pub async fn insert_chunk(&mut self, session: &UploadSession, chunk: &Chunk) -> Result<()> {
@@ -528,6 +570,35 @@ impl<'a> PostgresMetadataTx<'a> {
         } else {
             Ok(())
         }
+    }
+
+    pub async fn insert_blob(
+        &mut self,
+        registry_id: &Uuid,
+        digest: &OciDigest,
+        uploaded: bool,
+    ) -> Result<Uuid> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::insert_blob(&mut **tx, registry_id, digest, uploaded).await
+    }
+
+    pub async fn update_blob(&mut self, uuid: &Uuid, uploaded: bool) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::update_blob(&mut **tx, uuid, uploaded).await
+    }
+
+    pub async fn get_chunks(&mut self, session: &UploadSession) -> Result<Vec<Chunk>> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::get_chunks(&mut **tx, session).await
+    }
+
+    pub async fn get_blob(
+        &mut self,
+        registry_id: &Uuid,
+        digest: &OciDigest,
+    ) -> Result<Option<Blob>> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::get_blob(&mut **tx, registry_id, digest).await
     }
 
     pub async fn get_blobs(
