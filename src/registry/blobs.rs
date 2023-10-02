@@ -48,18 +48,17 @@ where
     }
 
     pub async fn upload(&mut self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid> {
-        // TODO: replace this connection with a transaction
-        let mut conn = self.metadata.get_conn().await?;
-        let uuid = match conn.get_blob(&self.registry.id, digest).await? {
+        let mut tx = self.metadata.get_tx().await?;
+        let uuid = match tx.get_blob(&self.registry.id, digest).await? {
             Some(b) => {
                 // verify blob actually exists before returning a potentially bogus uuid
-                if b.uploaded && self.objects.blob_exists(&b.id).await? {
+                if self.objects.blob_exists(&b.id).await? {
                     return Ok(b.id);
                 }
                 b.id
             }
             None => {
-                conn.insert_blob(&self.registry.id, digest, false)
+                tx.insert_blob(&self.registry.id, digest)
                     .await?
             }
         };
@@ -74,7 +73,7 @@ where
         // TODO: validate digest
         // TODO: validate content length
 
-        conn.update_blob(&uuid, true).await?;
+        tx.commit().await?;
 
         Ok(uuid)
     }
@@ -133,7 +132,7 @@ where
         let mut tx = self.metadata.get_tx().await?;
         let uuid = match tx.get_blob(&self.registry.id, &digest).await? {
             Some(b) => b.id,
-            None => tx.insert_blob(&self.registry.id, &digest, false).await?,
+            None => tx.insert_blob(&self.registry.id, &digest).await?,
         };
 
         if !self.objects.blob_exists(&uuid).await? {
@@ -144,8 +143,6 @@ where
         } else {
             self.objects.abort_chunked_upload(self.session).await?;
         }
-
-        tx.update_blob(&uuid, true).await?;
 
         tx.commit().await
     }

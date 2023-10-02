@@ -59,42 +59,20 @@ impl Queries {
         executor: &mut PgConnection,
         registry_id: &Uuid,
         digest: &OciDigest,
-        uploaded: bool,
     ) -> Result<Uuid> {
         let record = sqlx::query!(
             r#"
-INSERT INTO blobs ( digest, registry_id, uploaded )
-VALUES ( $1, $2, $3 )
+INSERT INTO blobs ( digest, registry_id )
+VALUES ( $1, $2 )
 RETURNING id
             "#,
             String::from(digest),
             registry_id,
-            uploaded,
         )
         .fetch_one(executor)
         .await?;
 
         Ok(record.id)
-    }
-
-    pub async fn update_blob(
-        executor: &mut PgConnection,
-        uuid: &Uuid,
-        uploaded: bool,
-    ) -> Result<()> {
-        sqlx::query!(
-            r#"
-UPDATE blobs
-SET uploaded = $2
-WHERE id = $1
-            "#,
-            uuid,
-            uploaded,
-        )
-        .execute(executor)
-        .await?;
-
-        Ok(())
     }
 
     pub async fn get_blob(
@@ -105,7 +83,7 @@ WHERE id = $1
         Ok(sqlx::query_as!(
             Blob,
             r#"
-SELECT id, digest, uploaded, registry_id
+SELECT id, digest, registry_id
 FROM blobs
 WHERE registry_id = $1 AND digest = $2
             "#,
@@ -125,7 +103,7 @@ WHERE registry_id = $1 AND digest = $2
         Ok(sqlx::query_as!(
             Blob,
             r#"
-SELECT b.id, b.digest, b.uploaded, b.registry_id
+SELECT b.id, b.digest, b.registry_id
 FROM blobs b
 WHERE b.registry_id = $1 AND b.digest IN ($2)
             "#,
@@ -297,26 +275,8 @@ WHERE reg.id = $1 AND rep.name = $2
         &mut self,
         registry_id: &Uuid,
         digest: &OciDigest,
-        uploaded: bool,
     ) -> Result<Uuid> {
-        let record = sqlx::query!(
-            r#"
-INSERT INTO blobs ( digest, registry_id, uploaded )
-VALUES ( $1, $2, $3 )
-RETURNING id
-            "#,
-            String::from(digest),
-            registry_id,
-            uploaded,
-        )
-        .fetch_one(&mut *self.conn)
-        .await?;
-
-        Ok(record.id)
-    }
-
-    pub async fn update_blob(&mut self, uuid: &Uuid, uploaded: bool) -> Result<()> {
-        Queries::update_blob(&mut *self.conn, uuid, uploaded).await
+        Queries::insert_blob(&mut *self.conn, registry_id, digest).await
     }
 
     pub async fn get_blob(
@@ -350,12 +310,11 @@ SELECT exists(
 SELECT exists(
     SELECT 1
     FROM blobs
-    WHERE registry_id = $1 AND digest = $2 AND uploaded = $3
+    WHERE registry_id = $1 AND digest = $2
 ) as "exists!"
             "#,
             registry_id,
             String::from(digest),
-            true,
         )
         .fetch_one(&mut *self.conn)
         .await?
@@ -576,15 +535,9 @@ impl<'a> PostgresMetadataTx<'a> {
         &mut self,
         registry_id: &Uuid,
         digest: &OciDigest,
-        uploaded: bool,
     ) -> Result<Uuid> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::insert_blob(&mut **tx, registry_id, digest, uploaded).await
-    }
-
-    pub async fn update_blob(&mut self, uuid: &Uuid, uploaded: bool) -> Result<()> {
-        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::update_blob(&mut **tx, uuid, uploaded).await
+        Queries::insert_blob(&mut **tx, registry_id, digest).await
     }
 
     pub async fn get_chunks(&mut self, session: &UploadSession) -> Result<Vec<Chunk>> {
