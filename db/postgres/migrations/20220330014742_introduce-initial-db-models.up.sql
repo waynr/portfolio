@@ -59,7 +59,9 @@ CREATE TABLE tags (
 -- requests, usually for chunked blob uploads.
 CREATE TABLE upload_sessions (
 	uuid UUID PRIMARY key DEFAULT gen_random_uuid(),
-	content_digest VARCHAR(256) NOT NULL
+	-- POST-PUT uploads don't include a content digest ahead of time so this may
+	-- not be very useful
+	-- content_digest VARCHAR(256) NOT NULL
 	start_date DATE NOT NULL DEFAULT now(),
 	upload_id VARCHAR(256),
 	chunk_number INT4 NOT NULL DEFAULT 1,
