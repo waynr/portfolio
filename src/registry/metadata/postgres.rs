@@ -55,20 +55,6 @@ pub struct PostgresMetadataConn {
 struct Queries {}
 
 impl Queries {
-    pub async fn insert_registry(executor: &mut PgConnection, name: &String) -> Result<Registry> {
-        Ok(sqlx::query_as!(
-            Registry,
-            r#"
-INSERT INTO registries ( name )
-VALUES ( $1 )
-RETURNING id, name
-            "#,
-            name,
-        )
-        .fetch_one(executor)
-        .await?)
-    }
-
     pub async fn get_blobs(
         executor: &mut PgConnection,
         registry_id: &Uuid,
@@ -164,7 +150,17 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest IN ($3)
 // PoolConnection<Postgres>-based metadata queries.
 impl PostgresMetadataConn {
     pub async fn insert_registry(&mut self, name: &String) -> Result<Registry> {
-        Queries::insert_registry(&mut *self.conn, name).await
+        Ok(sqlx::query_as!(
+            Registry,
+            r#"
+INSERT INTO registries ( name )
+VALUES ( $1 )
+RETURNING id, name
+            "#,
+            name,
+        )
+        .fetch_one(&mut *self.conn)
+        .await?)
     }
 
     pub async fn get_registry(&mut self, name: impl ToString) -> Result<Registry> {
@@ -584,11 +580,6 @@ impl<'a> PostgresMetadataTx<'a> {
     ) -> Result<()> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
         Queries::insert_or_update_tag(&mut *tx, registry_id, repository_id, tag).await
-    }
-
-    pub async fn insert_registry(&mut self, name: &String) -> Result<Registry> {
-        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::insert_registry(&mut *tx, name).await
     }
 }
 
