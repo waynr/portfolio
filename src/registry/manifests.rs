@@ -89,7 +89,7 @@ where
 
         let mut tx = self.blobstore.metadata.get_tx().await?;
 
-        let mut manifest: Manifest = spec.new_manifest(
+        let manifest: Manifest = spec.new_manifest(
             self.repository.registry_id,
             self.repository.id,
             blob_uuid,
