@@ -217,13 +217,22 @@ SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
         Ok(())
     }
 
-    pub async fn insert_or_update_tag(
+    pub async fn upsert_tag(
         executor: &mut PgConnection,
-        registry_id: &Uuid,
-        repository_id: &Uuid,
+        manifest_id: &Uuid,
         tag: &str,
     ) -> Result<()> {
-        todo!();
+        sqlx::query!(
+            r#"
+UPSERT INTO tags ( name, manifest_id )
+VALUES ( $1, $2 )
+            "#,
+            tag,
+            manifest_id
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
     }
 
     pub async fn get_chunks(
@@ -632,14 +641,9 @@ impl<'a> PostgresMetadataTx<'a> {
         Queries::associate_index_manifests(&mut *tx, parent, children).await
     }
 
-    pub async fn insert_or_update_tag(
-        &mut self,
-        registry_id: &Uuid,
-        repository_id: &Uuid,
-        tag: &str,
-    ) -> Result<()> {
+    pub async fn upsert_tag(&mut self, manifest_id: &Uuid, tag: &str) -> Result<()> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::insert_or_update_tag(&mut *tx, registry_id, repository_id, tag).await
+        Queries::upsert_tag(&mut *tx, manifest_id, tag).await
     }
 }
 

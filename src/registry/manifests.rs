@@ -157,9 +157,8 @@ where
         if let ManifestRef::Tag(t) = key {
             // TODO: eventually we'll need to check the mutability of a tag before overwriting it but
             // for now we overwrite it by default
-            tx.insert_or_update_tag(
-                &self.repository.registry_id,
-                &self.repository.id,
+            tx.upsert_tag(
+                &manifest.id,
                 t.as_str(),
             )
             .await?;
