@@ -152,12 +152,23 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest IN ($3)
         Ok(manifests)
     }
 
-    pub async fn insert_manifest(
-        executor: &mut PgConnection,
-        manifest: Manifest,
-    ) -> Result<Manifest> {
-        todo!()
-        // todo: attach new uuid to resulting Manifest
+    pub async fn insert_manifest(executor: &mut PgConnection, manifest: &Manifest) -> Result<()> {
+        sqlx::query!(
+            r#"
+INSERT INTO manifests ( id, registry_id, repository_id, blob_id, media_type, artifact_type, digest )
+VALUES ( $1, $2, $3, $4, $5, $6, $7 )
+            "#,
+            manifest.id,
+            manifest.registry_id,
+            manifest.repository_id,
+            manifest.blob_id,
+            manifest.media_type.clone().map(String::from),
+            manifest.artifact_type.clone().map(String::from),
+            String::from(&manifest.digest),
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
     }
 
     pub async fn associate_image_layers(
@@ -185,7 +196,10 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest IN ($3)
         todo!();
     }
 
-    pub async fn get_chunks(executor: &mut PgConnection, session: &UploadSession) -> Result<Vec<Chunk>> {
+    pub async fn get_chunks(
+        executor: &mut PgConnection,
+        session: &UploadSession,
+    ) -> Result<Vec<Chunk>> {
         Ok(sqlx::query_as!(
             Chunk,
             r#"
@@ -271,11 +285,7 @@ WHERE reg.id = $1 AND rep.name = $2
         .await?)
     }
 
-    pub async fn insert_blob(
-        &mut self,
-        registry_id: &Uuid,
-        digest: &OciDigest,
-    ) -> Result<Uuid> {
+    pub async fn insert_blob(&mut self, registry_id: &Uuid, digest: &OciDigest) -> Result<Uuid> {
         Queries::insert_blob(&mut *self.conn, registry_id, digest).await
     }
 
@@ -531,11 +541,7 @@ impl<'a> PostgresMetadataTx<'a> {
         }
     }
 
-    pub async fn insert_blob(
-        &mut self,
-        registry_id: &Uuid,
-        digest: &OciDigest,
-    ) -> Result<Uuid> {
+    pub async fn insert_blob(&mut self, registry_id: &Uuid, digest: &OciDigest) -> Result<Uuid> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
         Queries::insert_blob(&mut **tx, registry_id, digest).await
     }
@@ -573,7 +579,7 @@ impl<'a> PostgresMetadataTx<'a> {
         Queries::get_manifests(&mut **tx, registry_id, repository_id, digests).await
     }
 
-    pub async fn insert_manifest(&mut self, manifest: Manifest) -> Result<Manifest> {
+    pub async fn insert_manifest(&mut self, manifest: &Manifest) -> Result<()> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
         Queries::insert_manifest(&mut **tx, manifest).await
     }

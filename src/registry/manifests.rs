@@ -95,7 +95,7 @@ where
             blob_uuid,
             calculated_digest,
         );
-        manifest = tx.insert_manifest(manifest).await?;
+        tx.insert_manifest(&manifest).await?;
 
         match spec {
             ManifestSpec::Image(img) => {
