@@ -194,8 +194,9 @@ async fn uploads_post<O: ObjectStore>(
         }
         Some(dgst) => {
             if let Some(TypedHeader(length)) = content_length {
+                let oci_digest: OciDigest = dgst.as_str().try_into()?;
                 let mut store = registry.get_blob_store();
-                store.upload(dgst, length.0, request.into_body()).await?;
+                store.upload(&oci_digest, length.0, request.into_body()).await?;
 
                 let location = format!("/v2/{}/blobs/{}", &repo_name, dgst);
                 let mut headers = HeaderMap::new();
@@ -298,7 +299,7 @@ async fn uploads_put<O: ObjectStore>(
             (Some(TypedHeader(_content_type)), Some(TypedHeader(content_length))) => {
                 let mut store = registry.get_blob_store();
                 store
-                    .upload(digest, content_length.0, request.into_body())
+                    .upload(&oci_digest, content_length.0, request.into_body())
                     .await?;
 
                 let location = format!("/v2/{}/blobs/{}", repo_name, digest);

@@ -1,6 +1,7 @@
 use aws_sdk_s3::primitives::ByteStream;
 use axum::body::StreamBody;
 use hyper::body::Body;
+use uuid::Uuid;
 
 use crate::{
     errors::Result,
@@ -46,20 +47,25 @@ where
         })
     }
 
-    pub async fn upload(&mut self, digest: &str, content_length: u64, body: Body) -> Result<()> {
-        let oci_digest: OciDigest = digest.try_into()?;
-
+    pub async fn upload(&mut self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid> {
+        // TODO: replace this connection with a transaction
         let mut conn = self.metadata.get_conn().await?;
-        let uuid = match conn.get_blob(&self.registry.id, &oci_digest).await? {
-            Some(b) => b.id,
+        let uuid = match conn.get_blob(&self.registry.id, digest).await? {
+            Some(b) => {
+                // verify blob actually exists before returning a potentially bogus uuid
+                if b.uploaded && self.objects.blob_exists(&b.id).await? {
+                    return Ok(b.id);
+                }
+                b.id
+            }
             None => {
-                conn.insert_blob(&self.registry.id, &oci_digest, false)
+                conn.insert_blob(&self.registry.id, digest, false)
                     .await?
             }
         };
 
         // upload blob
-        let digester = oci_digest.digester();
+        let digester = digest.digester();
         let stream_body = StreamObjectBody::from_body(body, digester);
         self.objects
             .upload_blob(&uuid, stream_body.into(), content_length)
@@ -70,7 +76,7 @@ where
 
         conn.update_blob(&uuid, true).await?;
 
-        Ok(())
+        Ok(uuid)
     }
 
     pub async fn get_blob(&self, key: &OciDigest) -> Result<Option<StreamBody<ByteStream>>> {
