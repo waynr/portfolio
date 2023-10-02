@@ -1,5 +1,3 @@
-use aws_sdk_s3::primitives::ByteStream;
-use axum::body::StreamBody;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use uuid::Uuid;
@@ -54,11 +52,11 @@ impl std::str::FromStr for ManifestRef {
 
 pub struct Manifest {
     pub id: Uuid,
+    /// the id of the ObjectStore blob containing this manifest
+    pub blob_id: Uuid,
     pub registry_id: Uuid,
     pub repository_id: Uuid,
-    pub config_blob_id: Uuid,
     pub digest: OciDigest,
-    pub media_type: oci_spec::image::MediaType,
+    pub media_type: Option<oci_spec::image::MediaType>,
     pub artifact_type: Option<oci_spec::image::MediaType>,
-    pub body: Option<StreamBody<ByteStream>>,
 }

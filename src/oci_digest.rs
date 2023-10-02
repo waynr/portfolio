@@ -5,7 +5,7 @@ use sha2::{Sha256, Sha512};
 use crate::{Error, Result};
 
 // https://github.com/opencontainers/image-spec/blob/main/descriptor.md#digests
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct OciDigest {
     algorithm: RegisteredImageSpecAlgorithm,
     encoded: String,
@@ -22,7 +22,7 @@ impl TryFrom<&str> for OciDigest {
             Some(a) => a,
             None => return Err(Error::InvalidDigest(s.to_string())),
         };
-        let encoded: &str = match s.get(i+1..) {
+        let encoded: &str = match s.get(i + 1..) {
             Some(e) if e.len() > 0 => e,
             Some(_) => return Err(Error::InvalidDigest(s.to_string())),
             None => return Err(Error::InvalidDigest(s.to_string())),
@@ -38,6 +38,20 @@ impl TryFrom<&str> for OciDigest {
         Ok(Self {
             algorithm,
             encoded: encoded.to_string(),
+        })
+    }
+}
+
+impl TryFrom<&[u8]> for OciDigest {
+    type Error = Error;
+    fn try_from(bs: &[u8]) -> Result<Self> {
+        let mut hasher = Sha256::new();
+        Digest::update(&mut hasher, bs);
+        let s = hasher.finalize();
+
+        Ok(Self {
+            algorithm: RegisteredImageSpecAlgorithm::Sha256,
+            encoded: s.into_iter().map(char::from).collect(),
         })
     }
 }
@@ -65,7 +79,7 @@ impl OciDigest {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 enum RegisteredImageSpecAlgorithm {
     Sha256,
     Sha512,
@@ -120,18 +134,18 @@ mod test {
         match (expected, actual) {
             (Ok(exp), Ok(act)) => {
                 assert_eq!(exp, act);
-            },
+            }
             (Ok(s), Err(e)) => {
                 assert!(false, "expected Ok( {s:?} ) got Err( {e:?} )");
-            },
+            }
             (Err(exp), Err(act)) => {
                 let exp = format!("{exp}");
                 let act = format!("{act}");
                 assert_eq!(exp, act);
-            },
+            }
             (Err(e), Ok(s)) => {
                 assert!(false, "expected Err( {e:?} ) got Ok( {s:?} )");
-            },
+            }
         }
     }
 }

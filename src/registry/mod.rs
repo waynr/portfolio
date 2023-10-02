@@ -5,7 +5,7 @@ pub mod blobs;
 pub use blobs::BlobStore;
 
 pub mod manifests;
-pub use manifests::ManifestStore;
+pub use manifests::{ManifestStore, ManifestSpec};
 
 pub mod metadata;
 pub mod objects;

@@ -1,11 +1,11 @@
-use oci_spec::image::Descriptor;
 use serde::Deserialize;
 use sqlx::{
-    pool::PoolConnection, PgConnection,
+    pool::PoolConnection,
     postgres::{PgPoolOptions, Postgres},
     types::{Json, Uuid},
-    Pool, Transaction,
+    PgConnection, Pool, Transaction,
 };
+use tokio_stream::StreamExt;
 
 use crate::errors::{Error, Result};
 use crate::metadata::{Blob, Manifest, ManifestRef, Registry, Repository};
@@ -38,12 +38,20 @@ impl PostgresMetadataPool {
             conn: self.pool.acquire().await?,
         })
     }
+
+    pub async fn get_tx(&self) -> Result<PostgresMetadataTx> {
+        Ok(PostgresMetadataTx {
+            tx: Some(self.pool.begin().await?),
+        })
+    }
 }
 
 pub struct PostgresMetadataConn {
     conn: PoolConnection<Postgres>,
 }
 
+// A collection of queries that are only require a `&mut PgConnection` and don't care whether it
+// came from a transaction or a pool connection.
 struct Queries {}
 
 impl Queries {
@@ -60,9 +68,100 @@ RETURNING id, name
         .fetch_one(executor)
         .await?)
     }
+
+    pub async fn get_blobs(
+        executor: &mut PgConnection,
+        registry_id: &Uuid,
+        digests: &Vec<&str>,
+    ) -> Result<Vec<Blob>> {
+        let digest_in_clause = digests.join(",");
+        Ok(sqlx::query_as!(
+            Blob,
+            r#"
+SELECT b.id, b.digest, b.uploaded, b.registry_id
+FROM blobs b
+WHERE b.registry_id = $1 AND b.digest IN ($2)
+            "#,
+            registry_id,
+            digest_in_clause,
+        )
+        .fetch_all(executor)
+        .await?)
+    }
+
+    pub async fn get_manifests(
+        executor: &mut PgConnection,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        digests: &Vec<&str>,
+    ) -> Result<Vec<Manifest>> {
+        let digest_in_clause = digests.join(",");
+        let mut manifests = Vec::new();
+
+        let rows = sqlx::query!(
+            r#"
+SELECT m.id, m.registry_id, m.repository_id, m.blob_id, m.media_type, m.artifact_type, m.digest
+FROM manifests m 
+WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest IN ($3)
+            "#,
+            registry_id,
+            repository_id,
+            digest_in_clause,
+        )
+        .fetch(executor);
+
+        tokio::pin!(rows);
+
+        while let Some(row) = rows.next().await {
+            let row = row?;
+            manifests.push(Manifest {
+                id: row.id.into(),
+                registry_id: row.registry_id.into(),
+                repository_id: row.repository_id.into(),
+                blob_id: row.blob_id.into(),
+                digest: row.digest.as_str().try_into()?,
+                media_type: row.media_type.map(|v| v.as_str().into()),
+                artifact_type: row.artifact_type.map(|v| v.as_str().into()),
+            })
+        }
+        Ok(manifests)
+    }
+
+    pub async fn insert_manifest(
+        executor: &mut PgConnection,
+        manifest: Manifest,
+    ) -> Result<Manifest> {
+        todo!()
+        // todo: attach new uuid to resulting Manifest
+    }
+
+    pub async fn associate_image_layers(
+        executor: &mut PgConnection,
+        parent: &Uuid,
+        children: Vec<&Uuid>,
+    ) -> Result<()> {
+        todo!()
+    }
+
+    pub async fn associate_index_manifests(
+        executor: &mut PgConnection,
+        parent: &Uuid,
+        children: Vec<&Uuid>,
+    ) -> Result<()> {
+        todo!()
+    }
+
+    pub async fn insert_or_update_tag(
+        executor: &mut PgConnection,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        tag: &str,
+    ) -> Result<()> {
+        todo!();
+    }
 }
 
-// basic DB interaction methods
+// PoolConnection<Postgres>-based metadata queries.
 impl PostgresMetadataConn {
     pub async fn insert_registry(&mut self, name: &String) -> Result<Registry> {
         Queries::insert_registry(&mut *self.conn, name).await
@@ -82,7 +181,11 @@ WHERE name = $1
         .await?)
     }
 
-    pub async fn insert_repository(&mut self, registry_id: &Uuid, name: &String) -> Result<Repository> {
+    pub async fn insert_repository(
+        &mut self,
+        registry_id: &Uuid,
+        name: &String,
+    ) -> Result<Repository> {
         Ok(sqlx::query_as!(
             Repository,
             r#"
@@ -97,7 +200,11 @@ RETURNING id, name, registry_id
         .await?)
     }
 
-    pub async fn get_repository(&mut self, registry: &Uuid, repository: &String) -> Result<Repository> {
+    pub async fn get_repository(
+        &mut self,
+        registry: &Uuid,
+        repository: &String,
+    ) -> Result<Repository> {
         Ok(sqlx::query_as!(
             Repository,
             r#"
@@ -152,7 +259,11 @@ WHERE id = $1
         Ok(())
     }
 
-    pub async fn get_blob(&mut self, registry_id: &Uuid, digest: &OciDigest) -> Result<Option<Blob>> {
+    pub async fn get_blob(
+        &mut self,
+        registry_id: &Uuid,
+        digest: &OciDigest,
+    ) -> Result<Option<Blob>> {
         Ok(sqlx::query_as!(
             Blob,
             r#"
@@ -230,7 +341,7 @@ SELECT exists(
     ) -> Result<Option<Manifest>> {
         let row = sqlx::query!(
             r#"
-SELECT m.id, m.registry_id, m.repository_id, m.config_blob_id, m.media_type, m.artifact_type, m.digest
+SELECT m.id, m.registry_id, m.repository_id, m.blob_id, m.media_type, m.artifact_type, m.digest
 FROM manifests m 
 WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
             "#,
@@ -246,11 +357,10 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
                 id: row.id.into(),
                 registry_id: row.registry_id.into(),
                 repository_id: row.repository_id.into(),
-                config_blob_id: row.config_blob_id.into(),
+                blob_id: row.blob_id.into(),
                 digest: row.digest.as_str().try_into()?,
-                media_type: row.media_type.as_str().into(),
+                media_type: row.media_type.map(|v| v.as_str().into()),
                 artifact_type: row.artifact_type.map(|v| v.as_str().into()),
-                body: None,
             };
 
             Ok(Some(manifest))
@@ -267,7 +377,7 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
     ) -> Result<Option<Manifest>> {
         let row = sqlx::query!(
             r#"
-SELECT m.id, m.registry_id, m.repository_id, m.config_blob_id, m.media_type, m.artifact_type, m.digest
+SELECT m.id, m.registry_id, m.repository_id, m.blob_id, m.media_type, m.artifact_type, m.digest
 FROM manifests m 
 JOIN tags t 
 ON m.id = t.manifest_id
@@ -285,11 +395,10 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND t.name = $3
                 id: row.id.into(),
                 registry_id: row.registry_id.into(),
                 repository_id: row.repository_id.into(),
-                config_blob_id: row.config_blob_id.into(),
+                blob_id: row.blob_id.into(),
                 digest: row.digest.as_str().try_into()?,
-                media_type: row.media_type.as_str().into(),
+                media_type: row.media_type.map(|v| v.as_str().into()),
                 artifact_type: row.artifact_type.map(|v| v.as_str().into()),
-                body: None,
             };
 
             Ok(Some(manifest))
@@ -408,6 +517,78 @@ VALUES ( $1, $2, $3 )
         .await?;
 
         Ok(())
+    }
+}
+
+// Wrapper around a Postgres transaction with the ability to commit transactions.
+pub struct PostgresMetadataTx<'a> {
+    tx: Option<Transaction<'a, Postgres>>,
+}
+
+impl<'a> PostgresMetadataTx<'a> {
+    pub async fn commit(&mut self) -> Result<()> {
+        if let Some(t) = self.tx.take() {
+            Ok(t.commit().await?)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub async fn get_blobs(
+        &mut self,
+        registry_id: &Uuid,
+        digests: &Vec<&str>,
+    ) -> Result<Vec<Blob>> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::get_blobs(&mut **tx, registry_id, digests).await
+    }
+
+    pub async fn get_manifests(
+        &mut self,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        digests: &Vec<&str>,
+    ) -> Result<Vec<Manifest>> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::get_manifests(&mut **tx, registry_id, repository_id, digests).await
+    }
+
+    pub async fn insert_manifest(&mut self, manifest: Manifest) -> Result<Manifest> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::insert_manifest(&mut **tx, manifest).await
+    }
+
+    pub async fn associate_image_layers(
+        &mut self,
+        parent: &Uuid,
+        children: Vec<&Uuid>,
+    ) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::associate_image_layers(&mut *tx, parent, children).await
+    }
+
+    pub async fn associate_index_manifests(
+        &mut self,
+        parent: &Uuid,
+        children: Vec<&Uuid>,
+    ) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::associate_index_manifests(&mut *tx, parent, children).await
+    }
+
+    pub async fn insert_or_update_tag(
+        &mut self,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        tag: &str,
+    ) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::insert_or_update_tag(&mut *tx, registry_id, repository_id, tag).await
+    }
+
+    pub async fn insert_registry(&mut self, name: &String) -> Result<Registry> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::insert_registry(&mut *tx, name).await
     }
 }
 

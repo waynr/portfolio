@@ -1,50 +1,69 @@
+use std::collections::HashSet;
+
+use aws_sdk_s3::primitives::ByteStream;
 use axum::body::Bytes;
+use axum::body::StreamBody;
 use axum::Json;
 use oci_spec::image::{ImageIndex, ImageManifest, MediaType};
+use uuid::Uuid;
 
 use crate::{
     errors::{DistributionErrorCode, Error, Result},
-    metadata::{Manifest, ManifestRef, PostgresMetadataPool, Repository},
+    metadata::{Manifest, ManifestRef, Repository},
     objects::ObjectStore,
+    oci_digest::OciDigest,
+    registry::BlobStore,
 };
 
-pub struct ManifestStore<'r, O>
+pub struct ManifestStore<'b, 'r, O>
 where
     O: ObjectStore,
 {
-    metadata: PostgresMetadataPool,
-    objects: O,
+    blobstore: BlobStore<'b, O>,
     repository: &'r Repository,
 }
 
-impl<'r, O> ManifestStore<'r, O>
+impl<'b, 'r, O> ManifestStore<'b, 'r, O>
 where
     O: ObjectStore,
 {
-    pub fn new(metadata: PostgresMetadataPool, objects: O, repository: &'r Repository) -> Self {
+    pub fn new(blobstore: BlobStore<'b, O>, repository: &'r Repository) -> Self {
         Self {
-            metadata,
-            objects,
+            blobstore,
             repository,
         }
     }
 
-    pub async fn get_manifest(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
-        let mut conn = self.metadata.get_conn().await?;
-        if let Some(mut manifest) = conn
+    pub async fn head_manifest(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
+        let mut conn = self.blobstore.metadata.get_conn().await?;
+        if let Some(manifest) = conn
             .get_manifest(&self.repository.registry_id, &self.repository.id, key)
             .await?
         {
-            let body = self.objects.get_blob(&manifest.config_blob_id).await?;
-            manifest.body = Some(body);
             Ok(Some(manifest))
         } else {
             Ok(None)
         }
     }
 
+    pub async fn get_manifest(
+        &self,
+        key: &ManifestRef,
+    ) -> Result<Option<(Manifest, StreamBody<ByteStream>)>> {
+        let mut conn = self.blobstore.metadata.get_conn().await?;
+        if let Some(manifest) = conn
+            .get_manifest(&self.repository.registry_id, &self.repository.id, key)
+            .await?
+        {
+            let body = self.blobstore.objects.get_blob(&manifest.blob_id).await?;
+            Ok(Some((manifest, body)))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn manifest_exists(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
-        let mut conn = self.metadata.get_conn().await?;
+        let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn
             .get_manifest(&self.repository.registry_id, &self.repository.id, key)
             .await?
@@ -56,13 +75,97 @@ where
     }
 
     pub async fn upload(
-        &self,
+        &mut self,
         key: &ManifestRef,
-        manifest: &ManifestSpec,
+        spec: &ManifestSpec,
         bytes: Bytes,
     ) -> Result<()> {
-        // TODO: eventually we'll need to check the mutability of a tag before overwriting it but
-        // for now we overwrite it by default
+        let calculated_digest: OciDigest = bytes.as_ref().try_into()?;
+
+        let blob_uuid = self
+            .blobstore
+            .upload(&calculated_digest, bytes.len() as u64, bytes.into())
+            .await?;
+
+        let mut tx = self.blobstore.metadata.get_tx().await?;
+
+        let mut manifest: Manifest = spec.new_manifest(
+            self.repository.registry_id,
+            self.repository.id,
+            blob_uuid,
+            calculated_digest,
+        );
+        manifest = tx.insert_manifest(manifest).await?;
+
+        match spec {
+            ManifestSpec::Image(img) => {
+                let layers = img.layers();
+
+                // first ensure all referenced layers exist as blobs
+                let digests = layers.iter().map(|desc| desc.digest().as_str()).collect();
+                let blobs = tx.get_blobs(&self.repository.registry_id, &digests).await?;
+
+                let mut hs = HashSet::new();
+                for blob in &blobs {
+                    hs.insert(blob.digest.as_str());
+                }
+                for digest in &digests {
+                    if !hs.contains(*digest) {
+                        return Err(Error::DistributionSpecError(
+                            DistributionErrorCode::BlobUnknown,
+                        ));
+                    }
+                }
+
+                // then associate all blobs with the manifest in the database
+                let blob_uuids = blobs.iter().map(|b| &b.id).collect();
+
+                tx.associate_image_layers(&manifest.id, blob_uuids).await?;
+            }
+            ManifestSpec::Index(ind) => {
+                let manifests = ind.manifests();
+
+                // first ensure all referenced manifests exist as blobs
+                let digests = manifests
+                    .iter()
+                    .map(|desc| desc.digest().as_str())
+                    .collect();
+                let manifests = tx
+                    .get_manifests(&self.repository.registry_id, &self.repository.id, &digests)
+                    .await?;
+
+                let mut hs: HashSet<String> = HashSet::new();
+                for manifest in &manifests {
+                    hs.insert((&manifest.digest).into());
+                }
+                for digest in &digests {
+                    if !hs.contains(*digest) {
+                        return Err(Error::DistributionSpecError(
+                            DistributionErrorCode::ManifestUnknown,
+                        ));
+                    }
+                }
+
+                // then associate all blobs with the manifest in the database
+                let manifest_uuids = manifests.iter().map(|b| &b.id).collect();
+
+                tx.associate_image_layers(&manifest.id, manifest_uuids)
+                    .await?;
+            }
+        }
+
+        if let ManifestRef::Tag(t) = key {
+            // TODO: eventually we'll need to check the mutability of a tag before overwriting it but
+            // for now we overwrite it by default
+            tx.insert_or_update_tag(
+                &self.repository.registry_id,
+                &self.repository.id,
+                t.as_str(),
+            )
+            .await?;
+        }
+
+        tx.commit().await?;
 
         Ok(())
     }
@@ -145,6 +248,35 @@ impl ManifestSpec {
                 ii.set_media_type(Some(MediaType::ImageIndex));
                 Ok(())
             }
+        }
+    }
+
+    pub(crate) fn new_manifest(
+        &self,
+        registry_id: Uuid,
+        repository_id: Uuid,
+        blob_id: Uuid,
+        dgst: OciDigest,
+    ) -> Manifest {
+        match self {
+            ManifestSpec::Image(img) => Manifest {
+                id: Uuid::new_v4(),
+                registry_id,
+                repository_id,
+                blob_id,
+                digest: dgst,
+                media_type: img.media_type().clone(),
+                artifact_type: img.artifact_type().clone(),
+            },
+            ManifestSpec::Index(ind) => Manifest {
+                id: Uuid::new_v4(),
+                registry_id,
+                repository_id,
+                blob_id,
+                digest: dgst,
+                media_type: ind.media_type().clone(),
+                artifact_type: ind.artifact_type().clone(),
+            },
         }
     }
 }

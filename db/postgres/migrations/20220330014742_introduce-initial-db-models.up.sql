@@ -21,19 +21,20 @@ CREATE TABLE blobs (
 	digest VARCHAR(256) NOT NULL,
 	uploaded BOOL NOT NULL,
 	registry_id UUID NOT NULL REFERENCES registries (id),
-	UNIQUE (id, registry_id)
+	UNIQUE (digest, registry_id)
 );
 
 -- a manifest is an OCI image manifest:
 -- https://github.com/opencontainers/image-spec/blob/main/manifest.md
 CREATE TABLE manifests (
-	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	id UUID PRIMARY KEY,
 	registry_id UUID NOT NULL REFERENCES registries (id),
-	config_blob_id UUID NOT NULL REFERENCEs blobs(id),
-	media_type VARCHAR(512) NOT NULL,
+	blob_id UUID NOT NULL REFERENCEs blobs(id),
+	media_type VARCHAR(512) DEFAULT NULL,
 	artifact_type VARCHAR(512) DEFAULT NULL,
 	repository_id UUID NOT NULL REFERENCES repositories (id),
-	digest VARCHAR(256) UNIQUE NOT NULL
+	digest VARCHAR(256) NOT NULL,
+	UNIQUE (registry_id, digest)
 );
 
 -- an index_manifest is a reference from a parent manifest to a child manifest
@@ -59,6 +60,7 @@ CREATE TABLE tags (
 -- requests, usually for chunked blob uploads.
 CREATE TABLE upload_sessions (
 	uuid UUID PRIMARY key DEFAULT gen_random_uuid(),
+	content_digest VARCHAR(256) NOT NULL
 	start_date DATE NOT NULL DEFAULT now(),
 	upload_id VARCHAR(256),
 	chunk_number INT4 NOT NULL DEFAULT 1,

@@ -56,7 +56,7 @@ async fn head_manifest<O: ObjectStore>(
     };
 
     let mstore = repository.get_manifest_store();
-    let manifest = mstore.get_manifest(&manifest_ref).await?;
+    let manifest = mstore.head_manifest(&manifest_ref).await?;
 
     if let Some(manifest) = manifest {
         let mut headers = HeaderMap::new();
@@ -99,29 +99,28 @@ async fn get_manifest<O: ObjectStore>(
     };
 
     let mstore = repository.get_manifest_store();
-    let manifest = mstore.get_manifest(&manifest_ref).await?;
-
-    if let Some(manifest) = manifest {
-        let body = manifest.body.ok_or(Error::DistributionSpecError(
+    let (manifest, body) = if let Some((m, b)) = mstore.get_manifest(&manifest_ref).await? {
+        (m, b)
+    } else {
+        return Err(Error::DistributionSpecError(
             DistributionErrorCode::ManifestUnknown,
-        ))?;
-        let mut headers = HeaderMap::new();
-        let dgst: String = manifest.digest.into();
-        headers.insert(
-            HeaderName::from_lowercase(b"docker-content-digest")?,
-            HeaderValue::from_str(dgst.as_str())?,
-        );
-        let content_type: String = manifest.media_type.into();
+        ));
+    };
+
+    let mut headers = HeaderMap::new();
+    let dgst: String = manifest.digest.into();
+    headers.insert(
+        HeaderName::from_lowercase(b"docker-content-digest")?,
+        HeaderValue::from_str(dgst.as_str())?,
+    );
+    if let Some(mt) = manifest.media_type {
+        let content_type: String = mt.into();
         headers.insert(
             http::header::CONTENT_TYPE,
             HeaderValue::from_str(content_type.as_str())?,
         );
-        return Ok((StatusCode::OK, headers, body).into_response());
     }
-
-    Err(Error::DistributionSpecError(
-        DistributionErrorCode::ManifestUnknown,
-    ))
+    Ok((StatusCode::OK, headers, body).into_response())
 }
 
 /// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests
@@ -204,7 +203,7 @@ async fn put_manifest<O: ObjectStore>(
         }
     }
 
-    let mstore = repository.get_manifest_store();
+    let mut mstore = repository.get_manifest_store();
     mstore.upload(&manifest_ref, &manifest, bytes).await?;
 
     Err(Error::DistributionSpecError(

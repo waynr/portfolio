@@ -16,9 +16,9 @@ pub struct BlobStore<'b, O>
 where
     O: ObjectStore,
 {
-    metadata: PostgresMetadataPool,
-    objects: O,
-    registry: &'b Registry,
+    pub(crate) metadata: PostgresMetadataPool,
+    pub(crate) objects: O,
+    pub(crate) registry: &'b Registry,
 }
 
 impl<'b, O> BlobStore<'b, O>

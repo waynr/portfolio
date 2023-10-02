@@ -96,10 +96,7 @@ where
     O: ObjectStore,
 {
     pub fn get_manifest_store(&self) -> ManifestStore<O> {
-        ManifestStore::new(
-            self.registry.metadata.clone(),
-            self.registry.objects.clone(),
-            &self.repository,
-        )
+        let blobstore = self.registry.get_blob_store();
+        ManifestStore::new(blobstore, &self.repository)
     }
 }
