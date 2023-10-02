@@ -176,7 +176,22 @@ VALUES ( $1, $2, $3, $4, $5, $6, $7 )
         parent: &Uuid,
         children: Vec<&Uuid>,
     ) -> Result<()> {
-        todo!()
+        let parents: Vec<Uuid> = std::iter::repeat(parent)
+            .map(Clone::clone)
+            .take(children.len())
+            .collect::<Vec<_>>();
+        let children: Vec<Uuid> = children.into_iter().map(Clone::clone).collect::<Vec<_>>();
+        sqlx::query!(
+            r#"
+INSERT INTO index_manifests(parent_manifest, child_manifest)
+SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
+            "#,
+            &parents[..],
+            &children[..],
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
     }
 
     pub async fn associate_index_manifests(
