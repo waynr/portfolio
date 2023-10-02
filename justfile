@@ -40,7 +40,8 @@ sqlx-migrate:
   sqlx migrate --source db/postgres/migrations run
 
 build:
-  cargo build
+  # requires cargo-limit to be installed
+  (cargo lbuild --color=always 2>&1) | less -R
 
 run config $RUST_LOG="info,portfolio=debug,tower_http=debug,sqlx::query=off":
   ./target/debug/portfolio --config-file {{config}}
