@@ -79,8 +79,9 @@ where
         key: &ManifestRef,
         spec: &ManifestSpec,
         bytes: Bytes,
-    ) -> Result<()> {
+    ) -> Result<OciDigest> {
         let calculated_digest: OciDigest = bytes.as_ref().try_into()?;
+
 
         let blob_uuid = self
             .blobstore
@@ -89,11 +90,22 @@ where
 
         let mut tx = self.blobstore.metadata.get_tx().await?;
 
+        if let Some(m) = tx
+            .get_manifest_by_digest(
+                &self.repository.registry_id,
+                &self.repository.id,
+                &calculated_digest,
+            )
+            .await?
+        {
+            return Ok(m.digest);
+        }
+
         let manifest: Manifest = spec.new_manifest(
             self.repository.registry_id,
             self.repository.id,
             blob_uuid,
-            calculated_digest,
+            calculated_digest.clone(),
         );
         tx.insert_manifest(&manifest).await?;
 
@@ -157,16 +169,12 @@ where
         if let ManifestRef::Tag(t) = key {
             // TODO: eventually we'll need to check the mutability of a tag before overwriting it but
             // for now we overwrite it by default
-            tx.upsert_tag(
-                &manifest.id,
-                t.as_str(),
-            )
-            .await?;
+            tx.upsert_tag(&manifest.id, t.as_str()).await?;
         }
 
         tx.commit().await?;
 
-        Ok(())
+        Ok(calculated_digest)
     }
 }
 

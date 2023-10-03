@@ -4,7 +4,7 @@ use std::str::FromStr;
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, Extension, Path},
-    http::header::{HeaderMap, HeaderName, HeaderValue},
+    http::header::{self, HeaderMap, HeaderName, HeaderValue},
     response::{IntoResponse, Response},
     routing::get,
     Router, TypedHeader,
@@ -136,11 +136,10 @@ async fn put_manifest<O: ObjectStore>(
         None => return Err(Error::MissingPathParameter("repository")),
     };
 
-    let manifest_ref = ManifestRef::from_str(
-        path_params
-            .get("reference")
-            .ok_or_else(|| Error::MissingQueryParameter("reference"))?,
-    )?;
+    let mref = path_params
+        .get("reference")
+        .ok_or_else(|| Error::MissingPathParameter("reference"))?;
+    let manifest_ref = ManifestRef::from_str(mref)?;
 
     let repository = match registry.get_repository(repo_name).await {
         Err(e) => {
@@ -204,9 +203,17 @@ async fn put_manifest<O: ObjectStore>(
     }
 
     let mut mstore = repository.get_manifest_store();
-    mstore.upload(&manifest_ref, &manifest, bytes).await?;
+    let calculated_digest = mstore.upload(&manifest_ref, &manifest, bytes).await?;
 
-    Err(Error::DistributionSpecError(
-        DistributionErrorCode::ManifestUnknown,
-    ))
+    tracing::debug!("{:?}", calculated_digest);
+    let location = format!("/v2/{}/manifests/{}", repo_name, mref);
+    tracing::debug!("{:?}", location);
+    let mut headers = HeaderMap::new();
+    headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+    headers.insert(
+        HeaderName::from_lowercase(b"docker-content-digest")?,
+        HeaderValue::from_str(String::from(calculated_digest).as_ref())?,
+    );
+
+    Ok((StatusCode::CREATED, headers, "").into_response())
 }

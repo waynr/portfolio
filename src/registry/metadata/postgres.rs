@@ -152,6 +152,42 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest IN ($3)
         Ok(manifests)
     }
 
+    pub async fn get_manifest_by_digest(
+        executor: &mut PgConnection,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        digest: &OciDigest,
+    ) -> Result<Option<Manifest>> {
+        let row = sqlx::query!(
+            r#"
+SELECT m.id, m.registry_id, m.repository_id, m.blob_id, m.media_type, m.artifact_type, m.digest
+FROM manifests m 
+WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
+            "#,
+            registry_id,
+            repository_id,
+            String::from(digest),
+        )
+        .fetch_optional(executor)
+        .await?;
+
+        if let Some(row) = row {
+            let manifest = Manifest {
+                id: row.id.into(),
+                registry_id: row.registry_id.into(),
+                repository_id: row.repository_id.into(),
+                blob_id: row.blob_id.into(),
+                digest: row.digest.as_str().try_into()?,
+                media_type: row.media_type.map(|v| v.as_str().into()),
+                artifact_type: row.artifact_type.map(|v| v.as_str().into()),
+            };
+
+            Ok(Some(manifest))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn insert_manifest(executor: &mut PgConnection, manifest: &Manifest) -> Result<()> {
         sqlx::query!(
             r#"
@@ -183,7 +219,7 @@ VALUES ( $1, $2, $3, $4, $5, $6, $7 )
         let children: Vec<Uuid> = children.into_iter().map(Clone::clone).collect::<Vec<_>>();
         sqlx::query!(
             r#"
-INSERT INTO index_manifests(parent_manifest, child_manifest)
+INSERT INTO layers(manifest, blob)
 SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
             "#,
             &parents[..],
@@ -206,7 +242,7 @@ SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
         let children: Vec<Uuid> = children.into_iter().map(Clone::clone).collect::<Vec<_>>();
         sqlx::query!(
             r#"
-INSERT INTO layers(manifest, blob)
+INSERT INTO index_manifests(parent_manifest, child_manifest)
 SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
             "#,
             &parents[..],
@@ -616,6 +652,16 @@ impl<'a> PostgresMetadataTx<'a> {
     ) -> Result<Vec<Manifest>> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
         Queries::get_manifests(&mut **tx, registry_id, repository_id, digests).await
+    }
+
+    pub async fn get_manifest_by_digest(
+        &mut self,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        digest: &OciDigest,
+    ) -> Result<Option<Manifest>> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::get_manifest_by_digest(&mut **tx, registry_id, repository_id, digest).await
     }
 
     pub async fn insert_manifest(&mut self, manifest: &Manifest) -> Result<()> {

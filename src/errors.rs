@@ -137,7 +137,7 @@ impl DistributionErrorCode {
             DistributionErrorCode::DigestInvalid => StatusCode::BAD_REQUEST,
             DistributionErrorCode::ManifestBlobUnknown => StatusCode::NOT_FOUND,
             DistributionErrorCode::ManifestInvalid => StatusCode::BAD_REQUEST,
-            DistributionErrorCode::ManifestUnknown => StatusCode::BAD_REQUEST,
+            DistributionErrorCode::ManifestUnknown => StatusCode::NOT_FOUND,
             DistributionErrorCode::NameInvalid => StatusCode::BAD_REQUEST,
             DistributionErrorCode::NameUnknown => StatusCode::NOT_FOUND,
             DistributionErrorCode::SizeInvalid => StatusCode::BAD_REQUEST,

@@ -5,7 +5,7 @@ use sha2::{Sha256, Sha512};
 use crate::{Error, Result};
 
 // https://github.com/opencontainers/image-spec/blob/main/descriptor.md#digests
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct OciDigest {
     algorithm: RegisteredImageSpecAlgorithm,
     encoded: String,
@@ -51,7 +51,7 @@ impl TryFrom<&[u8]> for OciDigest {
 
         Ok(Self {
             algorithm: RegisteredImageSpecAlgorithm::Sha256,
-            encoded: s.into_iter().map(char::from).collect(),
+            encoded: format!("{:x}", s),
         })
     }
 }
@@ -79,7 +79,7 @@ impl OciDigest {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum RegisteredImageSpecAlgorithm {
     Sha256,
     Sha512,
