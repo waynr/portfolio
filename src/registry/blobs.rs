@@ -4,12 +4,12 @@ use hyper::body::Body;
 use uuid::Uuid;
 
 use crate::{
-    errors::Result,
+    errors::{Error, Result},
     metadata::{PostgresMetadataPool, Registry},
     objects::ObjectStore,
     objects::StreamObjectBody,
     registry::UploadSession,
-    OciDigest,
+    DistributionErrorCode, OciDigest,
 };
 
 pub struct BlobStore<'b, O>
@@ -47,7 +47,12 @@ where
         })
     }
 
-    pub async fn upload(&mut self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid> {
+    pub async fn upload(
+        &mut self,
+        digest: &OciDigest,
+        content_length: u64,
+        body: Body,
+    ) -> Result<Uuid> {
         let mut tx = self.metadata.get_tx().await?;
         let uuid = match tx.get_blob(&self.registry.id, digest).await? {
             Some(b) => {
@@ -57,10 +62,7 @@ where
                 }
                 b.id
             }
-            None => {
-                tx.insert_blob(&self.registry.id, digest)
-                    .await?
-            }
+            None => tx.insert_blob(&self.registry.id, digest).await?,
         };
 
         // upload blob
@@ -98,6 +100,22 @@ where
             .await?
             .blob_exists(&self.registry.id, key)
             .await
+    }
+
+    pub async fn delete_blob(&mut self, digest: &OciDigest) -> Result<()> {
+        let mut tx = self.metadata.get_tx().await?;
+
+        let blob =
+            tx.get_blob(&self.registry.id, digest)
+                .await?
+                .ok_or(Error::DistributionSpecError(
+                    DistributionErrorCode::BlobUnknown,
+                ))?;
+
+        // TODO: handle the case where the blob is referenced
+        tx.delete_blob(&blob.id).await?;
+        tx.commit().await?;
+        Ok(())
     }
 }
 

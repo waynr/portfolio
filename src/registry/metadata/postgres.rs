@@ -115,8 +115,7 @@ WHERE b.registry_id = $1 AND b.digest IN ($2)
     }
 
     pub async fn delete_blob(executor: &mut PgConnection, blob_id: &Uuid) -> Result<()> {
-        // TODO: detect query error that indicates the blob is referenced by other manifests
-        sqlx::query!(
+        match sqlx::query!(
             r#"
 DELETE FROM blobs
 WHERE id = $1
@@ -124,8 +123,17 @@ WHERE id = $1
             blob_id
         )
         .execute(executor)
-        .await?;
-        Ok(())
+        .await
+        {
+            Ok(_) => Ok(()),
+            Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
+                sqlx::error::ErrorKind::ForeignKeyViolation => Err(Error::DistributionSpecError(
+                    crate::DistributionErrorCode::BlobUnknown,
+                )),
+                _ => Err(sqlx::Error::Database(dberr).into()),
+            },
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub async fn get_manifests(
@@ -277,8 +285,7 @@ VALUES ( $1, $2, $3, $4, $5, $6, $7 )
     }
 
     pub async fn delete_manifest(executor: &mut PgConnection, manifest_id: &Uuid) -> Result<()> {
-        // TODO: detect query error that indicates the blob is referenced by other manifests
-        sqlx::query!(
+        match sqlx::query!(
             r#"
 DELETE FROM manifests
 WHERE id = $1
@@ -286,8 +293,17 @@ WHERE id = $1
             manifest_id
         )
         .execute(executor)
-        .await?;
-        Ok(())
+        .await
+        {
+            Ok(_) => Ok(()),
+            Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
+                sqlx::error::ErrorKind::ForeignKeyViolation => Err(Error::DistributionSpecError(
+                    crate::DistributionErrorCode::BlobUnknown,
+                )),
+                _ => Err(sqlx::Error::Database(dberr).into()),
+            },
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub async fn associate_image_layers(

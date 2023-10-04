@@ -17,7 +17,6 @@ use uuid::Uuid;
 
 use crate::{
     http::headers::{ContentRange, Range},
-    http::notimplemented,
     objects::ObjectStore,
     registry::registries::Registry,
     registry::UploadSession,
@@ -29,7 +28,7 @@ pub fn router<O: ObjectStore>() -> Router {
         .route(
             "/:digest",
             get(get_blob::<O>)
-                .delete(notimplemented)
+                .delete(delete_blob::<O>)
                 .head(head_blob::<O>),
         )
         .route("/uploads/", post(uploads_post::<O>))
@@ -150,7 +149,7 @@ async fn uploads_post<O: ObjectStore>(
                 let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);
                 let mut headers = HeaderMap::new();
                 headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
-                return Ok((StatusCode::ACCEPTED, headers, "").into_response())
+                return Ok((StatusCode::ACCEPTED, headers, "").into_response());
             }
 
             let location = format!("/v2/{}/blobs/{}", &repo_name, digest);
@@ -196,7 +195,9 @@ async fn uploads_post<O: ObjectStore>(
             if let Some(TypedHeader(length)) = content_length {
                 let oci_digest: OciDigest = dgst.as_str().try_into()?;
                 let mut store = registry.get_blob_store();
-                store.upload(&oci_digest, length.0, request.into_body()).await?;
+                store
+                    .upload(&oci_digest, length.0, request.into_body())
+                    .await?;
 
                 let location = format!("/v2/{}/blobs/{}", &repo_name, dgst);
                 let mut headers = HeaderMap::new();
@@ -419,4 +420,31 @@ async fn uploads_get<O: ObjectStore>(
     headers.insert(Range::name(), HeaderValue::from_str(&range).expect("meow"));
 
     Ok((StatusCode::NO_CONTENT, headers, "").into_response())
+}
+
+async fn delete_blob<O: ObjectStore>(
+    Extension(registry): Extension<Registry<O>>,
+    Path(path_params): Path<HashMap<String, String>>,
+) -> Result<Response> {
+    let repo_name = match path_params.get("repository") {
+        Some(s) => s,
+        None => return Err(Error::MissingPathParameter("repository")),
+    };
+
+    if !registry.repository_exists(repo_name).await? {
+        return Err(Error::DistributionSpecError(
+            DistributionErrorCode::NameUnknown,
+        ));
+    }
+
+    let digest: &str = path_params
+        .get("digest")
+        .ok_or_else(|| Error::MissingPathParameter("digest"))?;
+    let oci_digest: OciDigest = digest.try_into()?;
+
+    let mut store = registry.get_blob_store();
+
+    store.delete_blob(&oci_digest).await?;
+
+    Ok((StatusCode::ACCEPTED, "").into_response())
 }
