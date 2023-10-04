@@ -110,6 +110,7 @@ pub enum Error {
     DistributionSpecError(DistributionErrorCode),
 }
 
+// TODO: need to generate JSON error body format as described in https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
 #[derive(Debug)]
 pub enum DistributionErrorCode {
     BlobUnknown = 1,         // blob unknown to registry
@@ -126,6 +127,7 @@ pub enum DistributionErrorCode {
     Denied = 13,             // request access to the resource is denied
     Unsupported = 14,        // the operation is unsupported
     TooManyRequests = 15,    // too many requests
+    ContentReferenced = 99,  // content referenced elsewhere
 }
 
 impl DistributionErrorCode {
@@ -145,6 +147,7 @@ impl DistributionErrorCode {
             DistributionErrorCode::Denied => StatusCode::FORBIDDEN,
             DistributionErrorCode::Unsupported => StatusCode::NOT_IMPLEMENTED,
             DistributionErrorCode::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
+            DistributionErrorCode::ContentReferenced => StatusCode::CONFLICT,
         }
     }
 }

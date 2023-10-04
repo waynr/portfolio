@@ -122,6 +122,15 @@ impl ObjectStore for S3 {
         Ok(())
     }
 
+    async fn delete_blob(&self, key: &Uuid) -> Result<()> {
+        self.client.delete_object()
+            .key(key.to_string())
+            .bucket(&self.bucket_name)
+            .send()
+            .await?;
+        Ok(())
+    }
+
     async fn initiate_chunked_upload(&self, session: &mut UploadSession) -> Result<()> {
         let create_multipart_upload_output = self
             .client

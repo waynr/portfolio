@@ -114,6 +114,20 @@ WHERE b.registry_id = $1 AND b.digest IN ($2)
         .await?)
     }
 
+    pub async fn delete_blob(executor: &mut PgConnection, blob_id: &Uuid) -> Result<()> {
+        // TODO: detect query error that indicates the blob is referenced by other manifests
+        sqlx::query!(
+            r#"
+DELETE FROM blobs
+WHERE id = $1
+            "#,
+            blob_id
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+
     pub async fn get_manifests(
         executor: &mut PgConnection,
         registry_id: &Uuid,
@@ -152,6 +166,23 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest IN ($3)
         Ok(manifests)
     }
 
+    pub async fn get_manifest(
+        executor: &mut PgConnection,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        manifest_ref: &ManifestRef,
+    ) -> Result<Option<Manifest>> {
+        let manifest = match manifest_ref {
+            ManifestRef::Digest(d) => {
+                Self::get_manifest_by_digest(executor, registry_id, repository_id, &d).await?
+            }
+            ManifestRef::Tag(s) => {
+                Self::get_manifest_by_tag(executor, registry_id, repository_id, &s).await?
+            }
+        };
+
+        Ok(manifest)
+    }
     pub async fn get_manifest_by_digest(
         executor: &mut PgConnection,
         registry_id: &Uuid,
@@ -167,6 +198,44 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
             registry_id,
             repository_id,
             String::from(digest),
+        )
+        .fetch_optional(executor)
+        .await?;
+
+        if let Some(row) = row {
+            let manifest = Manifest {
+                id: row.id.into(),
+                registry_id: row.registry_id.into(),
+                repository_id: row.repository_id.into(),
+                blob_id: row.blob_id.into(),
+                digest: row.digest.as_str().try_into()?,
+                media_type: row.media_type.map(|v| v.as_str().into()),
+                artifact_type: row.artifact_type.map(|v| v.as_str().into()),
+            };
+
+            Ok(Some(manifest))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn get_manifest_by_tag(
+        executor: &mut PgConnection,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        tag: &str,
+    ) -> Result<Option<Manifest>> {
+        let row = sqlx::query!(
+            r#"
+SELECT m.id, m.registry_id, m.repository_id, m.blob_id, m.media_type, m.artifact_type, m.digest
+FROM manifests m 
+JOIN tags t 
+ON m.id = t.manifest_id
+WHERE m.registry_id = $1 AND m.repository_id = $2 AND t.name = $3
+            "#,
+            registry_id,
+            repository_id,
+            tag,
         )
         .fetch_optional(executor)
         .await?;
@@ -207,6 +276,20 @@ VALUES ( $1, $2, $3, $4, $5, $6, $7 )
         Ok(())
     }
 
+    pub async fn delete_manifest(executor: &mut PgConnection, manifest_id: &Uuid) -> Result<()> {
+        // TODO: detect query error that indicates the blob is referenced by other manifests
+        sqlx::query!(
+            r#"
+DELETE FROM manifests
+WHERE id = $1
+            "#,
+            manifest_id
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+
     pub async fn associate_image_layers(
         executor: &mut PgConnection,
         parent: &Uuid,
@@ -224,6 +307,19 @@ SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
             "#,
             &parents[..],
             &children[..],
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete_image_layers(executor: &mut PgConnection, parent: &Uuid) -> Result<()> {
+        sqlx::query!(
+            r#"
+DELETE FROM layers 
+WHERE manifest = $1
+            "#,
+            &parent
         )
         .execute(executor)
         .await?;
@@ -253,6 +349,19 @@ SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
         Ok(())
     }
 
+    pub async fn delete_index_manifests(executor: &mut PgConnection, parent: &Uuid) -> Result<()> {
+        sqlx::query!(
+            r#"
+DELETE FROM index_manifests 
+WHERE parent_manifest = $1
+            "#,
+            &parent
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+
     pub async fn upsert_tag(
         executor: &mut PgConnection,
         manifest_id: &Uuid,
@@ -265,6 +374,22 @@ VALUES ( $1, $2 )
             "#,
             tag,
             manifest_id
+        )
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete_tags_by_manifest_id(
+        executor: &mut PgConnection,
+        manifest_id: &Uuid,
+    ) -> Result<()> {
+        sqlx::query!(
+            r#"
+DELETE FROM tags
+WHERE manifest_id = $1
+            "#,
+            &manifest_id,
         )
         .execute(executor)
         .await?;
@@ -432,34 +557,7 @@ SELECT exists(
         repository_id: &Uuid,
         digest: &OciDigest,
     ) -> Result<Option<Manifest>> {
-        let row = sqlx::query!(
-            r#"
-SELECT m.id, m.registry_id, m.repository_id, m.blob_id, m.media_type, m.artifact_type, m.digest
-FROM manifests m 
-WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
-            "#,
-            registry_id,
-            repository_id,
-            String::from(digest),
-        )
-        .fetch_optional(&mut *self.conn)
-        .await?;
-
-        if let Some(row) = row {
-            let manifest = Manifest {
-                id: row.id.into(),
-                registry_id: row.registry_id.into(),
-                repository_id: row.repository_id.into(),
-                blob_id: row.blob_id.into(),
-                digest: row.digest.as_str().try_into()?,
-                media_type: row.media_type.map(|v| v.as_str().into()),
-                artifact_type: row.artifact_type.map(|v| v.as_str().into()),
-            };
-
-            Ok(Some(manifest))
-        } else {
-            Ok(None)
-        }
+        Queries::get_manifest_by_digest(&mut *self.conn, registry_id, repository_id, digest).await
     }
 
     pub async fn get_manifest_by_tag(
@@ -468,36 +566,7 @@ WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest = $3
         repository_id: &Uuid,
         tag: &str,
     ) -> Result<Option<Manifest>> {
-        let row = sqlx::query!(
-            r#"
-SELECT m.id, m.registry_id, m.repository_id, m.blob_id, m.media_type, m.artifact_type, m.digest
-FROM manifests m 
-JOIN tags t 
-ON m.id = t.manifest_id
-WHERE m.registry_id = $1 AND m.repository_id = $2 AND t.name = $3
-            "#,
-            registry_id,
-            repository_id,
-            tag,
-        )
-        .fetch_optional(&mut *self.conn)
-        .await?;
-
-        if let Some(row) = row {
-            let manifest = Manifest {
-                id: row.id.into(),
-                registry_id: row.registry_id.into(),
-                repository_id: row.repository_id.into(),
-                blob_id: row.blob_id.into(),
-                digest: row.digest.as_str().try_into()?,
-                media_type: row.media_type.map(|v| v.as_str().into()),
-                artifact_type: row.artifact_type.map(|v| v.as_str().into()),
-            };
-
-            Ok(Some(manifest))
-        } else {
-            Ok(None)
-        }
+        Queries::get_manifest_by_tag(&mut *self.conn, registry_id, repository_id, tag).await
     }
 
     pub async fn new_upload_session(&mut self) -> Result<UploadSession> {
@@ -644,6 +713,11 @@ impl<'a> PostgresMetadataTx<'a> {
         Queries::get_blobs(&mut **tx, registry_id, digests).await
     }
 
+    pub async fn delete_blob(&mut self, blob_id: &Uuid) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::delete_blob(&mut **tx, blob_id).await
+    }
+
     pub async fn get_manifests(
         &mut self,
         registry_id: &Uuid,
@@ -652,6 +726,16 @@ impl<'a> PostgresMetadataTx<'a> {
     ) -> Result<Vec<Manifest>> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
         Queries::get_manifests(&mut **tx, registry_id, repository_id, digests).await
+    }
+
+    pub async fn get_manifest(
+        &mut self,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        reference: &ManifestRef,
+    ) -> Result<Option<Manifest>> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::get_manifest(&mut **tx, registry_id, repository_id, reference).await
     }
 
     pub async fn get_manifest_by_digest(
@@ -669,13 +753,23 @@ impl<'a> PostgresMetadataTx<'a> {
         Queries::insert_manifest(&mut **tx, manifest).await
     }
 
+    pub async fn delete_manifest(&mut self, manifest_id: &Uuid) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::delete_manifest(&mut **tx, manifest_id).await
+    }
+
     pub async fn associate_image_layers(
         &mut self,
         parent: &Uuid,
         children: Vec<&Uuid>,
     ) -> Result<()> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::associate_image_layers(&mut *tx, parent, children).await
+        Queries::associate_image_layers(&mut **tx, parent, children).await
+    }
+
+    pub async fn delete_image_layers(&mut self, parent: &Uuid) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::delete_image_layers(&mut **tx, parent).await
     }
 
     pub async fn associate_index_manifests(
@@ -684,12 +778,22 @@ impl<'a> PostgresMetadataTx<'a> {
         children: Vec<&Uuid>,
     ) -> Result<()> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::associate_index_manifests(&mut *tx, parent, children).await
+        Queries::associate_index_manifests(&mut **tx, parent, children).await
+    }
+
+    pub async fn delete_index_manifests(&mut self, parent: &Uuid) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::delete_index_manifests(&mut **tx, parent).await
     }
 
     pub async fn upsert_tag(&mut self, manifest_id: &Uuid, tag: &str) -> Result<()> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::upsert_tag(&mut *tx, manifest_id, tag).await
+        Queries::upsert_tag(&mut **tx, manifest_id, tag).await
+    }
+
+    pub async fn delete_tags_by_manifest_id(&mut self, manifest_id: &Uuid) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::delete_tags_by_manifest_id(&mut **tx, manifest_id).await
     }
 }
 

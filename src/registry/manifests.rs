@@ -82,7 +82,6 @@ where
     ) -> Result<OciDigest> {
         let calculated_digest: OciDigest = bytes.as_ref().try_into()?;
 
-
         let blob_uuid = self
             .blobstore
             .upload(&calculated_digest, bytes.len() as u64, bytes.into())
@@ -175,6 +174,36 @@ where
         tx.commit().await?;
 
         Ok(calculated_digest)
+    }
+
+    pub async fn delete(&mut self, key: &ManifestRef) -> Result<()> {
+        let mut tx = self.blobstore.metadata.get_tx().await?;
+
+        let manifest = tx
+            .get_manifest(&self.repository.registry_id, &self.repository.id, key)
+            .await?
+            .ok_or(Error::DistributionSpecError(
+                DistributionErrorCode::ManifestUnknown,
+            ))?;
+
+        // NOTE: it's possible (but how likely?) for a manifest to include both layers and
+        // manifests; we don't support creating both types of association for now, but we should
+        // support deleting them here just in case
+        tx.delete_image_layers(&manifest.id).await?;
+        tx.delete_index_manifests(&manifest.id).await?;
+        tx.delete_tags_by_manifest_id(&manifest.id).await?;
+        tx.delete_manifest(&manifest.id).await?;
+        tx.delete_blob(&manifest.blob_id).await?;
+
+        let mut count = 0;
+        while self.blobstore.objects.blob_exists(&manifest.blob_id).await? && count < 10 {
+            self.blobstore.objects.delete_blob(&manifest.blob_id).await?;
+            count += 1;
+        }
+
+        tx.commit().await?;
+
+        Ok(())
     }
 }
 

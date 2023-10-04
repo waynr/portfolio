@@ -16,6 +16,8 @@ pub trait ObjectStore: Clone + Send + Sync + 'static {
 
     async fn upload_blob(&self, key: &Uuid, body: Body, content_length: u64) -> Result<()>;
 
+    async fn delete_blob(&self, key: &Uuid) -> Result<()>;
+
     async fn initiate_chunked_upload(&self, session: &mut UploadSession) -> Result<()>;
 
     async fn upload_chunk(

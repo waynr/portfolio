@@ -13,9 +13,8 @@ use headers::{ContentLength, ContentType};
 use http::StatusCode;
 
 use crate::{
-    http::notimplemented, metadata::ManifestRef, objects::ObjectStore,
-    registry::manifests::ManifestSpec, registry::registries::Registry, DistributionErrorCode,
-    Error, Result,
+    metadata::ManifestRef, objects::ObjectStore, registry::manifests::ManifestSpec,
+    registry::registries::Registry, DistributionErrorCode, Error, Result,
 };
 
 pub fn router<O: ObjectStore>() -> Router {
@@ -23,7 +22,7 @@ pub fn router<O: ObjectStore>() -> Router {
         .route(
             "/:reference",
             get(get_manifest::<O>)
-                .delete(notimplemented)
+                .delete(delete_manifest::<O>)
                 .put(put_manifest::<O>)
                 .head(head_manifest::<O>),
         )
@@ -216,4 +215,38 @@ async fn put_manifest<O: ObjectStore>(
     );
 
     Ok((StatusCode::CREATED, headers, "").into_response())
+}
+
+async fn delete_manifest<O: ObjectStore>(
+    Extension(registry): Extension<Registry<O>>,
+    Path(path_params): Path<HashMap<String, String>>,
+) -> Result<Response> {
+    let repo_name = match path_params.get("repository") {
+        Some(s) => s,
+        None => return Err(Error::MissingPathParameter("repository")),
+    };
+
+    let mref = path_params
+        .get("reference")
+        .ok_or_else(|| Error::MissingPathParameter("reference"))?;
+    let manifest_ref = ManifestRef::from_str(mref)?;
+
+    let repository = match registry.get_repository(repo_name).await {
+        Err(e) => {
+            tracing::warn!("error retrieving repository: {e:?}");
+            return Err(Error::DistributionSpecError(
+                DistributionErrorCode::NameUnknown,
+            ));
+        }
+        Ok(r) => r,
+    };
+
+    let mut mstore = repository.get_manifest_store();
+    match mstore.delete(&manifest_ref).await {
+        Ok(_) => Ok((StatusCode::ACCEPTED, "").into_response()),
+        Err(e @ Error::DistributionSpecError(DistributionErrorCode::ContentReferenced)) => {
+            Ok(e.into_response())
+        }
+        Err(_) => Ok((StatusCode::NOT_FOUND, "").into_response()),
+    }
 }
