@@ -4,7 +4,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use axum::body::Bytes;
 use axum::body::StreamBody;
 use axum::Json;
-use oci_spec::image::{ImageIndex, ImageManifest, MediaType};
+use oci_spec::image::{Descriptor, ImageIndex, ImageManifest, MediaType};
 use uuid::Uuid;
 
 use crate::{
@@ -239,6 +239,14 @@ impl ManifestSpec {
         match self {
             ManifestSpec::Image(im) => im.media_type().clone(),
             ManifestSpec::Index(ii) => ii.media_type().clone(),
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn subject(&self) -> Option<Descriptor> {
+        match self {
+            ManifestSpec::Image(im) => im.subject().clone(),
+            ManifestSpec::Index(ii) => ii.subject().clone(),
         }
     }
 

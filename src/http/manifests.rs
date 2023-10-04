@@ -214,6 +214,13 @@ async fn put_manifest<O: ObjectStore>(
         HeaderValue::from_str(String::from(calculated_digest).as_ref())?,
     );
 
+    if let Some(subject) = manifest.subject() {
+        headers.insert(
+            HeaderName::from_lowercase(b"oci-subject")?,
+            HeaderValue::from_str(subject.digest().as_str())?,
+        );
+    }
+
     Ok((StatusCode::CREATED, headers, "").into_response())
 }
 
