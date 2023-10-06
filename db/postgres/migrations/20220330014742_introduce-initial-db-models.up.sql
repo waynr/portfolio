@@ -50,9 +50,10 @@ CREATE TABLE layers (
 
 -- a tag is a reference to a manifest
 CREATE TABLE tags (
-	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	name VARCHAR(256),
-	manifest_id UUID NOT NULL REFERENCES manifests (id)
+	repository_id UUID NOT NULL REFERENCES repositories (id),
+	manifest_id UUID NOT NULL REFERENCES manifests (id),
+	name VARCHAR(256) NOT NULL,
+	PRIMARY KEY (repository_id, name)
 );
 
 -- http upload sessions. sessions are used to track a sequence of stateful http
@@ -65,7 +66,7 @@ CREATE TABLE upload_sessions (
 	start_date DATE NOT NULL DEFAULT now(),
 	upload_id VARCHAR(256),
 	chunk_number INT4 NOT NULL DEFAULT 1,
-	last_range_end INT64 NOT NULL DEFAULT 0,
+	last_range_end BIGINT NOT NULL DEFAULT 0,
 	digest_state JSONB
 );
 

@@ -5,5 +5,5 @@ pub use postgres::PostgresMetadataPool;
 mod traits;
 
 mod types;
-pub use types::{Blob, Manifest, ManifestRef, Registry, Repository};
+pub use types::{Blob, Manifest, ManifestRef, Registry, Repository, Tag};
 

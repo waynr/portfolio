@@ -204,9 +204,7 @@ async fn put_manifest<O: ObjectStore>(
     let mut mstore = repository.get_manifest_store();
     let calculated_digest = mstore.upload(&manifest_ref, &manifest, bytes).await?;
 
-    tracing::debug!("{:?}", calculated_digest);
     let location = format!("/v2/{}/manifests/{}", repo_name, mref);
-    tracing::debug!("{:?}", location);
     let mut headers = HeaderMap::new();
     headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
     headers.insert(

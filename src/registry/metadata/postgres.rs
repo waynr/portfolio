@@ -3,12 +3,12 @@ use sqlx::{
     pool::PoolConnection,
     postgres::{PgPoolOptions, Postgres},
     types::{Json, Uuid},
-    PgConnection, Pool, Transaction,
+    Execute, PgConnection, Pool, QueryBuilder, Transaction,
 };
 use tokio_stream::StreamExt;
 
 use crate::errors::{Error, Result};
-use crate::metadata::{Blob, Manifest, ManifestRef, Registry, Repository};
+use crate::metadata::{Blob, Manifest, ManifestRef, Registry, Repository, Tag};
 use crate::registry::{Chunk, UploadSession};
 use crate::OciDigest;
 use crate::{DigestState, RegistryDefinition};
@@ -80,8 +80,7 @@ RETURNING id
         registry_id: &Uuid,
         digest: &OciDigest,
     ) -> Result<Option<Blob>> {
-        Ok(sqlx::query_as!(
-            Blob,
+        let row = sqlx::query!(
             r#"
 SELECT id, digest, registry_id
 FROM blobs
@@ -91,7 +90,15 @@ WHERE registry_id = $1 AND digest = $2
             String::from(digest),
         )
         .fetch_optional(executor)
-        .await?)
+        .await?;
+        if let Some(row) = row {
+            return Ok(Some(Blob {
+                id: row.id,
+                registry_id: row.registry_id,
+                digest: row.digest.as_str().try_into()?,
+            }));
+        }
+        Ok(None)
     }
 
     pub async fn get_blobs(
@@ -99,19 +106,19 @@ WHERE registry_id = $1 AND digest = $2
         registry_id: &Uuid,
         digests: &Vec<&str>,
     ) -> Result<Vec<Blob>> {
-        let digest_in_clause = digests.join(",");
-        Ok(sqlx::query_as!(
-            Blob,
-            r#"
-SELECT b.id, b.digest, b.registry_id
-FROM blobs b
-WHERE b.registry_id = $1 AND b.digest IN ($2)
-            "#,
-            registry_id,
-            digest_in_clause,
-        )
-        .fetch_all(executor)
-        .await?)
+        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
+            "SELECT b.id, b.digest, b.registry_id FROM blobs b WHERE (b.registry_id = ",
+        );
+        qb.push_bind(registry_id);
+        qb.push(") AND b.digest IN (");
+        let mut separated = qb.separated(", ");
+        for dgst in digests {
+            separated.push_bind(dgst);
+        }
+        separated.push_unseparated(") ");
+        let query = qb.build_query_as::<Blob>();
+        tracing::debug!("get_tags sql: {}", query.sql());
+        Ok(query.fetch_all(executor).await?)
     }
 
     pub async fn delete_blob(executor: &mut PgConnection, blob_id: &Uuid) -> Result<()> {
@@ -142,36 +149,25 @@ WHERE id = $1
         repository_id: &Uuid,
         digests: &Vec<&str>,
     ) -> Result<Vec<Manifest>> {
-        let digest_in_clause = digests.join(",");
-        let mut manifests = Vec::new();
-
-        let rows = sqlx::query!(
+        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
 SELECT m.id, m.registry_id, m.repository_id, m.blob_id, m.media_type, m.artifact_type, m.digest
 FROM manifests m 
-WHERE m.registry_id = $1 AND m.repository_id = $2 AND m.digest IN ($3)
-            "#,
-            registry_id,
-            repository_id,
-            digest_in_clause,
-        )
-        .fetch(executor);
+WHERE m.registry_id = "#,
+        );
+        qb.push_bind(registry_id);
+        qb.push(" AND m.repository_id = ");
+        qb.push_bind(repository_id);
+        qb.push(" AND m.digest IN (");
 
-        tokio::pin!(rows);
-
-        while let Some(row) = rows.next().await {
-            let row = row?;
-            manifests.push(Manifest {
-                id: row.id.into(),
-                registry_id: row.registry_id.into(),
-                repository_id: row.repository_id.into(),
-                blob_id: row.blob_id.into(),
-                digest: row.digest.as_str().try_into()?,
-                media_type: row.media_type.map(|v| v.as_str().into()),
-                artifact_type: row.artifact_type.map(|v| v.as_str().into()),
-            })
+        let mut separated = qb.separated(", ");
+        for dgst in digests {
+            separated.push_bind(dgst);
         }
-        Ok(manifests)
+        separated.push_unseparated(") ");
+        let query = qb.build_query_as::<Manifest>();
+        tracing::debug!("get_manifests sql: {}", query.sql());
+        Ok(query.fetch_all(executor).await?)
     }
 
     pub async fn get_manifest(
@@ -380,20 +376,48 @@ WHERE parent_manifest = $1
 
     pub async fn upsert_tag(
         executor: &mut PgConnection,
+        repository_id: &Uuid,
         manifest_id: &Uuid,
         tag: &str,
     ) -> Result<()> {
         sqlx::query!(
-            r#"
-UPSERT INTO tags ( name, manifest_id )
-VALUES ( $1, $2 )
-            "#,
+            r#"UPSERT INTO tags ( name, repository_id, manifest_id ) VALUES ( $1, $2, $3 )"#,
             tag,
-            manifest_id
+            repository_id,
+            manifest_id,
         )
         .execute(executor)
         .await?;
         Ok(())
+    }
+
+    pub async fn get_tags(executor: &mut PgConnection, repository_id: &Uuid) -> Result<Vec<Tag>> {
+        let mut tags = Vec::new();
+
+        let rows = sqlx::query!(
+            r#"
+SELECT t.manifest_id, t.name, m.digest
+FROM tags t
+JOIN manifests m 
+ON t.manifest_id = m.id
+WHERE m.repository_id = $1
+            "#,
+            repository_id,
+        )
+        .fetch(executor);
+
+        tokio::pin!(rows);
+
+        while let Some(row) = rows.next().await {
+            let row = row?;
+            tags.push(Tag {
+                manifest_id: row.manifest_id,
+                name: row.name,
+                digest: row.digest.as_str().try_into()?,
+            })
+        }
+
+        Ok(tags)
     }
 
     pub async fn delete_tags_by_manifest_id(
@@ -583,6 +607,10 @@ SELECT exists(
         tag: &str,
     ) -> Result<Option<Manifest>> {
         Queries::get_manifest_by_tag(&mut *self.conn, registry_id, repository_id, tag).await
+    }
+
+    pub async fn get_tags(&mut self, repository_id: &Uuid) -> Result<Vec<Tag>> {
+        Queries::get_tags(&mut *self.conn, repository_id).await
     }
 
     pub async fn new_upload_session(&mut self) -> Result<UploadSession> {
@@ -802,9 +830,14 @@ impl<'a> PostgresMetadataTx<'a> {
         Queries::delete_index_manifests(&mut **tx, parent).await
     }
 
-    pub async fn upsert_tag(&mut self, manifest_id: &Uuid, tag: &str) -> Result<()> {
+    pub async fn upsert_tag(
+        &mut self,
+        repository_id: &Uuid,
+        manifest_id: &Uuid,
+        tag: &str,
+    ) -> Result<()> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::upsert_tag(&mut **tx, manifest_id, tag).await
+        Queries::upsert_tag(&mut **tx, repository_id, manifest_id, tag).await
     }
 
     pub async fn delete_tags_by_manifest_id(&mut self, manifest_id: &Uuid) -> Result<()> {

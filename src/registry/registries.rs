@@ -1,3 +1,4 @@
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::errors::Result;
@@ -99,4 +100,24 @@ where
         let blobstore = self.registry.get_blob_store();
         ManifestStore::new(blobstore, &self.repository)
     }
+
+    pub async fn get_tags(&self) -> Result<TagsList> {
+        let mut conn = self.registry.metadata.get_conn().await?;
+
+        Ok(TagsList {
+            name: self.repository.name.clone(),
+            tags: conn
+                .get_tags(&self.repository.id)
+                .await?
+                .into_iter()
+                .map(|t| t.name)
+                .collect(),
+        })
+    }
+}
+
+#[derive(Serialize)]
+pub struct TagsList {
+    name: String,
+    tags: Vec<String>,
 }

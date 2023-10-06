@@ -37,7 +37,7 @@ async fn auth<B, O: ObjectStore>(
 pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
     let blobs = blobs::router::<O>();
     let manifests = manifests::router::<O>();
-    let tags = tags::router();
+    let tags = tags::router::<O>();
 
     let app = Router::new()
         .route("/v2", get(hello_world))
@@ -57,10 +57,6 @@ pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
     Ok(())
 }
 
-async fn notimplemented() -> Result<Response> {
-    Ok((StatusCode::NOT_IMPLEMENTED, "").into_response())
-}
-
-async fn hello_world() -> String {
-    "hello world".to_string()
+async fn hello_world() -> Result<Response> {
+    Ok((StatusCode::OK, "").into_response())
 }

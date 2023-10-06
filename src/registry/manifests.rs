@@ -160,15 +160,15 @@ where
                 // then associate all blobs with the manifest in the database
                 let manifest_uuids = manifests.iter().map(|b| &b.id).collect();
 
-                tx.associate_image_layers(&manifest.id, manifest_uuids)
+                tx.associate_index_manifests(&manifest.id, manifest_uuids)
                     .await?;
             }
         }
 
         if let ManifestRef::Tag(t) = key {
-            // TODO: eventually we'll need to check the mutability of a tag before overwriting it but
-            // for now we overwrite it by default
-            tx.upsert_tag(&manifest.id, t.as_str()).await?;
+            // TODO: eventually we'll need to check the mutability of a tag before overwriting it
+            // but for now we overwrite it by default
+            tx.upsert_tag(&self.repository.id, &manifest.id, t.as_str()).await?;
         }
 
         tx.commit().await?;

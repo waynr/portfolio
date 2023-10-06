@@ -1,5 +1,6 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::errors::{DistributionErrorCode, Error};
@@ -21,9 +22,34 @@ pub struct Repository {
 pub struct Blob {
     pub id: Uuid,
     pub registry_id: Uuid,
-    pub digest: String,
+    pub digest: OciDigest,
 }
 
+impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Blob {
+    fn from_row(row: &sqlx_postgres::PgRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            id: row.try_get("id")?,
+            registry_id: row.try_get("registry_id")?,
+            digest: match row.try_get::<String, &str>("digest")?.as_str().try_into() {
+                Ok(v) => v,
+                Err(e) => {
+                    return Err(sqlx::Error::ColumnDecode {
+                        index: "digest".to_string(),
+                        source: Box::new(e),
+                    })
+                }
+            },
+        })
+    }
+}
+
+pub struct Tag {
+    pub manifest_id: Uuid,
+    pub name: String,
+    pub digest: OciDigest,
+}
+
+#[derive(Debug)]
 pub enum ManifestRef {
     Digest(OciDigest),
     Tag(String),
@@ -58,4 +84,30 @@ pub struct Manifest {
     pub digest: OciDigest,
     pub media_type: Option<oci_spec::image::MediaType>,
     pub artifact_type: Option<oci_spec::image::MediaType>,
+}
+
+impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Manifest {
+    fn from_row(row: &sqlx_postgres::PgRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            id: row.try_get("id")?,
+            registry_id: row.try_get("registry_id")?,
+            repository_id: row.try_get("repository_id")?,
+            blob_id: row.try_get("blob_id")?,
+            digest: match row.try_get::<String, &str>("digest")?.as_str().try_into() {
+                Ok(v) => v,
+                Err(e) => {
+                    return Err(sqlx::Error::ColumnDecode {
+                        index: "digest".to_string(),
+                        source: Box::new(e),
+                    })
+                }
+            },
+            media_type: row
+                .try_get::<Option<String>, &str>("media_type")?
+                .map(|v| v.as_str().into()),
+            artifact_type: row
+                .try_get::<Option<String>, &str>("media_type")?
+                .map(|v| v.as_str().into()),
+        })
+    }
 }
