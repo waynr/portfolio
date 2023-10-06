@@ -1,14 +1,16 @@
+use sea_query::{ColumnDef, Expr, Func, OnConflict, Order, PostgresQueryBuilder, Query, Table};
+use sea_query_binder::SqlxBinder;
 use serde::Deserialize;
 use sqlx::{
     pool::PoolConnection,
     postgres::{PgPoolOptions, Postgres},
     types::{Json, Uuid},
-    Execute, PgConnection, Pool, QueryBuilder, Transaction,
+    Execute, IntoArguments, PgConnection, Pool, QueryBuilder, Transaction,
 };
 use tokio_stream::StreamExt;
 
 use crate::errors::{Error, Result};
-use crate::metadata::{Blob, Manifest, ManifestRef, Registry, Repository, Tag};
+use crate::metadata::{Blob, Manifest, ManifestRef, Manifests, Registry, Repository, Tag, Tags};
 use crate::registry::{Chunk, UploadSession};
 use crate::OciDigest;
 use crate::{DigestState, RegistryDefinition};
@@ -403,116 +405,48 @@ WHERE parent_manifest = $1
         n: Option<i64>,
         last: Option<String>,
     ) -> Result<Vec<Tag>> {
+        let mut builder = Query::select();
+        builder
+            .columns([Tags::ManifestId, Tags::Name])
+            .column((Manifests::Table, Manifests::Digest))
+            .left_join(
+                Manifests::Table,
+                Expr::col((Tags::Table, Tags::ManifestId))
+                    .equals((Manifests::Table, Manifests::Id)),
+            )
+            .from(Tags::Table)
+            .and_where(Expr::col((Tags::Table, Tags::RepositoryId)).eq(*repository_id));
+
         match (n, last) {
             (Some(n), Some(last)) => {
-                Queries::get_tags_n_last(executor, repository_id, n, last.as_str()).await
+                builder
+                    .and_where(
+                        Expr::tuple([
+                            Expr::col((Tags::Table, Tags::RepositoryId)).into(),
+                            Expr::col(Tags::Name).into(),
+                        ])
+                        .gt(Expr::tuple([
+                            Expr::value(*repository_id),
+                            Expr::value(last),
+                        ])),
+                    )
+                    .limit(n as u64);
             }
-            (Some(n), None) => Queries::get_tags_n(executor, repository_id, n).await,
-            (None, Some(_)) => Err(Error::MissingQueryParameter("n")),
-            (None, None) => Queries::get_tags_all(executor, repository_id).await,
+            (Some(n), None) => {
+                builder.limit(n as u64);
+            }
+            (None, Some(_)) => return Err(Error::MissingQueryParameter("n")),
+            (None, None) => {}
         }
-    }
+        builder.order_by_columns(vec![
+            ((Tags::Table, Tags::Name), Order::Asc),
+            ((Tags::Table, Tags::RepositoryId), Order::Asc),
+        ]);
 
-    async fn get_tags_all(executor: &mut PgConnection, repository_id: &Uuid) -> Result<Vec<Tag>> {
-        let mut tags = Vec::new();
-
-        let rows = sqlx::query!(
-            r#"
-SELECT t.manifest_id, t.name, m.digest
-FROM tags t
-JOIN manifests m 
-ON t.manifest_id = m.id
-WHERE m.repository_id = $1
-ORDER BY name DESC
-            "#,
-            repository_id,
-        )
-        .fetch(executor);
-
-        tokio::pin!(rows);
-
-        while let Some(row) = rows.next().await {
-            let row = row?;
-            tags.push(Tag {
-                manifest_id: row.manifest_id,
-                name: row.name,
-                digest: row.digest.as_str().try_into()?,
-            })
-        }
-
-        Ok(tags)
-    }
-
-    async fn get_tags_n(
-        executor: &mut PgConnection,
-        repository_id: &Uuid,
-        n: i64,
-    ) -> Result<Vec<Tag>> {
-        let mut tags = Vec::new();
-
-        let rows = sqlx::query!(
-            r#"
-SELECT t.manifest_id, t.name, m.digest
-FROM tags t
-JOIN manifests m 
-ON t.manifest_id = m.id
-WHERE m.repository_id = $1
-ORDER BY name DESC
-LIMIT $2
-            "#,
-            repository_id,
-            n,
-        )
-        .fetch(executor);
-
-        tokio::pin!(rows);
-
-        while let Some(row) = rows.next().await {
-            let row = row?;
-            tags.push(Tag {
-                manifest_id: row.manifest_id,
-                name: row.name,
-                digest: row.digest.as_str().try_into()?,
-            })
-        }
-
-        Ok(tags)
-    }
-
-    async fn get_tags_n_last(
-        executor: &mut PgConnection,
-        repository_id: &Uuid,
-        n: i64,
-        last: &str,
-    ) -> Result<Vec<Tag>> {
-        let mut tags = Vec::new();
-
-        let rows = sqlx::query!(
-            r#"
-SELECT t.manifest_id, t.name, m.digest
-FROM tags t
-JOIN manifests m 
-WHERE (t.repository_id, t.name) > ($2, $3)
-            "#,
-            repository_id,
-            repository_id,
-            last,
-            n,
-        )
-        .fetch(executor);
-
-        tokio::pin!(rows);
-
-        while let Some(row) = rows.next().await {
-            let row = row?;
-            tags.push(Tag {
-                manifest_id: row.manifest_id,
-                name: row.name,
-                digest: row.digest.as_str().try_into()?,
-            })
-        }
-
-        Ok(tags)
+        let (sql, values) = builder.build_sqlx(PostgresQueryBuilder);
+        Ok(sqlx::query_as_with::<_, Tag, _>(&sql, values)
+            .fetch_all(executor)
+            .await?)
     }
 
     pub async fn delete_tags_by_manifest_id(

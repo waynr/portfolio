@@ -1,5 +1,8 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
+use sea_query::{
+    ColumnDef, Expr, Func, Iden, OnConflict, Order, PostgresQueryBuilder, Query, Table,
+};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -43,10 +46,37 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Blob {
     }
 }
 
+#[derive(Debug)]
 pub struct Tag {
     pub manifest_id: Uuid,
     pub name: String,
     pub digest: OciDigest,
+}
+
+impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Tag {
+    fn from_row(row: &sqlx_postgres::PgRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            manifest_id: row.try_get("manifest_id")?,
+            name: row.try_get("name")?,
+            digest: match row.try_get::<String, &str>("digest")?.as_str().try_into() {
+                Ok(v) => v,
+                Err(e) => {
+                    return Err(sqlx::Error::ColumnDecode {
+                        index: "digest".to_string(),
+                        source: Box::new(e),
+                    })
+                }
+            },
+        })
+    }
+}
+
+#[derive(Iden)]
+pub enum Tags {
+    Table,
+    RepositoryId,
+    ManifestId,
+    Name,
 }
 
 #[derive(Debug)]
@@ -110,4 +140,16 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Manifest {
                 .map(|v| v.as_str().into()),
         })
     }
+}
+
+#[derive(Iden)]
+pub enum Manifests {
+    Table,
+    Id,
+    RegistryId,
+    BlobId,
+    MediaType,
+    ArtifactType,
+    RepositoryId,
+    Digest,
 }
