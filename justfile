@@ -29,7 +29,8 @@ devenv-up:
   docker compose up -d
   sleep 1
   just init-cockroachdb
-  just sqlx-migrate
+  just cockroachdb-migrate
+  just postgresql-migrate
 
 devenv-down:
   docker compose down
@@ -44,8 +45,10 @@ init-cockroachdb:
   docker exec -it portfolio-roach1-1 \
     ./cockroach --host=roach1:26257 init --insecure
 
-export DATABASE_URL := "postgresql://root@localhost:26258/defaultdb?sslmode=disable"
-sqlx-migrate:
+cockroachdb-migrate $DATABASE_URL="postgresql://root@localhost:26258/defaultdb?sslmode=disable":
+  sqlx migrate --source db/postgres/migrations run
+
+postgresql-migrate $DATABASE_URL="postgresql://postgres:password@localhost:5432/postgres?sslmode=disable":
   sqlx migrate --source db/postgres/migrations run
 
 build:
