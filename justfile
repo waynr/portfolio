@@ -49,17 +49,25 @@ sqlx-migrate:
   sqlx migrate --source db/postgres/migrations run
 
 build:
+  cargo build
+
+build-refactor:
   # requires cargo-limit to be installed
+  reset
   (cargo lbuild --color=always 2>&1) | less -R
 
 run config $RUST_LOG="info,portfolio=debug,tower_http=debug,sqlx::query=off":
   ./target/debug/portfolio --config-file {{config}}
 
+refactor-and-run config:
+    just build-refactor
+    just run {{config}}
+
 build-and-run config:
     just build
     just run {{config}}
 
-we-build config:
+we-build-refactor:
   watchexec \
     -c \
     -w src \
@@ -67,4 +75,20 @@ we-build config:
     -w justfile \
     -e toml,rs \
     --restart \
-    just build-and-run {{config}}
+    just build-refactor
+
+we-build:
+  watchexec \
+    -c \
+    -w src \
+    -w Cargo.toml \
+    -w justfile \
+    -e toml,rs \
+    --restart \
+    just build
+
+we-run-dev config:
+  watchexec \
+    -w target/debug/portfolio \
+    --restart \
+    just run {{config}}
