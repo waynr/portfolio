@@ -134,9 +134,12 @@ WHERE id = $1
         {
             Ok(_) => Ok(()),
             Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
-                sqlx::error::ErrorKind::ForeignKeyViolation => Err(Error::DistributionSpecError(
-                    crate::DistributionErrorCode::BlobUnknown,
-                )),
+                sqlx::error::ErrorKind::ForeignKeyViolation => {
+                    tracing::warn!("foreign key violation error: {dberr}");
+                    Err(Error::DistributionSpecError(
+                        crate::DistributionErrorCode::ContentReferenced,
+                    ))
+                }
                 _ => Err(sqlx::Error::Database(dberr).into()),
             },
             Err(e) => Err(e.into()),
@@ -293,9 +296,12 @@ WHERE id = $1
         {
             Ok(_) => Ok(()),
             Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
-                sqlx::error::ErrorKind::ForeignKeyViolation => Err(Error::DistributionSpecError(
-                    crate::DistributionErrorCode::BlobUnknown,
-                )),
+                sqlx::error::ErrorKind::ForeignKeyViolation => {
+                    tracing::warn!("foreign key violation error: {dberr}");
+                    Err(Error::DistributionSpecError(
+                        crate::DistributionErrorCode::ContentReferenced,
+                    ))
+                }
                 _ => Err(sqlx::Error::Database(dberr).into()),
             },
             Err(e) => Err(e.into()),
