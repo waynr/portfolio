@@ -397,7 +397,23 @@ WHERE parent_manifest = $1
         Ok(())
     }
 
-    pub async fn get_tags(executor: &mut PgConnection, repository_id: &Uuid) -> Result<Vec<Tag>> {
+    pub async fn get_tags(
+        executor: &mut PgConnection,
+        repository_id: &Uuid,
+        n: Option<i64>,
+        last: Option<String>,
+    ) -> Result<Vec<Tag>> {
+        match (n, last) {
+            (Some(n), Some(last)) => {
+                Queries::get_tags_n_last(executor, repository_id, n, last.as_str()).await
+            }
+            (Some(n), None) => Queries::get_tags_n(executor, repository_id, n).await,
+            (None, Some(_)) => Err(Error::MissingQueryParameter("n")),
+            (None, None) => Queries::get_tags_all(executor, repository_id).await,
+        }
+    }
+
+    async fn get_tags_all(executor: &mut PgConnection, repository_id: &Uuid) -> Result<Vec<Tag>> {
         let mut tags = Vec::new();
 
         let rows = sqlx::query!(
@@ -407,8 +423,81 @@ FROM tags t
 JOIN manifests m 
 ON t.manifest_id = m.id
 WHERE m.repository_id = $1
+ORDER BY name DESC
             "#,
             repository_id,
+        )
+        .fetch(executor);
+
+        tokio::pin!(rows);
+
+        while let Some(row) = rows.next().await {
+            let row = row?;
+            tags.push(Tag {
+                manifest_id: row.manifest_id,
+                name: row.name,
+                digest: row.digest.as_str().try_into()?,
+            })
+        }
+
+        Ok(tags)
+    }
+
+    async fn get_tags_n(
+        executor: &mut PgConnection,
+        repository_id: &Uuid,
+        n: i64,
+    ) -> Result<Vec<Tag>> {
+        let mut tags = Vec::new();
+
+        let rows = sqlx::query!(
+            r#"
+SELECT t.manifest_id, t.name, m.digest
+FROM tags t
+JOIN manifests m 
+ON t.manifest_id = m.id
+WHERE m.repository_id = $1
+ORDER BY name DESC
+LIMIT $2
+            "#,
+            repository_id,
+            n,
+        )
+        .fetch(executor);
+
+        tokio::pin!(rows);
+
+        while let Some(row) = rows.next().await {
+            let row = row?;
+            tags.push(Tag {
+                manifest_id: row.manifest_id,
+                name: row.name,
+                digest: row.digest.as_str().try_into()?,
+            })
+        }
+
+        Ok(tags)
+    }
+
+    async fn get_tags_n_last(
+        executor: &mut PgConnection,
+        repository_id: &Uuid,
+        n: i64,
+        last: &str,
+    ) -> Result<Vec<Tag>> {
+        let mut tags = Vec::new();
+
+        let rows = sqlx::query!(
+            r#"
+SELECT t.manifest_id, t.name, m.digest
+FROM tags t
+JOIN manifests m 
+WHERE (t.repository_id, t.name) > ($2, $3)
+            "#,
+            repository_id,
+            repository_id,
+            last,
+            n,
         )
         .fetch(executor);
 
@@ -615,8 +704,13 @@ SELECT exists(
         Queries::get_manifest_by_tag(&mut *self.conn, registry_id, repository_id, tag).await
     }
 
-    pub async fn get_tags(&mut self, repository_id: &Uuid) -> Result<Vec<Tag>> {
-        Queries::get_tags(&mut *self.conn, repository_id).await
+    pub async fn get_tags(
+        &mut self,
+        repository_id: &Uuid,
+        n: Option<i64>,
+        last: Option<String>,
+    ) -> Result<Vec<Tag>> {
+        Queries::get_tags(&mut *self.conn, repository_id, n, last).await
     }
 
     pub async fn new_upload_session(&mut self) -> Result<UploadSession> {

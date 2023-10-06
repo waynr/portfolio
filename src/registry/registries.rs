@@ -1,7 +1,7 @@
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::errors::Result;
+use crate::errors::{Error, Result};
 use crate::metadata::{
     PostgresMetadataPool, Registry as RegistryMetadata, Repository as RepositoryMetadata,
 };
@@ -101,13 +101,13 @@ where
         ManifestStore::new(blobstore, &self.repository)
     }
 
-    pub async fn get_tags(&self) -> Result<TagsList> {
+    pub async fn get_tags(&self, n: Option<i64>, last: Option<String>) -> Result<TagsList> {
         let mut conn = self.registry.metadata.get_conn().await?;
 
         Ok(TagsList {
             name: self.repository.name.clone(),
             tags: conn
-                .get_tags(&self.repository.id)
+                .get_tags(&self.repository.id, n, last)
                 .await?
                 .into_iter()
                 .map(|t| t.name)
