@@ -8,13 +8,22 @@ export OCI_DEBUG := "1"
 conformance-push focus="" $OCI_TEST_PUSH="1":
   just conformance '{{focus}}'
 
-conformance-pull focus="" $OCI_TEST_PULL="1":
+conformance-pull focus="" $OCI_TEST_PUSH="1":
+  just conformance '{{focus}}'
+
+conformance-management focus="" $OCI_TEST_CONTENT_MANAGEMENT="1":
+  just conformance '{{focus}}'
+
+conformance-discovery focus="" $OCI_TEST_CONTENT_DISCOVERY="1":
+  just conformance '{{focus}}'
+
+conformance-all focus="" $OCI_TEST_PUSH="1" $OCI_TEST_PULL="1" $OCI_TEST_CONTENT_DISCOVERY="1" $OCI_TEST_CONTENT_MANAGEMENT="1":
   just conformance '{{focus}}'
 
 conformance focus="":
   pushd distribution-spec/conformance \
     && go test -c \
-    && ./conformance.test -test.failfast -ginkgo.fail-fast -ginkgo.focus="{{focus}}"
+    && ./conformance.test -test.failfast -ginkgo.v -ginkgo.fail-fast
 
 devenv-up:
   docker compose up -d
