@@ -27,7 +27,7 @@ services:
       - --sql-addr=roach1:26258
     ports:
       - 26258:26258
-      - 18080:18080
+      - 18080:8080
     volumes:
       - roach1:/cockroach/cockrach-data
   roach2:
