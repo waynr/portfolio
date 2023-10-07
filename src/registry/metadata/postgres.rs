@@ -452,6 +452,7 @@ impl PostgresMetadataConn {
             .into_table(Registries::Table)
             .columns([Registries::Name])
             .values([name.into()])?
+            .returning(Query::returning().columns([Registries::Id, Registries::Name]))
             .build_sqlx(PostgresQueryBuilder);
 
         Ok(sqlx::query_as_with::<_, Registry, _>(&sql, values)
