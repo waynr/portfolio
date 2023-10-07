@@ -2,11 +2,10 @@ use sea_query::{Expr, Order, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
 use serde::Deserialize;
 use sqlx::{
-    Row,
     pool::PoolConnection,
     postgres::{PgPoolOptions, Postgres},
     types::{Json, Uuid},
-    Execute, PgConnection, Pool, QueryBuilder, Transaction,
+    Execute, PgConnection, Pool, QueryBuilder, Row, Transaction,
 };
 
 use crate::errors::{Error, Result};
@@ -81,25 +80,17 @@ impl Queries {
         registry_id: &Uuid,
         digest: &OciDigest,
     ) -> Result<Option<Blob>> {
-        let row = sqlx::query!(
-            r#"
-SELECT id, digest, registry_id
-FROM blobs
-WHERE registry_id = $1 AND digest = $2
-            "#,
-            registry_id,
-            String::from(digest),
-        )
-        .fetch_optional(executor)
-        .await?;
-        if let Some(row) = row {
-            return Ok(Some(Blob {
-                id: row.id,
-                registry_id: row.registry_id,
-                digest: row.digest.as_str().try_into()?,
-            }));
-        }
-        Ok(None)
+        let (sql, values) = Query::select()
+            .from(Blobs::Table)
+            .columns([Blobs::Id, Blobs::Digest, Blobs::RegistryId])
+            .and_where(Expr::col(Blobs::RegistryId).eq(*registry_id))
+            // TODO: impl Value for OciDigest
+            .and_where(Expr::col(Blobs::Digest).eq(String::from(digest)))
+            .build_sqlx(PostgresQueryBuilder);
+
+        Ok(sqlx::query_as_with::<_, Blob, _>(&sql, values)
+            .fetch_optional(executor)
+            .await?)
     }
 
     pub async fn get_blobs(
@@ -107,32 +98,26 @@ WHERE registry_id = $1 AND digest = $2
         registry_id: &Uuid,
         digests: &Vec<&str>,
     ) -> Result<Vec<Blob>> {
-        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
-            "SELECT b.id, b.digest, b.registry_id FROM blobs b WHERE (b.registry_id = ",
-        );
-        qb.push_bind(registry_id);
-        qb.push(") AND b.digest IN (");
-        let mut separated = qb.separated(", ");
-        for dgst in digests {
-            separated.push_bind(dgst);
-        }
-        separated.push_unseparated(") ");
-        let query = qb.build_query_as::<Blob>();
-        tracing::debug!("get_tags sql: {}", query.sql());
-        Ok(query.fetch_all(executor).await?)
+        let digests = digests.iter().map(Clone::clone);
+        let (sql, values) = Query::select()
+            .from(Blobs::Table)
+            .columns([Blobs::Id, Blobs::Digest, Blobs::RegistryId])
+            .and_where(Expr::col(Blobs::RegistryId).eq(*registry_id))
+            // TODO: impl Value for OciDigest
+            .and_where(Expr::col(Blobs::Digest).is_in(digests))
+            .build_sqlx(PostgresQueryBuilder);
+
+        Ok(sqlx::query_as_with::<_, Blob, _>(&sql, values)
+            .fetch_all(executor)
+            .await?)
     }
 
     pub async fn delete_blob(executor: &mut PgConnection, blob_id: &Uuid) -> Result<()> {
-        match sqlx::query!(
-            r#"
-DELETE FROM blobs
-WHERE id = $1
-            "#,
-            blob_id
-        )
-        .execute(executor)
-        .await
-        {
+        let (sql, values) = Query::delete()
+            .from_table(Blobs::Table)
+            .cond_where(Expr::col(Blobs::Id).eq(*blob_id))
+            .build_sqlx(PostgresQueryBuilder);
+        match sqlx::query_with(&sql, values).execute(executor).await {
             Ok(_) => Ok(()),
             Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
