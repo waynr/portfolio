@@ -13,6 +13,13 @@ pub struct Registry {
     pub name: String,
 }
 
+#[derive(Iden)]
+pub enum Registries {
+    Table,
+    Id,
+    Name,
+}
+
 #[derive(Clone)]
 pub struct Repository {
     pub(crate) id: Uuid,
@@ -20,10 +27,26 @@ pub struct Repository {
     pub name: String,
 }
 
+#[derive(Iden)]
+pub enum Repositories {
+    Table,
+    Id,
+    RegistryId,
+    Name,
+}
+
 pub struct Blob {
     pub id: Uuid,
     pub registry_id: Uuid,
     pub digest: OciDigest,
+}
+
+#[derive(Iden)]
+pub enum Blobs {
+    Table,
+    Id,
+    RegistryId,
+    Digest,
 }
 
 impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Blob {
