@@ -1,13 +1,12 @@
-use sea_query::{ColumnDef, Expr, Func, OnConflict, Order, PostgresQueryBuilder, Query, Table};
+use sea_query::{Expr, Order, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
 use serde::Deserialize;
 use sqlx::{
     pool::PoolConnection,
     postgres::{PgPoolOptions, Postgres},
     types::{Json, Uuid},
-    Execute, IntoArguments, PgConnection, Pool, QueryBuilder, Transaction,
+    Execute, PgConnection, Pool, QueryBuilder, Transaction,
 };
-use tokio_stream::StreamExt;
 
 use crate::errors::{Error, Result};
 use crate::metadata::{Blob, Manifest, ManifestRef, Manifests, Registry, Repository, Tag, Tags};

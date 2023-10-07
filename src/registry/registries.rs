@@ -1,7 +1,7 @@
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::errors::{Error, Result};
+use crate::errors::Result;
 use crate::metadata::{
     PostgresMetadataPool, Registry as RegistryMetadata, Repository as RepositoryMetadata,
 };
