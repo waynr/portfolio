@@ -1,4 +1,4 @@
-use sea_query::{Expr, Order, PostgresQueryBuilder, Query, Value};
+use sea_query::{Alias, Expr, OnConflict, Order, PostgresQueryBuilder, Query, Value};
 use sea_query_binder::SqlxBinder;
 use serde::Deserialize;
 use sqlx::{
@@ -345,14 +345,22 @@ impl Queries {
         manifest_id: &Uuid,
         tag: &str,
     ) -> Result<()> {
-        sqlx::query!(
-            r#"UPSERT INTO tags ( name, repository_id, manifest_id ) VALUES ( $1, $2, $3 )"#,
-            tag,
-            repository_id,
-            manifest_id,
-        )
-        .execute(executor)
-        .await?;
+        let (sql, values) = Query::insert()
+            .into_table(Tags::Table)
+            .columns([Tags::Name, Tags::RepositoryId, Tags::ManifestId])
+            .values([
+                Value::from(tag).into(),
+                Value::from(*repository_id).into(),
+                Value::from(*manifest_id).into(),
+            ])?
+            .on_conflict(
+                OnConflict::column(Tags::Id)
+                    .update_columns([Tags::ManifestId])
+                    .to_owned(),
+            )
+            .build_sqlx(PostgresQueryBuilder);
+
+        sqlx::query_with(&sql, values).execute(executor).await?;
         Ok(())
     }
 
@@ -410,15 +418,11 @@ impl Queries {
         executor: &mut PgConnection,
         manifest_id: &Uuid,
     ) -> Result<()> {
-        sqlx::query!(
-            r#"
-DELETE FROM tags
-WHERE manifest_id = $1
-            "#,
-            &manifest_id,
-        )
-        .execute(executor)
-        .await?;
+        let (sql, values) = Query::delete()
+            .from_table(Tags::Table)
+            .cond_where(Expr::col(Tags::ManifestId).eq(*manifest_id))
+            .build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(&sql, values).execute(executor).await?;
         Ok(())
     }
 
@@ -444,31 +448,27 @@ ORDER BY chunk_number
 // PoolConnection<Postgres>-based metadata queries.
 impl PostgresMetadataConn {
     pub async fn insert_registry(&mut self, name: &String) -> Result<Registry> {
-        Ok(sqlx::query_as!(
-            Registry,
-            r#"
-INSERT INTO registries ( name )
-VALUES ( $1 )
-RETURNING id, name
-            "#,
-            name,
-        )
-        .fetch_one(&mut *self.conn)
-        .await?)
+        let (sql, values) = Query::insert()
+            .into_table(Registries::Table)
+            .columns([Registries::Name])
+            .values([name.into()])?
+            .build_sqlx(PostgresQueryBuilder);
+
+        Ok(sqlx::query_as_with::<_, Registry, _>(&sql, values)
+            .fetch_one(&mut *self.conn)
+            .await?)
     }
 
-    pub async fn get_registry(&mut self, name: impl ToString) -> Result<Registry> {
-        Ok(sqlx::query_as!(
-            Registry,
-            r#"
-SELECT id, name 
-FROM registries
-WHERE name = $1
-            "#,
-            name.to_string(),
-        )
-        .fetch_one(&mut *self.conn)
-        .await?)
+    pub async fn get_registry(&mut self, name: &str) -> Result<Registry> {
+        let (sql, values) = Query::select()
+            .from(Registries::Table)
+            .columns([Registries::Id, Registries::Name])
+            .and_where(Expr::col(Registries::Name).eq(name))
+            .build_sqlx(PostgresQueryBuilder);
+
+        Ok(sqlx::query_as_with::<_, Registry, _>(&sql, values)
+            .fetch_one(&mut *self.conn)
+            .await?)
     }
 
     pub async fn insert_repository(
@@ -476,18 +476,20 @@ WHERE name = $1
         registry_id: &Uuid,
         name: &String,
     ) -> Result<Repository> {
-        Ok(sqlx::query_as!(
-            Repository,
-            r#"
-INSERT INTO repositories ( name, registry_id )
-VALUES ( $1, $2 )
-RETURNING id, name, registry_id
-            "#,
-            name,
-            registry_id
-        )
-        .fetch_one(&mut *self.conn)
-        .await?)
+        let (sql, values) = Query::insert()
+            .into_table(Repositories::Table)
+            .columns([Repositories::Name, Repositories::RegistryId])
+            .values([Value::from(name).into(), Value::from(*registry_id).into()])?
+            .returning(Query::returning().columns([
+                Repositories::Id,
+                Repositories::Name,
+                Repositories::RegistryId,
+            ]))
+            .build_sqlx(PostgresQueryBuilder);
+
+        Ok(sqlx::query_as_with::<_, Repository, _>(&sql, values)
+            .fetch_one(&mut *self.conn)
+            .await?)
     }
 
     pub async fn get_repository(
@@ -495,20 +497,23 @@ RETURNING id, name, registry_id
         registry: &Uuid,
         repository: &String,
     ) -> Result<Repository> {
-        Ok(sqlx::query_as!(
-            Repository,
-            r#"
-SELECT rep.id, rep.name, rep.registry_id
-FROM repositories rep
-JOIN registries reg
-ON reg.id = rep.registry_id
-WHERE reg.id = $1 AND rep.name = $2
-            "#,
-            registry,
-            repository,
-        )
-        .fetch_one(&mut *self.conn)
-        .await?)
+        let (sql, values) = Query::select()
+            .from(Repositories::Table)
+            .columns([
+                (Repositories::Table, Repositories::Id),
+                (Repositories::Table, Repositories::Name),
+                (Repositories::Table, Repositories::RegistryId),
+            ])
+            .left_join(
+                Registries::Table,
+                Expr::col((Registries::Table, Registries::Id)).equals(Repositories::RegistryId),
+            )
+            .and_where(Expr::col((Registries::Table, Registries::Id)).eq(*registry))
+            .and_where(Expr::col((Repositories::Table, Repositories::Name)).eq(repository))
+            .build_sqlx(PostgresQueryBuilder);
+        Ok(sqlx::query_as_with::<_, Repository, _>(&sql, values)
+            .fetch_one(&mut *self.conn)
+            .await?)
     }
 
     pub async fn insert_blob(&mut self, registry_id: &Uuid, digest: &OciDigest) -> Result<Uuid> {
@@ -524,37 +529,45 @@ WHERE reg.id = $1 AND rep.name = $2
     }
 
     pub async fn repository_exists(&mut self, registry_id: &Uuid, name: &String) -> Result<bool> {
-        Ok(sqlx::query!(
-            r#"
-SELECT exists(
-    SELECT 1
-    FROM repositories
-    WHERE registry_id = $1 AND name = $2
-) as "exists!"
-            "#,
-            registry_id,
-            String::from(name),
-        )
-        .fetch_one(&mut *self.conn)
-        .await?
-        .exists)
+        let (sql, values) = Query::select()
+            .expr_as(
+                Expr::exists(
+                    Query::select()
+                        .from(Repositories::Table)
+                        .column(Repositories::Id)
+                        .and_where(Expr::col(Repositories::RegistryId).eq(*registry_id))
+                        .and_where(Expr::col(Repositories::Name).eq(name))
+                        .to_owned(),
+                ),
+                Alias::new("exists"),
+            )
+            .build_sqlx(PostgresQueryBuilder);
+        let row = sqlx::query_with(&sql, values)
+            .fetch_one(&mut *self.conn)
+            .await?;
+
+        Ok(row.try_get("exists")?)
     }
 
     pub async fn blob_exists(&mut self, registry_id: &Uuid, digest: &OciDigest) -> Result<bool> {
-        Ok(sqlx::query!(
-            r#"
-SELECT exists(
-    SELECT 1
-    FROM blobs
-    WHERE registry_id = $1 AND digest = $2
-) as "exists!"
-            "#,
-            registry_id,
-            String::from(digest),
-        )
-        .fetch_one(&mut *self.conn)
-        .await?
-        .exists)
+        let (sql, values) = Query::select()
+            .expr_as(
+                Expr::exists(
+                    Query::select()
+                        .from(Blobs::Table)
+                        .column(Blobs::Id)
+                        .and_where(Expr::col(Blobs::RegistryId).eq(*registry_id))
+                        .and_where(Expr::col(Blobs::Digest).eq(String::from(digest).as_str()))
+                        .to_owned(),
+                ),
+                Alias::new("exists"),
+            )
+            .build_sqlx(PostgresQueryBuilder);
+        let row = sqlx::query_with(&sql, values)
+            .fetch_one(&mut *self.conn)
+            .await?;
+
+        Ok(row.try_get("exists")?)
     }
 
     pub async fn get_manifest(

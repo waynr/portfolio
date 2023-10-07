@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::errors::{DistributionErrorCode, Error};
 use crate::oci_digest::OciDigest;
 
-#[derive(Clone)]
+#[derive(sqlx::FromRow, Clone)]
 pub struct Registry {
     pub(crate) id: Uuid,
     pub name: String,
@@ -20,7 +20,7 @@ pub enum Registries {
     Name,
 }
 
-#[derive(Clone)]
+#[derive(sqlx::FromRow, Clone)]
 pub struct Repository {
     pub(crate) id: Uuid,
     pub registry_id: Uuid,
@@ -95,6 +95,7 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Tag {
 #[derive(Iden)]
 pub enum Tags {
     Table,
+    Id,
     RepositoryId,
     ManifestId,
     Name,
