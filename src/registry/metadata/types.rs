@@ -174,3 +174,17 @@ pub enum Manifests {
     RepositoryId,
     Digest,
 }
+
+#[derive(Iden)]
+pub enum Layers {
+    Table,
+    Manifest,
+    Blob,
+}
+
+#[derive(Iden)]
+pub enum IndexManifests {
+    Table,
+    ParentManifest,
+    ChildManifest,
+}

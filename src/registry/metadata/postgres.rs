@@ -1,4 +1,4 @@
-use sea_query::{Expr, Order, PostgresQueryBuilder, Query};
+use sea_query::{Expr, Order, PostgresQueryBuilder, Query, Value};
 use sea_query_binder::SqlxBinder;
 use serde::Deserialize;
 use sqlx::{
@@ -10,8 +10,8 @@ use sqlx::{
 
 use crate::errors::{Error, Result};
 use crate::metadata::{
-    Blob, Blobs, Manifest, ManifestRef, Manifests, Registries, Registry, Repositories, Repository,
-    Tag, Tags,
+    Blob, Blobs, IndexManifests, Layers, Manifest, ManifestRef, Manifests, Registries, Registry,
+    Repositories, Repository, Tag, Tags,
 };
 use crate::registry::{Chunk, UploadSession};
 use crate::OciDigest;
@@ -203,35 +203,40 @@ impl Queries {
     }
 
     pub async fn insert_manifest(executor: &mut PgConnection, manifest: &Manifest) -> Result<()> {
-        sqlx::query!(
-            r#"
-INSERT INTO manifests ( id, registry_id, repository_id, blob_id, media_type, artifact_type, digest )
-VALUES ( $1, $2, $3, $4, $5, $6, $7 )
-            "#,
-            manifest.id,
-            manifest.registry_id,
-            manifest.repository_id,
-            manifest.blob_id,
-            manifest.media_type.clone().map(String::from),
-            manifest.artifact_type.clone().map(String::from),
-            String::from(&manifest.digest),
-        )
-        .execute(executor)
-        .await?;
+        let (sql, values) = Query::insert()
+            .into_table(Manifests::Table)
+            .columns([
+                Manifests::Id,
+                Manifests::RegistryId,
+                Manifests::RepositoryId,
+                Manifests::BlobId,
+                Manifests::MediaType,
+                Manifests::ArtifactType,
+                Manifests::Digest,
+            ])
+            .values([
+                Value::from(manifest.id).into(),
+                Value::from(manifest.registry_id).into(),
+                Value::from(manifest.repository_id).into(),
+                Value::from(manifest.blob_id).into(),
+                Value::from(manifest.media_type.clone().map(String::from)).into(),
+                Value::from(manifest.artifact_type.clone().map(String::from)).into(),
+                Value::from(String::from(&manifest.digest)).into(),
+            ])?
+            .build_sqlx(PostgresQueryBuilder);
+
+        sqlx::query_with(&sql, values).execute(executor).await?;
+
         Ok(())
     }
 
     pub async fn delete_manifest(executor: &mut PgConnection, manifest_id: &Uuid) -> Result<()> {
-        match sqlx::query!(
-            r#"
-DELETE FROM manifests
-WHERE id = $1
-            "#,
-            manifest_id
-        )
-        .execute(executor)
-        .await
-        {
+        let (sql, values) = Query::delete()
+            .from_table(Manifests::Table)
+            .cond_where(Expr::col(Manifests::Id).eq(*manifest_id))
+            .build_sqlx(PostgresQueryBuilder);
+
+        match sqlx::query_with(&sql, values).execute(executor).await {
             Ok(_) => Ok(()),
             Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
@@ -251,35 +256,43 @@ WHERE id = $1
         parent: &Uuid,
         children: Vec<&Uuid>,
     ) -> Result<()> {
-        let parents: Vec<Uuid> = std::iter::repeat(parent)
-            .map(Clone::clone)
-            .take(children.len())
-            .collect::<Vec<_>>();
-        let children: Vec<Uuid> = children.into_iter().map(Clone::clone).collect::<Vec<_>>();
-        sqlx::query!(
-            r#"
-INSERT INTO layers(manifest, blob)
-SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
-            "#,
-            &parents[..],
-            &children[..],
-        )
-        .execute(executor)
-        .await?;
+        let mut builder = Query::insert();
+        builder
+            .into_table(Layers::Table)
+            .columns([Layers::Manifest, Layers::Blob]);
+
+        for child in children.iter() {
+            builder.values([
+                Value::from(parent.clone()).into(),
+                Value::from((*child).clone()).into(),
+            ])?;
+        }
+
+        let (sql, values) = builder.build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(&sql, values).execute(executor).await?;
+
         Ok(())
     }
 
     pub async fn delete_image_layers(executor: &mut PgConnection, parent: &Uuid) -> Result<()> {
-        sqlx::query!(
-            r#"
-DELETE FROM layers 
-WHERE manifest = $1
-            "#,
-            &parent
-        )
-        .execute(executor)
-        .await?;
-        Ok(())
+        let (sql, values) = Query::delete()
+            .from_table(Layers::Table)
+            .cond_where(Expr::col(Layers::Manifest).eq(*parent))
+            .build_sqlx(PostgresQueryBuilder);
+
+        match sqlx::query_with(&sql, values).execute(executor).await {
+            Ok(_) => Ok(()),
+            Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
+                sqlx::error::ErrorKind::ForeignKeyViolation => {
+                    tracing::warn!("foreign key violation error: {dberr}");
+                    Err(Error::DistributionSpecError(
+                        crate::DistributionErrorCode::ContentReferenced,
+                    ))
+                }
+                _ => Err(sqlx::Error::Database(dberr).into()),
+            },
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub async fn associate_index_manifests(
@@ -287,35 +300,43 @@ WHERE manifest = $1
         parent: &Uuid,
         children: Vec<&Uuid>,
     ) -> Result<()> {
-        let parents: Vec<Uuid> = std::iter::repeat(parent)
-            .map(Clone::clone)
-            .take(children.len())
-            .collect::<Vec<_>>();
-        let children: Vec<Uuid> = children.into_iter().map(Clone::clone).collect::<Vec<_>>();
-        sqlx::query!(
-            r#"
-INSERT INTO index_manifests(parent_manifest, child_manifest)
-SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
-            "#,
-            &parents[..],
-            &children[..],
-        )
-        .execute(executor)
-        .await?;
+        let mut builder = Query::insert();
+        builder.into_table(IndexManifests::Table).columns([
+            IndexManifests::ParentManifest,
+            IndexManifests::ChildManifest,
+        ]);
+
+        for child in children.iter() {
+            builder.values([
+                Value::from(parent.clone()).into(),
+                Value::from((*child).clone()).into(),
+            ])?;
+        }
+
+        let (sql, values) = builder.build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(&sql, values).execute(executor).await?;
         Ok(())
     }
 
     pub async fn delete_index_manifests(executor: &mut PgConnection, parent: &Uuid) -> Result<()> {
-        sqlx::query!(
-            r#"
-DELETE FROM index_manifests 
-WHERE parent_manifest = $1
-            "#,
-            &parent
-        )
-        .execute(executor)
-        .await?;
-        Ok(())
+        let (sql, values) = Query::delete()
+            .from_table(IndexManifests::Table)
+            .cond_where(Expr::col(IndexManifests::ParentManifest).eq(*parent))
+            .build_sqlx(PostgresQueryBuilder);
+
+        match sqlx::query_with(&sql, values).execute(executor).await {
+            Ok(_) => Ok(()),
+            Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
+                sqlx::error::ErrorKind::ForeignKeyViolation => {
+                    tracing::warn!("foreign key violation error: {dberr}");
+                    Err(Error::DistributionSpecError(
+                        crate::DistributionErrorCode::ContentReferenced,
+                    ))
+                }
+                _ => Err(sqlx::Error::Database(dberr).into()),
+            },
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub async fn upsert_tag(
