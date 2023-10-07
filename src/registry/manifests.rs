@@ -90,10 +90,10 @@ where
         let mut tx = self.blobstore.metadata.get_tx().await?;
 
         if let Some(m) = tx
-            .get_manifest_by_digest(
+            .get_manifest(
                 &self.repository.registry_id,
                 &self.repository.id,
-                &calculated_digest,
+                &ManifestRef::Digest(calculated_digest.clone()),
             )
             .await?
         {
@@ -168,7 +168,8 @@ where
         if let ManifestRef::Tag(t) = key {
             // TODO: eventually we'll need to check the mutability of a tag before overwriting it
             // but for now we overwrite it by default
-            tx.upsert_tag(&self.repository.id, &manifest.id, t.as_str()).await?;
+            tx.upsert_tag(&self.repository.id, &manifest.id, t.as_str())
+                .await?;
         }
 
         tx.commit().await?;
@@ -196,8 +197,17 @@ where
         tx.delete_blob(&manifest.blob_id).await?;
 
         let mut count = 0;
-        while self.blobstore.objects.blob_exists(&manifest.blob_id).await? && count < 10 {
-            self.blobstore.objects.delete_blob(&manifest.blob_id).await?;
+        while self
+            .blobstore
+            .objects
+            .blob_exists(&manifest.blob_id)
+            .await?
+            && count < 10
+        {
+            self.blobstore
+                .objects
+                .delete_blob(&manifest.blob_id)
+                .await?;
             count += 1;
         }
 
