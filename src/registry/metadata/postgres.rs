@@ -2,6 +2,7 @@ use sea_query::{Expr, Order, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
 use serde::Deserialize;
 use sqlx::{
+    Row,
     pool::PoolConnection,
     postgres::{PgPoolOptions, Postgres},
     types::{Json, Uuid},
@@ -9,7 +10,10 @@ use sqlx::{
 };
 
 use crate::errors::{Error, Result};
-use crate::metadata::{Blob, Manifest, ManifestRef, Manifests, Registry, Repository, Tag, Tags};
+use crate::metadata::{
+    Blob, Blobs, Manifest, ManifestRef, Manifests, Registries, Registry, Repositories, Repository,
+    Tag, Tags,
+};
 use crate::registry::{Chunk, UploadSession};
 use crate::OciDigest;
 use crate::{DigestState, RegistryDefinition};
@@ -61,19 +65,15 @@ impl Queries {
         registry_id: &Uuid,
         digest: &OciDigest,
     ) -> Result<Uuid> {
-        let record = sqlx::query!(
-            r#"
-INSERT INTO blobs ( digest, registry_id )
-VALUES ( $1, $2 )
-RETURNING id
-            "#,
-            String::from(digest),
-            registry_id,
-        )
-        .fetch_one(executor)
-        .await?;
+        let (sql, values) = Query::insert()
+            .into_table(Blobs::Table)
+            .columns([Blobs::Digest, Blobs::RegistryId])
+            .values([String::from(digest).into(), (*registry_id).into()])?
+            .returning_col(Blobs::Id)
+            .build_sqlx(PostgresQueryBuilder);
 
-        Ok(record.id)
+        let row = sqlx::query_with(&sql, values).fetch_one(executor).await?;
+        Ok(row.try_get("id")?)
     }
 
     pub async fn get_blob(

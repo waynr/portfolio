@@ -13,6 +13,9 @@ pub enum Error {
     SQLXError(#[from] sqlx::Error),
     #[error("sqlx migration error")]
     SQLXMigrateError(#[from] sqlx::migrate::MigrateError),
+    #[error("sea-query error")]
+    SeaQueryError(#[from] sea_query::error::Error),
+
     #[error("config deserialization error")]
     ConfigError(#[from] serde_yaml::Error),
     #[error("io error")]
