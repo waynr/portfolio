@@ -226,7 +226,6 @@ impl Queries {
             .build_sqlx(PostgresQueryBuilder);
 
         sqlx::query_with(&sql, values).execute(executor).await?;
-
         Ok(())
     }
 
@@ -354,7 +353,7 @@ impl Queries {
                 Value::from(*manifest_id).into(),
             ])?
             .on_conflict(
-                OnConflict::column(Tags::Id)
+                OnConflict::columns([Tags::RepositoryId, Tags::Name])
                     .update_columns([Tags::ManifestId])
                     .to_owned(),
             )
