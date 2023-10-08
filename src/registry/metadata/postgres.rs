@@ -615,9 +615,9 @@ impl PostgresMetadataConn {
             .columns([
                 UploadSessions::Uuid,
                 UploadSessions::StartDate,
-                UploadSessions::UploadId,
                 UploadSessions::ChunkNumber,
                 UploadSessions::LastRangeEnd,
+                UploadSessions::UploadId,
                 UploadSessions::DigestState,
             ])
             .and_where(Expr::col(UploadSessions::Uuid).eq(*uuid))
@@ -634,7 +634,7 @@ impl PostgresMetadataConn {
         let (sql, values) = Query::update()
             .table(UploadSessions::Table)
             .and_where(Expr::col(UploadSessions::Uuid).eq(session.uuid))
-            .value(UploadSessions::UploadId, session.uuid)
+            .value(UploadSessions::UploadId, session.upload_id.clone())
             .value(UploadSessions::ChunkNumber, session.chunk_number)
             .value(UploadSessions::LastRangeEnd, session.last_range_end)
             .value(UploadSessions::DigestState, state)
