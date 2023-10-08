@@ -67,11 +67,14 @@ where
     }
 
     pub async fn delete_session(&self, session: &UploadSession) -> Result<()> {
-        self.metadata
-            .get_conn()
-            .await?
-            .delete_session(session)
-            .await
+        let mut tx = self.metadata.get_tx().await?;
+
+        tx.delete_chunks(&session.uuid).await?;
+        tx.delete_session(session).await?;
+
+        tx.commit().await?;
+
+        Ok(())
     }
 
     pub async fn create_repository(&self, name: &String) -> Result<RepositoryMetadata> {

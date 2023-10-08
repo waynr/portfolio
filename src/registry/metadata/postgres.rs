@@ -439,6 +439,29 @@ impl Queries {
             .fetch_all(executor)
             .await?)
     }
+
+    pub async fn delete_chunks(executor: &mut PgConnection, uuid: &Uuid) -> Result<()> {
+        let (sql, values) = Query::delete()
+            .from_table(Chunks::Table)
+            .and_where(Expr::col(Chunks::UploadSessionUuid).eq(*uuid))
+            .build_sqlx(PostgresQueryBuilder);
+
+        sqlx::query_with(&sql, values).execute(executor).await?;
+        Ok(())
+    }
+
+    pub async fn delete_session(
+        executor: &mut PgConnection,
+        session: &UploadSession,
+    ) -> Result<()> {
+        let (sql, values) = Query::delete()
+            .from_table(UploadSessions::Table)
+            .and_where(Expr::col(UploadSessions::Uuid).eq(session.uuid))
+            .build_sqlx(PostgresQueryBuilder);
+
+        sqlx::query_with(&sql, values).execute(executor).await?;
+        Ok(())
+    }
 }
 
 // PoolConnection<Postgres>-based metadata queries.
@@ -645,26 +668,12 @@ impl PostgresMetadataConn {
         Ok(())
     }
 
+    pub async fn delete_chunks(&mut self, uuid: &Uuid) -> Result<()> {
+        Queries::delete_chunks(&mut *self.conn, uuid).await
+    }
+
     pub async fn delete_session(&mut self, session: &UploadSession) -> Result<()> {
-        // delete chunks
-        let (sql, values) = Query::delete()
-            .from_table(Chunks::Table)
-            .and_where(Expr::col(Chunks::UploadSessionUuid).eq(session.uuid))
-            .build_sqlx(PostgresQueryBuilder);
-        sqlx::query_with(&sql, values)
-            .execute(&mut *self.conn)
-            .await?;
-
-        // delete session
-        let (sql, values) = Query::delete()
-            .from_table(UploadSessions::Table)
-            .and_where(Expr::col(UploadSessions::Uuid).eq(session.uuid))
-            .build_sqlx(PostgresQueryBuilder);
-        sqlx::query_with(&sql, values)
-            .execute(&mut *self.conn)
-            .await?;
-
-        Ok(())
+        Queries::delete_session(&mut *self.conn, session).await
     }
 
     pub async fn get_chunks(&mut self, session: &UploadSession) -> Result<Vec<Chunk>> {
@@ -711,6 +720,16 @@ impl<'a> PostgresMetadataTx<'a> {
     pub async fn get_chunks(&mut self, session: &UploadSession) -> Result<Vec<Chunk>> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
         Queries::get_chunks(&mut **tx, session).await
+    }
+
+    pub async fn delete_chunks(&mut self, uuid: &Uuid) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::delete_chunks(&mut **tx, uuid).await
+    }
+
+    pub async fn delete_session(&mut self, session: &UploadSession) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::delete_session(&mut **tx, session).await
     }
 
     pub async fn get_blob(
