@@ -11,5 +11,5 @@ pub mod metadata;
 pub mod objects;
 
 pub mod session;
-pub use session::UploadSession;
-pub use session::Chunk;
+pub use session::{UploadSession, UploadSessions};
+pub use session::{Chunk, Chunks};

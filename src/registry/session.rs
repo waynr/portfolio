@@ -1,3 +1,4 @@
+use sea_query::Iden;
 use chrono::NaiveDate;
 use sqlx::types::Json;
 use uuid::Uuid;
@@ -5,7 +6,7 @@ use uuid::Uuid;
 use crate::http::headers::ContentRange;
 use crate::{errors::Error, errors::Result, DigestState, DistributionErrorCode};
 
-#[derive(Debug)]
+#[derive(Debug, sqlx::FromRow)]
 pub struct UploadSession {
     pub uuid: Uuid,
     pub start_date: NaiveDate,
@@ -32,8 +33,27 @@ impl UploadSession {
     }
 }
 
-#[derive(Default)]
+#[derive(Iden)]
+pub enum UploadSessions {
+    Table,
+    Uuid,
+    StartDate,
+    UploadId,
+    ChunkNumber,
+    LastRangeEnd,
+    DigestState,
+}
+
+#[derive(Default, sqlx::FromRow)]
 pub struct Chunk {
     pub e_tag: Option<String>,
     pub chunk_number: i32,
+}
+
+#[derive(Iden)]
+pub enum Chunks {
+    Table,
+    ChunkNumber,
+    UploadSessionUuid,
+    ETag,
 }

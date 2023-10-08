@@ -4,7 +4,7 @@ use serde::Deserialize;
 use sqlx::{
     pool::PoolConnection,
     postgres::{PgPoolOptions, Postgres},
-    types::{Json, Uuid},
+    types::Uuid,
     PgConnection, Pool, Row, Transaction,
 };
 
@@ -13,7 +13,7 @@ use crate::metadata::{
     Blob, Blobs, IndexManifests, Layers, Manifest, ManifestRef, Manifests, Registries, Registry,
     Repositories, Repository, Tag, Tags,
 };
-use crate::registry::{Chunk, UploadSession};
+use crate::registry::{Chunk, Chunks, UploadSession, UploadSessions};
 use crate::OciDigest;
 use crate::{DigestState, RegistryDefinition};
 
@@ -430,18 +430,15 @@ impl Queries {
         executor: &mut PgConnection,
         session: &UploadSession,
     ) -> Result<Vec<Chunk>> {
-        Ok(sqlx::query_as!(
-            Chunk,
-            r#"
-SELECT e_tag, chunk_number
-FROM chunks
-WHERE upload_session_uuid = $1
-ORDER BY chunk_number
-            "#,
-            session.uuid,
-        )
-        .fetch_all(executor)
-        .await?)
+        let (sql, values) = Query::select()
+            .from(Chunks::Table)
+            .columns([Chunks::ETag, Chunks::ChunkNumber])
+            .and_where(Expr::col(Chunks::UploadSessionUuid).eq(session.uuid))
+            .order_by(Chunks::ChunkNumber, Order::Asc)
+            .build_sqlx(PostgresQueryBuilder);
+        Ok(sqlx::query_as_with::<_, Chunk, _>(&sql, values)
+            .fetch_all(executor)
+            .await?)
     }
 }
 
@@ -591,31 +588,41 @@ impl PostgresMetadataConn {
 
     pub async fn new_upload_session(&mut self) -> Result<UploadSession> {
         let state = DigestState::default();
-        let session = sqlx::query_as!(
-            UploadSession,
-            r#"
-INSERT INTO upload_sessions ( digest_state )
-VALUES ( $1 )
-RETURNING uuid, start_date, upload_id, chunk_number, last_range_end, digest_state as "digest_state: Json<DigestState>"
-            "#,
-            serde_json::to_value(state)?,
-        )
-        .fetch_one(&mut *self.conn)
-        .await?;
+        let value = serde_json::value::to_value(state)?;
+        let (sql, values) = Query::insert()
+            .into_table(UploadSessions::Table)
+            .columns([UploadSessions::DigestState])
+            .values([Expr::value(value)])?
+            .returning(Query::returning().columns([
+                UploadSessions::Uuid,
+                UploadSessions::StartDate,
+                UploadSessions::UploadId,
+                UploadSessions::ChunkNumber,
+                UploadSessions::LastRangeEnd,
+                UploadSessions::DigestState,
+            ]))
+            .build_sqlx(PostgresQueryBuilder);
+        let session = sqlx::query_as_with::<_, UploadSession, _>(&sql, values)
+            .fetch_one(&mut *self.conn)
+            .await?;
 
         Ok(session)
     }
 
     pub async fn get_session(&mut self, uuid: &Uuid) -> Result<UploadSession> {
-        let session = sqlx::query_as!(
-            UploadSession,
-            r#"
-SELECT uuid, start_date, chunk_number, last_range_end, upload_id, digest_state as "digest_state: Json<DigestState>"
-FROM upload_sessions
-WHERE uuid = $1
-            "#,
-            uuid,
-            )
+        let (sql, values) = Query::select()
+            .from(UploadSessions::Table)
+            .columns([
+                UploadSessions::Uuid,
+                UploadSessions::StartDate,
+                UploadSessions::UploadId,
+                UploadSessions::ChunkNumber,
+                UploadSessions::LastRangeEnd,
+                UploadSessions::DigestState,
+            ])
+            .and_where(Expr::col(UploadSessions::Uuid).eq(*uuid))
+            .build_sqlx(PostgresQueryBuilder);
+        let session = sqlx::query_as_with::<_, UploadSession, _>(&sql, values)
             .fetch_one(&mut *self.conn)
             .await?;
 
@@ -623,49 +630,40 @@ WHERE uuid = $1
     }
 
     pub async fn update_session(&mut self, session: &UploadSession) -> Result<()> {
-        sqlx::query_as!(
-            UploadSession,
-            r#"
-UPDATE upload_sessions
-SET upload_id = $2, chunk_number = $3, last_range_end = $4, digest_state = $5
-WHERE uuid = $1
-            "#,
-            session.uuid,
-            session.upload_id,
-            session.chunk_number,
-            session.last_range_end,
-            serde_json::to_value(session.digest_state.as_ref())?,
-        )
-        .execute(&mut *self.conn)
-        .await?;
+        let state = serde_json::value::to_value(&session.digest_state)?;
+        let (sql, values) = Query::update()
+            .table(UploadSessions::Table)
+            .and_where(Expr::col(UploadSessions::Uuid).eq(session.uuid))
+            .value(UploadSessions::UploadId, session.uuid)
+            .value(UploadSessions::ChunkNumber, session.chunk_number)
+            .value(UploadSessions::LastRangeEnd, session.last_range_end)
+            .value(UploadSessions::DigestState, state)
+            .build_sqlx(PostgresQueryBuilder);
 
+        sqlx::query_with(&sql, values)
+            .execute(&mut *self.conn)
+            .await?;
         Ok(())
     }
 
     pub async fn delete_session(&mut self, session: &UploadSession) -> Result<()> {
         // delete chunks
-        sqlx::query!(
-            r#"
-DELETE
-FROM chunks
-WHERE upload_session_uuid = $1
-            "#,
-            session.uuid,
-        )
-        .execute(&mut *self.conn)
-        .await?;
+        let (sql, values) = Query::delete()
+            .from_table(Chunks::Table)
+            .and_where(Expr::col(Chunks::UploadSessionUuid).eq(session.uuid))
+            .build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(&sql, values)
+            .execute(&mut *self.conn)
+            .await?;
 
         // delete session
-        sqlx::query!(
-            r#"
-DELETE
-FROM upload_sessions
-WHERE uuid = $1
-            "#,
-            session.uuid,
-        )
-        .execute(&mut *self.conn)
-        .await?;
+        let (sql, values) = Query::delete()
+            .from_table(UploadSessions::Table)
+            .and_where(Expr::col(UploadSessions::Uuid).eq(session.uuid))
+            .build_sqlx(PostgresQueryBuilder);
+        sqlx::query_with(&sql, values)
+            .execute(&mut *self.conn)
+            .await?;
 
         Ok(())
     }
@@ -675,18 +673,19 @@ WHERE uuid = $1
     }
 
     pub async fn insert_chunk(&mut self, session: &UploadSession, chunk: &Chunk) -> Result<()> {
-        sqlx::query!(
-            r#"
-INSERT INTO chunks (chunk_number, upload_session_uuid, e_tag)
-VALUES ( $1, $2, $3 )
-            "#,
-            chunk.chunk_number,
-            session.uuid,
-            chunk.e_tag,
-        )
-        .execute(&mut *self.conn)
-        .await?;
+        let (sql, values) = Query::insert()
+            .into_table(Chunks::Table)
+            .columns([Chunks::ChunkNumber, Chunks::UploadSessionUuid, Chunks::ETag])
+            .values([
+                Value::from(chunk.chunk_number).into(),
+                Value::from(session.uuid).into(),
+                Value::from(chunk.e_tag.clone()).into(),
+            ])?
+            .build_sqlx(PostgresQueryBuilder);
 
+        sqlx::query_with(&sql, values)
+            .execute(&mut *self.conn)
+            .await?;
         Ok(())
     }
 }

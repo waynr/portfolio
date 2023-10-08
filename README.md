@@ -55,18 +55,3 @@ sqlx migrate run --source db/postgres/migrations
 ```
 cargo run
 ```
-
-### Compile Time DB Query Validation
-
-Because we use the `sqlx::query!` macro, which provides compile-time Postgres
-query correctness guarantees, you will need to set a connection string variable
-when compiling locally or if your text editor uses
-[rust-analyzer](https://rust-analyzer.github.io/) (which it should!), otherwise
-you will see DB connection errors at compile time. For example, if running
-`cargo build` to verify your changes build then you would need the following in
-your shell:
-
-```
-export DATABASE_URL=postgresql://root@localhost:26257/defaultdb?sslmode=disable
-```
-
