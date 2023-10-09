@@ -28,12 +28,13 @@ CREATE TABLE blobs (
 CREATE TABLE manifests (
 	id UUID PRIMARY KEY,
 	registry_id UUID NOT NULL REFERENCES registries (id),
+	repository_id UUID NOT NULL REFERENCES repositories (id),
 	blob_id UUID NOT NULL REFERENCEs blobs(id),
 	media_type VARCHAR(512) DEFAULT NULL,
 	artifact_type VARCHAR(512) DEFAULT NULL,
-	repository_id UUID NOT NULL REFERENCES repositories (id),
 	digest VARCHAR(256) NOT NULL,
-	UNIQUE (registry_id, digest)
+	subject VARCHAR(256) DEFAULT NULL,
+	UNIQUE (registry_id, repository_id, digest)
 );
 
 -- an index_manifest is a reference from a parent manifest to a child manifest

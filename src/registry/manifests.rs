@@ -319,6 +319,12 @@ impl ManifestSpec {
                 repository_id,
                 blob_id,
                 digest: dgst,
+                subject: img.subject().as_ref().map(|v| {
+                    v.digest()
+                        .as_str()
+                        .try_into()
+                        .expect("valid descriptor digest will always product valid OciDigest")
+                }),
                 media_type: img.media_type().clone(),
                 artifact_type: img.artifact_type().clone(),
             },
@@ -328,6 +334,12 @@ impl ManifestSpec {
                 repository_id,
                 blob_id,
                 digest: dgst,
+                subject: ind.subject().as_ref().map(|v| {
+                    v.digest()
+                        .as_str()
+                        .try_into()
+                        .expect("valid descriptor digest will always product valid OciDigest")
+                }),
                 media_type: ind.media_type().clone(),
                 artifact_type: ind.artifact_type().clone(),
             },

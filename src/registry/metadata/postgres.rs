@@ -149,6 +149,7 @@ impl Queries {
                 Manifests::MediaType,
                 Manifests::ArtifactType,
                 Manifests::Digest,
+                Manifests::Subject,
             ])
             .and_where(Expr::col(Manifests::RepositoryId).eq(*repository_id))
             .and_where(Expr::col(Manifests::RegistryId).eq(*registry_id))
@@ -177,6 +178,7 @@ impl Queries {
                 (Manifests::Table, Manifests::MediaType),
                 (Manifests::Table, Manifests::ArtifactType),
                 (Manifests::Table, Manifests::Digest),
+                (Manifests::Table, Manifests::Subject),
             ])
             .and_where(Expr::col((Manifests::Table, Manifests::RepositoryId)).eq(*repository_id))
             .and_where(Expr::col(Manifests::RegistryId).eq(*registry_id));
@@ -213,6 +215,7 @@ impl Queries {
                 Manifests::MediaType,
                 Manifests::ArtifactType,
                 Manifests::Digest,
+                Manifests::Subject,
             ])
             .values([
                 Value::from(manifest.id).into(),
@@ -222,6 +225,7 @@ impl Queries {
                 Value::from(manifest.media_type.clone().map(String::from)).into(),
                 Value::from(manifest.artifact_type.clone().map(String::from)).into(),
                 Value::from(String::from(&manifest.digest)).into(),
+                Value::from(manifest.subject.clone().map(String::from)).into(),
             ])?
             .build_sqlx(PostgresQueryBuilder);
 

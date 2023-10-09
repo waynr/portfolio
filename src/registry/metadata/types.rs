@@ -129,11 +129,12 @@ impl std::str::FromStr for ManifestRef {
 
 pub struct Manifest {
     pub id: Uuid,
-    /// the id of the ObjectStore blob containing this manifest
     pub registry_id: Uuid,
     pub repository_id: Uuid,
+    /// the id of the ObjectStore blob containing this manifest
     pub blob_id: Uuid,
     pub digest: OciDigest,
+    pub subject: Option<OciDigest>,
     pub media_type: Option<oci_spec::image::MediaType>,
     pub artifact_type: Option<oci_spec::image::MediaType>,
 }
@@ -145,7 +146,7 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Manifest {
             registry_id: row.try_get("registry_id")?,
             repository_id: row.try_get("repository_id")?,
             blob_id: row.try_get("blob_id")?,
-            digest: match row.try_get::<String, &str>("digest")?.as_str().try_into() {
+            digest: match row.try_get::<String, _>("digest")?.as_str().try_into() {
                 Ok(v) => v,
                 Err(e) => {
                     return Err(sqlx::Error::ColumnDecode {
@@ -154,11 +155,23 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Manifest {
                     })
                 }
             },
+            subject: row
+                .try_get::<Option<String>, _>("subject")?
+                .map(|v| match OciDigest::try_from(v.as_str()) {
+                    Ok(v) => Ok(v),
+                    Err(e) => {
+                        return Err(sqlx::Error::ColumnDecode {
+                            index: "subject".to_string(),
+                            source: Box::new(e),
+                        })
+                    }
+                })
+                .transpose()?,
             media_type: row
-                .try_get::<Option<String>, &str>("media_type")?
+                .try_get::<Option<String>, _>("media_type")?
                 .map(|v| v.as_str().into()),
             artifact_type: row
-                .try_get::<Option<String>, &str>("media_type")?
+                .try_get::<Option<String>, _>("media_type")?
                 .map(|v| v.as_str().into()),
         })
     }
@@ -174,6 +187,7 @@ pub enum Manifests {
     ArtifactType,
     RepositoryId,
     Digest,
+    Subject,
 }
 
 #[derive(Iden)]
