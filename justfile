@@ -1,6 +1,8 @@
 export OCI_ROOT_URL := "http://127.0.0.1:13030"
 export OCI_NAMESPACE := "woof"
 export OCI_DEBUG := "1"
+export OCI_DELETE_MANIFEST_BEFORE_BLOBS := "1"
+
 #export OCI_CROSSMOUNT_NAMESPACE="myorg/other"
 #export OCI_USERNAME="myuser"
 #export OCI_PASSWORD="mypass"
