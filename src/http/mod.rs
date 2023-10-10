@@ -1,3 +1,6 @@
+use serde::{de, Deserialize, Deserializer};
+use std::str::FromStr;
+
 use axum::{
     extract::State,
     http::{Request, StatusCode},
@@ -12,6 +15,7 @@ pub mod headers;
 
 pub(crate) mod blobs;
 mod manifests;
+mod referrers;
 mod tags;
 
 use crate::errors::Result;
@@ -33,16 +37,31 @@ async fn auth<B, O: ObjectStore>(
     Ok(next.run(req).await)
 }
 
-//pub async fn serve<O: ObjectStore>(metadata: PostgresMetadata, objects: O) -> Result<()> {
+/// Serde deserialization decorator to map empty Strings to None,
+fn empty_string_as_none<'de, D, T>(de: D) -> std::result::Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr,
+    T::Err: std::fmt::Display,
+{
+    let opt = Option::<String>::deserialize(de)?;
+    match opt.as_deref() {
+        None | Some("") => Ok(None),
+        Some(s) => FromStr::from_str(s).map_err(de::Error::custom).map(Some),
+    }
+}
+
 pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
     let blobs = blobs::router::<O>();
     let manifests = manifests::router::<O>();
+    let referrers = referrers::router::<O>();
     let tags = tags::router::<O>();
 
     let app = Router::new()
         .route("/v2", get(hello_world))
         .nest("/v2/:repository/blobs", blobs)
         .nest("/v2/:repository/manifests", manifests)
+        .nest("/v2/:repository/referrers", referrers)
         .nest("/v2/:repository/tags", tags)
         .layer(
             TraceLayer::new_for_http()

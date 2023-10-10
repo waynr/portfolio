@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::collections::HashSet;
 
 use aws_sdk_s3::primitives::ByteStream;
@@ -211,6 +212,74 @@ where
 
         Ok(())
     }
+
+    pub(crate) async fn get_referrers(
+        &self,
+        subject: &OciDigest,
+        artifact_type: Option<String>,
+    ) -> Result<ImageIndex> {
+        let mut index = ImageIndex::default();
+        index.set_media_type(Some(MediaType::ImageIndex));
+
+        let mut conn = self.blobstore.metadata.get_conn().await?;
+
+        let manifests = conn
+            .get_referrers(
+                &self.repository.registry_id,
+                &self.repository.id,
+                subject,
+                &artifact_type,
+            )
+            .await?;
+        let count = manifests.len();
+
+        let set = &mut tokio::task::JoinSet::new();
+        for m in manifests.into_iter() {
+            let objects = self.blobstore.objects.clone();
+            if m.media_type.is_none() {
+                tracing::warn!(
+                    "manifest {} (digest {:?}) unexpectedly missing media type!",
+                    m.id,
+                    m.digest
+                );
+                continue;
+            }
+            let db_media_type = m.media_type.unwrap();
+            set.spawn(async move {
+                let stream = objects.get_blob(&m.blob_id).await?;
+                let bs = stream.collect().await.map(|d| d.into_bytes())?;
+                let spec = ManifestSpec::try_from(&bs)?;
+                let media_type = spec.media_type().unwrap_or(db_media_type);
+                let mut d = Descriptor::new(media_type, bs.len() as i64, &m.digest);
+                d.set_artifact_type(spec.artifact_type());
+                d.set_annotations(spec.annotations());
+                Ok(d)
+            });
+        }
+
+        let mut ds: Vec<Descriptor> = Vec::with_capacity(count);
+        while let Some(res) = set.join_next().await {
+            let d = match res {
+                Err(e @ tokio::task::JoinError { .. }) => {
+                    if e.is_panic() {
+                        tracing::error!(
+                            "manifest deserialization task panicked while getting referrers for {:?}",
+                            subject
+                        );
+                    }
+                    return Err(e.into());
+                }
+                Ok(Err(e)) => return Err(e),
+                Ok(Ok(d)) => d,
+            };
+            ds.push(d);
+        }
+
+        ds.sort_unstable_by(|left, right| left.digest().cmp(right.digest()));
+        index.set_manifests(ds);
+
+        Ok(index)
+    }
 }
 
 pub enum ManifestSpec {
@@ -245,6 +314,22 @@ impl ManifestSpec {
         match self {
             ManifestSpec::Image(im) => im.media_type().clone(),
             ManifestSpec::Index(ii) => ii.media_type().clone(),
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn artifact_type(&self) -> Option<MediaType> {
+        match self {
+            ManifestSpec::Image(im) => im.artifact_type().clone(),
+            ManifestSpec::Index(ii) => ii.artifact_type().clone(),
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn annotations(&self) -> Option<HashMap<String, String>> {
+        match self {
+            ManifestSpec::Image(im) => im.annotations().clone(),
+            ManifestSpec::Index(ii) => ii.annotations().clone(),
         }
     }
 

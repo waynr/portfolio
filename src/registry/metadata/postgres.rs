@@ -466,6 +466,41 @@ impl Queries {
         sqlx::query_with(&sql, values).execute(executor).await?;
         Ok(())
     }
+
+    pub async fn get_referrers(
+        executor: &mut PgConnection,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        subject: &OciDigest,
+        artifact_type: &Option<String>,
+    ) -> Result<Vec<Manifest>> {
+        let mut builder = Query::select();
+        builder
+            .from(Manifests::Table)
+            .columns([
+                Manifests::Id,
+                Manifests::RegistryId,
+                Manifests::RepositoryId,
+                Manifests::BlobId,
+                Manifests::MediaType,
+                Manifests::ArtifactType,
+                Manifests::Digest,
+                Manifests::Subject,
+            ])
+            .order_by(Manifests::Digest, Order::Asc)
+            .and_where(Expr::col(Manifests::RepositoryId).eq(*repository_id))
+            .and_where(Expr::col(Manifests::Subject).eq(String::from(subject)))
+            .and_where(Expr::col(Manifests::RegistryId).eq(*registry_id));
+
+        if let Some(artifact_type) = artifact_type {
+            builder.and_where(Expr::col(Manifests::ArtifactType).eq(artifact_type));
+        }
+
+        let (sql, values) = builder.build_sqlx(PostgresQueryBuilder);
+        Ok(sqlx::query_as_with::<_, Manifest, _>(&sql, values)
+            .fetch_all(executor)
+            .await?)
+    }
 }
 
 // PoolConnection<Postgres>-based metadata queries.
@@ -699,6 +734,23 @@ impl PostgresMetadataConn {
             .execute(&mut *self.conn)
             .await?;
         Ok(())
+    }
+
+    pub async fn get_referrers(
+        &mut self,
+        registry_id: &Uuid,
+        repository_id: &Uuid,
+        subject: &OciDigest,
+        artifact_type: &Option<String>,
+    ) -> Result<Vec<Manifest>> {
+        Queries::get_referrers(
+            &mut *self.conn,
+            registry_id,
+            repository_id,
+            subject,
+            artifact_type,
+        )
+        .await
     }
 }
 

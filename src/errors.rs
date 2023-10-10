@@ -29,6 +29,11 @@ pub enum Error {
     #[error("{0}")]
     HyperError(#[from] hyper::Error),
 
+    #[error("{0}")]
+    ByteStreamError(#[from] aws_sdk_s3::primitives::ByteStreamError),
+    #[error("{0}")]
+    TokioJoinError(#[from] tokio::task::JoinError),
+
     // #[error("aws sdk credentials error")]
     // AWSSDKCredentialsError(#[from] aws_types::credentials::CredentialsError),
     #[error("aws sdk put object error")]

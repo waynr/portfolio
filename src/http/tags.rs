@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use axum::{
     extract::{Extension, Path, Query},
@@ -8,28 +7,15 @@ use axum::{
     Json, Router,
 };
 use http::StatusCode;
-use serde::{de, Deserialize, Deserializer};
+use serde::Deserialize;
 
 use crate::{
-    objects::ObjectStore, registry::registries::Registry, DistributionErrorCode, Error, Result,
+    http::empty_string_as_none, objects::ObjectStore, registry::registries::Registry,
+    DistributionErrorCode, Error, Result,
 };
 
 pub fn router<O: ObjectStore>() -> Router {
     Router::new().route("/list", get(get_tags::<O>))
-}
-
-/// Serde deserialization decorator to map empty Strings to None,
-fn empty_string_as_none<'de, D, T>(de: D) -> std::result::Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: FromStr,
-    T::Err: std::fmt::Display,
-{
-    let opt = Option::<String>::deserialize(de)?;
-    match opt.as_deref() {
-        None | Some("") => Ok(None),
-        Some(s) => FromStr::from_str(s).map_err(de::Error::custom).map(Some),
-    }
 }
 
 #[derive(Debug, Deserialize)]
