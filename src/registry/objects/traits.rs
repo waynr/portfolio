@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
-use axum::body::StreamBody;
 use hyper::body::Body;
 use uuid::Uuid;
 
@@ -10,7 +9,7 @@ use crate::Result;
 
 #[async_trait]
 pub trait ObjectStore: Clone + Send + Sync + 'static {
-    async fn get_blob(&self, key: &Uuid) -> Result<StreamBody<ByteStream>>;
+    async fn get_blob(&self, key: &Uuid) -> Result<ByteStream>;
 
     async fn blob_exists(&self, key: &Uuid) -> Result<bool>;
 

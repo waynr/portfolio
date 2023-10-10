@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use aws_sdk_s3::primitives::ByteStream;
 use axum::body::Bytes;
-use axum::body::StreamBody;
 use axum::Json;
 use oci_spec::image::{Descriptor, ImageIndex, ImageManifest, MediaType};
 use uuid::Uuid;
@@ -46,10 +45,7 @@ where
         }
     }
 
-    pub async fn get_manifest(
-        &self,
-        key: &ManifestRef,
-    ) -> Result<Option<(Manifest, StreamBody<ByteStream>)>> {
+    pub async fn get_manifest(&self, key: &ManifestRef) -> Result<Option<(Manifest, ByteStream)>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn
             .get_manifest(&self.repository.registry_id, &self.repository.id, key)

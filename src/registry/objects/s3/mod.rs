@@ -8,7 +8,6 @@ use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::Client;
-use axum::body::StreamBody;
 use http::{StatusCode, Uri};
 use hyper::body::Body;
 use uuid::Uuid;
@@ -76,7 +75,7 @@ pub struct S3 {
 
 #[async_trait]
 impl ObjectStore for S3 {
-    async fn get_blob(&self, key: &Uuid) -> Result<StreamBody<ByteStream>> {
+    async fn get_blob(&self, key: &Uuid) -> Result<ByteStream> {
         let get_object_output = self
             .client
             .get_object()
@@ -85,7 +84,7 @@ impl ObjectStore for S3 {
             .send()
             .await?;
 
-        Ok(StreamBody::new(get_object_output.body))
+        Ok(get_object_output.body)
     }
 
     async fn blob_exists(&self, key: &Uuid) -> Result<bool> {

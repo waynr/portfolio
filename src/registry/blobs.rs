@@ -1,5 +1,4 @@
 use aws_sdk_s3::primitives::ByteStream;
-use axum::body::StreamBody;
 use hyper::body::Body;
 use uuid::Uuid;
 
@@ -80,7 +79,7 @@ where
         Ok(uuid)
     }
 
-    pub async fn get_blob(&self, key: &OciDigest) -> Result<Option<StreamBody<ByteStream>>> {
+    pub async fn get_blob(&self, key: &OciDigest) -> Result<Option<ByteStream>> {
         if let Some(blob) = self
             .metadata
             .get_conn()

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use axum::{
-    body::Bytes,
+    body::{StreamBody, Bytes},
     extract::{DefaultBodyLimit, Extension, Path},
     http::header::{self, HeaderMap, HeaderName, HeaderValue},
     response::{IntoResponse, Response},
@@ -119,7 +119,7 @@ async fn get_manifest<O: ObjectStore>(
             HeaderValue::from_str(content_type.as_str())?,
         );
     }
-    Ok((StatusCode::OK, headers, body).into_response())
+    Ok((StatusCode::OK, headers, StreamBody::new(body)).into_response())
 }
 
 /// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests

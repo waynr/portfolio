@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use ::http::StatusCode;
 use axum::{
+    body::StreamBody,
     extract::{Extension, Path, Query, TypedHeader},
     headers::{ContentLength, ContentType},
     http::header::{self, HeaderMap, HeaderName, HeaderValue},
@@ -62,13 +63,13 @@ async fn get_blob<O: ObjectStore>(
 
     let blob_store = registry.get_blob_store();
 
-    if let Some(stream_body) = blob_store.get_blob(&oci_digest).await? {
+    if let Some(body) = blob_store.get_blob(&oci_digest).await? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
             HeaderValue::from_str(digest)?,
         );
-        Ok((StatusCode::OK, headers, stream_body).into_response())
+        Ok((StatusCode::OK, headers, StreamBody::new(body)).into_response())
     } else {
         Err(Error::DistributionSpecError(
             DistributionErrorCode::BlobUnknown,
