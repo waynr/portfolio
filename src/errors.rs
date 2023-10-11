@@ -98,6 +98,8 @@ pub enum Error {
     InvalidUuid(#[from] uuid::Error),
     #[error("invalid digest: {0}")]
     InvalidDigest(String),
+    #[error("unsupported digest algorithm: {0}")]
+    UnsupportedDigestAlgorithm(String),
 
     #[error("missing query parameter: {0}")]
     MissingQueryParameter(&'static str),

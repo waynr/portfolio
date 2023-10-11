@@ -14,6 +14,9 @@ pub use oci_digest::Digester;
 pub use oci_digest::OciDigest;
 pub(crate) use oci_digest::DigestState;
 
+mod sha256;
+mod sha512;
+
 pub mod registry;
 pub use registry::metadata;
 pub use registry::objects;

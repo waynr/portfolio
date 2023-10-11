@@ -1,9 +1,9 @@
-use digest::{Digest, DynDigest};
+use digest::{DynDigest, Digest};
 use serde::{Deserialize, Serialize};
 
+use crate::sha256::Sha256;
+use crate::sha512::Sha512;
 use crate::{Error, Result};
-use crate::sha256::{State256, Sha256};
-use crate::sha512::{State512, Sha512};
 
 // https://github.com/opencontainers/image-spec/blob/main/descriptor.md#digests
 #[derive(Clone, Debug)]
@@ -71,11 +71,9 @@ impl From<&OciDigest> for String {
 
 impl OciDigest {
     pub fn digester(&self) -> Digester {
-        Digester {
-            digester: match self.algorithm {
-                RegisteredImageSpecAlgorithm::Sha256 => Box::new(Sha256::new()),
-                RegisteredImageSpecAlgorithm::Sha512 => Box::new(Sha512::new()),
-            },
+        match self.algorithm {
+            RegisteredImageSpecAlgorithm::Sha256 => Digester::new(Box::new(Sha256::new())),
+            RegisteredImageSpecAlgorithm::Sha512 => Digester::new(Box::new(Sha512::new())),
         }
     }
 }
@@ -84,6 +82,18 @@ impl OciDigest {
 enum RegisteredImageSpecAlgorithm {
     Sha256,
     Sha512,
+}
+
+impl TryFrom<&str> for RegisteredImageSpecAlgorithm {
+    type Error = Error;
+
+    fn try_from(a: &str) -> Result<Self> {
+        match a {
+            "sha512" => Ok(RegisteredImageSpecAlgorithm::Sha512),
+            "sha256" => Ok(RegisteredImageSpecAlgorithm::Sha256),
+            s => Err(Error::UnsupportedDigestAlgorithm(String::from(s))),
+        }
+    }
 }
 
 impl From<&RegisteredImageSpecAlgorithm> for String {
@@ -96,19 +106,37 @@ impl From<&RegisteredImageSpecAlgorithm> for String {
 }
 
 pub struct Digester {
-    digester: Box<dyn DynDigest + Send + Sync>,
+    // TODO: once https://github.com/RustCrypto/traits/pull/1078 is merged we should be able to
+    // finish implementing chunked digest calculation
+    #[allow(dead_code)]
+    digester: Box<dyn DynDigest + 'static + Send>,
+    bytes: u64,
 }
 
+
 impl Digester {
+    pub fn new(digester: Box<dyn DynDigest + 'static + Send>) -> Self {
+        Self{
+            digester, bytes: 0,
+        }
+    }
+
     pub fn update(&mut self, data: &[u8]) {
-        self.digester.update(data);
+        self.bytes += data.len() as u64;
+    }
+}
+
+impl From<Digester> for DigestState {
+    fn from(d: Digester) -> DigestState {
+        DigestState{
+            bytes: d.bytes,
+        }
     }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DigestState {
-    sha256_state: Box<[u8]>,
-    sha512_state: Box<[u8]>,
+    bytes: u64,
 }
 
 #[cfg(test)]
