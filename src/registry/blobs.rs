@@ -1,14 +1,19 @@
+use std::sync::{Arc, Mutex};
+
 use aws_sdk_s3::primitives::ByteStream;
+use bytes::Bytes;
 use hyper::body::Body;
+use tokio_stream::StreamExt;
 use uuid::Uuid;
 
 use crate::{
     errors::{Error, Result},
-    metadata::{PostgresMetadataPool, Registry},
+    metadata::{PostgresMetadataPool, PostgresMetadataTx, Registry},
+    objects::ChunkedBody,
     objects::ObjectStore,
     objects::StreamObjectBody,
     registry::UploadSession,
-    DistributionErrorCode, OciDigest,
+    Digester, DistributionErrorCode, OciDigest,
 };
 
 pub struct BlobStore<'b, O>
@@ -65,7 +70,7 @@ where
         };
 
         // upload blob
-        let digester = digest.digester();
+        let digester = Arc::new(Mutex::new(digest.digester()));
         let stream_body = StreamObjectBody::from_body(body, digester);
         self.objects
             .upload_blob(&uuid, stream_body.into(), content_length)
@@ -130,18 +135,67 @@ impl<'a, O> BlobWriter<'a, O>
 where
     O: ObjectStore,
 {
-    pub async fn write(&mut self, content_length: u64, body: Body) -> Result<u64> {
+    pub async fn write(&mut self, content_length: u64, body: Body) -> Result<()> {
+        tracing::debug!("before chunk upload: {:?}", self.session);
+        let digester = Arc::new(Mutex::new(Digester::default()));
+        let stream_body = StreamObjectBody::from_body(body, digester.clone());
         let chunk = self
             .objects
-            .upload_chunk(self.session, content_length, body)
+            .upload_chunk(self.session, content_length, stream_body.into())
             .await?;
 
         let mut conn = self.metadata.get_conn().await?;
         conn.insert_chunk(self.session, &chunk).await?;
+
+        let digester = Arc::into_inner(digester)
+            .expect("no other references should exist at this point")
+            .into_inner()
+            .expect("the mutex cannot be locked if there are no other Arc references");
+
+        self.session.chunk_number += 1;
+        self.session.last_range_end += digester.bytes() as i64 - 1;
+
         conn.update_session(self.session).await?;
 
         // TODO: return uploaded content length here
-        Ok(0)
+        Ok(())
+    }
+
+    pub async fn write_chunked(&mut self, body: Body) -> Result<()> {
+        let md = self.metadata.clone();
+        let mut tx = md.get_tx().await?;
+        let mut digester = Digester::default();
+
+        let chunked = ChunkedBody::from_body(body);
+        tokio::pin!(chunked);
+
+        while let Some(vbytes) = chunked.next().await {
+            for bytes in vbytes.into_iter() {
+                digester.update(&bytes);
+                self.write_chunk(&mut tx, bytes).await?;
+                self.session.chunk_number += 1;
+            }
+        }
+
+        self.session.last_range_end += digester.bytes() as i64 - 1;
+        tx.update_session(self.session).await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn write_chunk(
+        &mut self,
+        tx: &mut PostgresMetadataTx<'_>,
+        bytes: Bytes,
+    ) -> Result<()> {
+        let chunk = self
+            .objects
+            .upload_chunk(self.session, bytes.len() as u64, bytes.into())
+            .await?;
+
+        tx.insert_chunk(self.session, &chunk).await?;
+        Ok(())
     }
 
     pub async fn finalize(&mut self, digest: &OciDigest) -> Result<()> {

@@ -1,4 +1,4 @@
-use digest::{DynDigest, Digest};
+use digest::{Digest, DynDigest};
 use serde::{Deserialize, Serialize};
 
 use crate::sha256::Sha256;
@@ -113,24 +113,30 @@ pub struct Digester {
     bytes: u64,
 }
 
-
 impl Digester {
     pub fn new(digester: Box<dyn DynDigest + 'static + Send>) -> Self {
-        Self{
-            digester, bytes: 0,
-        }
+        Self { digester, bytes: 0 }
     }
 
     pub fn update(&mut self, data: &[u8]) {
         self.bytes += data.len() as u64;
     }
+
+    #[inline]
+    pub fn bytes(&self) -> u64 {
+        self.bytes
+    }
+}
+
+impl Default for Digester {
+    fn default() -> Self {
+        Self::new(Box::new(Sha256::new()))
+    }
 }
 
 impl From<Digester> for DigestState {
     fn from(d: Digester) -> DigestState {
-        DigestState{
-            bytes: d.bytes,
-        }
+        DigestState { bytes: d.bytes }
     }
 }
 

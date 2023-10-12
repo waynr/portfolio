@@ -178,8 +178,6 @@ impl ObjectStore for S3 {
             e_tag: upload_part_output.e_tag,
             chunk_number: session.chunk_number,
         };
-        session.chunk_number += 1;
-        session.last_range_end += content_length as i64 - 1;
 
         Ok(chunk)
     }

@@ -444,10 +444,47 @@ impl Queries {
             .await?)
     }
 
+    pub async fn insert_chunk(
+        executor: &mut PgConnection,
+        session: &UploadSession,
+        chunk: &Chunk,
+    ) -> Result<()> {
+        let (sql, values) = Query::insert()
+            .into_table(Chunks::Table)
+            .columns([Chunks::ChunkNumber, Chunks::UploadSessionUuid, Chunks::ETag])
+            .values([
+                Value::from(chunk.chunk_number).into(),
+                Value::from(session.uuid).into(),
+                Value::from(chunk.e_tag.clone()).into(),
+            ])?
+            .build_sqlx(PostgresQueryBuilder);
+
+        sqlx::query_with(&sql, values).execute(executor).await?;
+        Ok(())
+    }
+
     pub async fn delete_chunks(executor: &mut PgConnection, uuid: &Uuid) -> Result<()> {
         let (sql, values) = Query::delete()
             .from_table(Chunks::Table)
             .and_where(Expr::col(Chunks::UploadSessionUuid).eq(*uuid))
+            .build_sqlx(PostgresQueryBuilder);
+
+        sqlx::query_with(&sql, values).execute(executor).await?;
+        Ok(())
+    }
+
+    pub async fn update_session(
+        executor: &mut PgConnection,
+        session: &UploadSession,
+    ) -> Result<()> {
+        let state = serde_json::value::to_value(&session.digest_state)?;
+        let (sql, values) = Query::update()
+            .table(UploadSessions::Table)
+            .and_where(Expr::col(UploadSessions::Uuid).eq(session.uuid))
+            .value(UploadSessions::UploadId, session.upload_id.clone())
+            .value(UploadSessions::ChunkNumber, session.chunk_number)
+            .value(UploadSessions::LastRangeEnd, session.last_range_end)
+            .value(UploadSessions::DigestState, state)
             .build_sqlx(PostgresQueryBuilder);
 
         sqlx::query_with(&sql, values).execute(executor).await?;
@@ -691,20 +728,7 @@ impl PostgresMetadataConn {
     }
 
     pub async fn update_session(&mut self, session: &UploadSession) -> Result<()> {
-        let state = serde_json::value::to_value(&session.digest_state)?;
-        let (sql, values) = Query::update()
-            .table(UploadSessions::Table)
-            .and_where(Expr::col(UploadSessions::Uuid).eq(session.uuid))
-            .value(UploadSessions::UploadId, session.upload_id.clone())
-            .value(UploadSessions::ChunkNumber, session.chunk_number)
-            .value(UploadSessions::LastRangeEnd, session.last_range_end)
-            .value(UploadSessions::DigestState, state)
-            .build_sqlx(PostgresQueryBuilder);
-
-        sqlx::query_with(&sql, values)
-            .execute(&mut *self.conn)
-            .await?;
-        Ok(())
+        Queries::update_session(&mut *self.conn, session).await
     }
 
     pub async fn delete_chunks(&mut self, uuid: &Uuid) -> Result<()> {
@@ -720,20 +744,7 @@ impl PostgresMetadataConn {
     }
 
     pub async fn insert_chunk(&mut self, session: &UploadSession, chunk: &Chunk) -> Result<()> {
-        let (sql, values) = Query::insert()
-            .into_table(Chunks::Table)
-            .columns([Chunks::ChunkNumber, Chunks::UploadSessionUuid, Chunks::ETag])
-            .values([
-                Value::from(chunk.chunk_number).into(),
-                Value::from(session.uuid).into(),
-                Value::from(chunk.e_tag.clone()).into(),
-            ])?
-            .build_sqlx(PostgresQueryBuilder);
-
-        sqlx::query_with(&sql, values)
-            .execute(&mut *self.conn)
-            .await?;
-        Ok(())
+        Queries::insert_chunk(&mut *self.conn, session, chunk).await
     }
 
     pub async fn get_referrers(
@@ -773,6 +784,10 @@ impl<'a> PostgresMetadataTx<'a> {
         Queries::insert_blob(&mut **tx, registry_id, digest).await
     }
 
+    pub async fn insert_chunk(&mut self, session: &UploadSession, chunk: &Chunk) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::insert_chunk(&mut **tx, session, chunk).await
+    }
     pub async fn get_chunks(&mut self, session: &UploadSession) -> Result<Vec<Chunk>> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
         Queries::get_chunks(&mut **tx, session).await
@@ -781,6 +796,11 @@ impl<'a> PostgresMetadataTx<'a> {
     pub async fn delete_chunks(&mut self, uuid: &Uuid) -> Result<()> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
         Queries::delete_chunks(&mut **tx, uuid).await
+    }
+
+    pub async fn update_session(&mut self, session: &UploadSession) -> Result<()> {
+        let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
+        Queries::update_session(&mut **tx, session).await
     }
 
     pub async fn delete_session(&mut self, session: &UploadSession) -> Result<()> {

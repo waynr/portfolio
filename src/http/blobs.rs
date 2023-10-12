@@ -330,9 +330,8 @@ async fn uploads_put<O: ObjectStore>(
 async fn uploads_patch<O: ObjectStore>(
     Extension(registry): Extension<Registry<O>>,
     Path(path_params): Path<HashMap<String, String>>,
-    TypedHeader(content_length): TypedHeader<ContentLength>,
+    content_length: Option<TypedHeader<ContentLength>>,
     content_range: Option<TypedHeader<ContentRange>>,
-    TypedHeader(_content_type): TypedHeader<ContentType>,
     request: Request<Body>,
 ) -> Result<Response> {
     let repo_name = match path_params.get("repository") {
@@ -366,9 +365,11 @@ async fn uploads_patch<O: ObjectStore>(
     };
 
     let store = registry.get_blob_store();
-    {
-        let mut writer = store.resume(&mut session).await?;
-        let _written = writer.write(content_length.0, request.into_body()).await?;
+    let mut writer = store.resume(&mut session).await?;
+    if let Some(TypedHeader(content_length)) = content_length {
+        writer.write(content_length.0, request.into_body()).await?;
+    } else {
+        writer.write_chunked(request.into_body()).await?;
     }
 
     // TODO: validate content length of chunk
