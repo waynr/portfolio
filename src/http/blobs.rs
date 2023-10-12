@@ -331,7 +331,8 @@ async fn uploads_patch<O: ObjectStore>(
     Extension(registry): Extension<Registry<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
-    content_range: Option<TypedHeader<ContentRange>>,
+    // Docker Daemon doesn't include a content range, so what's the point?
+    //content_range: Option<TypedHeader<ContentRange>>,
     request: Request<Body>,
 ) -> Result<Response> {
     let repo_name = match path_params.get("repository") {
@@ -357,13 +358,6 @@ async fn uploads_patch<O: ObjectStore>(
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
-    let range: Option<Range> = if let Some(TypedHeader(content_range)) = content_range {
-        session.validate_range(&content_range)?;
-        Some(content_range.into())
-    } else {
-        None
-    };
-
     let store = registry.get_blob_store();
     let mut writer = store.resume(&mut session).await?;
     if let Some(TypedHeader(content_length)) = content_length {
@@ -380,10 +374,12 @@ async fn uploads_patch<O: ObjectStore>(
     let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session_uuid);
     headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
 
-    if let Some(range) = range {
-        let range: String = (&range).into();
-        headers.insert(Range::name(), HeaderValue::from_str(&range).expect("meow"));
-    }
+    let range = Range {
+        start: 0,
+        end: session.last_range_end as u64,
+    };
+    let range: String = (&range).into();
+    headers.insert(Range::name(), HeaderValue::from_str(&range).expect("meow"));
 
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
 }
