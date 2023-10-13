@@ -155,6 +155,10 @@ async fn uploads_post<O: ObjectStore>(
                 let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);
                 let mut headers = HeaderMap::new();
                 headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+                headers.insert(
+                    HeaderName::from_str("docker-upload-uuid")?,
+                    HeaderValue::from_str(session.uuid.to_string().as_str())?,
+                );
                 return Ok((StatusCode::ACCEPTED, headers, "").into_response());
             }
 
@@ -195,6 +199,10 @@ async fn uploads_post<O: ObjectStore>(
             let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);
             let mut headers = HeaderMap::new();
             headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+            headers.insert(
+                HeaderName::from_str("docker-upload-uuid")?,
+                HeaderValue::from_str(session.uuid.to_string().as_str())?,
+            );
             Ok((StatusCode::ACCEPTED, headers, "").into_response())
         }
         Some(dgst) => {
@@ -254,11 +262,11 @@ async fn uploads_put<O: ObjectStore>(
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
     let oci_digest: OciDigest = digest.try_into()?;
-    let session_uuid = path_params
+
+    let session_uuid_str = path_params
         .get("session_uuid")
-        .map(|s| Uuid::parse_str(s))
-        .transpose()?
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
+    let session_uuid = Uuid::parse_str(session_uuid_str)?;
 
     // retrieve the session or fail if it doesn't exist
     let mut session = registry
@@ -299,6 +307,10 @@ async fn uploads_put<O: ObjectStore>(
             let location = format!("/v2/{}/blobs/{}", repo_name, digest);
             let mut headers = HeaderMap::new();
             headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+            headers.insert(
+                HeaderName::from_str("docker-upload-uuid")?,
+                HeaderValue::from_str(&session_uuid_str)?,
+            );
             (StatusCode::CREATED, headers, "").into_response()
         }
         // POST-PUT
@@ -312,6 +324,10 @@ async fn uploads_put<O: ObjectStore>(
                 let location = format!("/v2/{}/blobs/{}", repo_name, digest);
                 let mut headers = HeaderMap::new();
                 headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+                headers.insert(
+                    HeaderName::from_str("docker-upload-uuid")?,
+                    HeaderValue::from_str(session_uuid_str)?,
+                );
                 (StatusCode::CREATED, headers, "").into_response()
             }
             _ => {
@@ -351,11 +367,10 @@ async fn uploads_patch<O: ObjectStore>(
         ));
     }
 
-    let session_uuid = path_params
+    let session_uuid_str = path_params
         .get("session_uuid")
-        .map(|s| Uuid::parse_str(s))
-        .transpose()?
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
+    let session_uuid = Uuid::parse_str(session_uuid_str)?;
 
     // retrieve the session or fail if it doesn't exist
     let mut session = registry
@@ -378,6 +393,10 @@ async fn uploads_patch<O: ObjectStore>(
 
     let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session_uuid);
     headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+    headers.insert(
+        HeaderName::from_str("docker-upload-uuid")?,
+        HeaderValue::from_str(session_uuid_str)?,
+    );
 
     let range = Range {
         start: 0,
@@ -398,11 +417,10 @@ async fn uploads_get<O: ObjectStore>(
         None => return Err(Error::MissingPathParameter("repository")),
     };
 
-    let session_uuid = path_params
+    let session_uuid_str = path_params
         .get("session_uuid")
-        .map(|s| Uuid::parse_str(s))
-        .transpose()?
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
+    let session_uuid = Uuid::parse_str(session_uuid_str)?;
 
     // retrieve the session or fail if it doesn't exist
     let session = registry
@@ -414,6 +432,10 @@ async fn uploads_get<O: ObjectStore>(
 
     let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session_uuid);
     headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
+    headers.insert(
+        HeaderName::from_str("docker-upload-uuid")?,
+        HeaderValue::from_str(session_uuid_str)?,
+    );
 
     let range = Range {
         start: 0,
