@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     errors::{Error, Result},
-    metadata::{PostgresMetadataPool, PostgresMetadataTx, Registry},
+    metadata::{Blob, PostgresMetadataPool, PostgresMetadataTx, Registry},
     objects::ChunkedBody,
     objects::ObjectStore,
     objects::StreamObjectBody,
@@ -66,7 +66,7 @@ where
                 }
                 b.id
             }
-            None => tx.insert_blob(&self.registry.id, digest).await?,
+            None => tx.insert_blob(&self.registry.id, digest, content_length as i64).await?,
         };
 
         // upload blob
@@ -98,11 +98,11 @@ where
         }
     }
 
-    pub async fn blob_exists(&self, key: &OciDigest) -> Result<bool> {
+    pub async fn get_blob_metadata(&self, key: &OciDigest) -> Result<Option<Blob>> {
         self.metadata
             .get_conn()
             .await?
-            .blob_exists(&self.registry.id, key)
+            .get_blob(&self.registry.id, key)
             .await
     }
 
@@ -203,7 +203,10 @@ where
         let mut tx = self.metadata.get_tx().await?;
         let uuid = match tx.get_blob(&self.registry.id, &digest).await? {
             Some(b) => b.id,
-            None => tx.insert_blob(&self.registry.id, &digest).await?,
+            None => {
+                tx.insert_blob(&self.registry.id, &digest, self.session.last_range_end + 1)
+                    .await?
+            }
         };
 
         if !self.objects.blob_exists(&uuid).await? {

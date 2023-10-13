@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use ::http::StatusCode;
 use axum::{
@@ -99,11 +100,15 @@ async fn head_blob<O: ObjectStore>(
 
     let blob_store = registry.get_blob_store();
 
-    if blob_store.blob_exists(&oci_digest).await? {
+    if let Some(blob) = blob_store.get_blob_metadata(&oci_digest).await? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
             HeaderValue::from_str(digest)?,
+        );
+        headers.insert(
+            header::CONTENT_LENGTH,
+            HeaderValue::from_str(blob.bytes_on_disk.to_string().as_str())?,
         );
         Ok((StatusCode::OK, headers, "").into_response())
     } else {
@@ -144,7 +149,7 @@ async fn uploads_post<O: ObjectStore>(
             let oci_digest: OciDigest = digest.as_str().try_into()?;
 
             let store = registry.get_blob_store();
-            if !store.blob_exists(&oci_digest).await? {
+            if !store.get_blob_metadata(&oci_digest).await?.is_some() {
                 let session: UploadSession = registry.new_upload_session().await?;
 
                 let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);

@@ -20,6 +20,7 @@ CREATE TABLE blobs (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	digest VARCHAR(256) NOT NULL,
 	registry_id UUID NOT NULL REFERENCES registries (id),
+	bytes_on_disk BIGINT NOT NULL,
 	UNIQUE (digest, registry_id)
 );
 

@@ -63,11 +63,12 @@ impl Queries {
         executor: &mut PgConnection,
         registry_id: &Uuid,
         digest: &OciDigest,
+        bytes_on_disk: i64,
     ) -> Result<Uuid> {
         let (sql, values) = Query::insert()
             .into_table(Blobs::Table)
-            .columns([Blobs::Digest, Blobs::RegistryId])
-            .values([String::from(digest).into(), (*registry_id).into()])?
+            .columns([Blobs::Digest, Blobs::RegistryId, Blobs::BytesOnDisk])
+            .values([String::from(digest).into(), (*registry_id).into(), bytes_on_disk.into()])?
             .returning_col(Blobs::Id)
             .build_sqlx(PostgresQueryBuilder);
 
@@ -82,7 +83,7 @@ impl Queries {
     ) -> Result<Option<Blob>> {
         let (sql, values) = Query::select()
             .from(Blobs::Table)
-            .columns([Blobs::Id, Blobs::Digest, Blobs::RegistryId])
+            .columns([Blobs::Id, Blobs::Digest, Blobs::RegistryId, Blobs::BytesOnDisk])
             .and_where(Expr::col(Blobs::RegistryId).eq(*registry_id))
             // TODO: impl Value for OciDigest
             .and_where(Expr::col(Blobs::Digest).eq(String::from(digest)))
@@ -101,7 +102,7 @@ impl Queries {
         let digests = digests.iter().map(Clone::clone);
         let (sql, values) = Query::select()
             .from(Blobs::Table)
-            .columns([Blobs::Id, Blobs::Digest, Blobs::RegistryId])
+            .columns([Blobs::Id, Blobs::Digest, Blobs::RegistryId, Blobs::BytesOnDisk])
             .and_where(Expr::col(Blobs::RegistryId).eq(*registry_id))
             // TODO: impl Value for OciDigest
             .and_where(Expr::col(Blobs::Digest).is_in(digests))
@@ -612,8 +613,13 @@ impl PostgresMetadataConn {
             .await?)
     }
 
-    pub async fn insert_blob(&mut self, registry_id: &Uuid, digest: &OciDigest) -> Result<Uuid> {
-        Queries::insert_blob(&mut *self.conn, registry_id, digest).await
+    pub async fn insert_blob(
+        &mut self,
+        registry_id: &Uuid,
+        digest: &OciDigest,
+        bytes_on_disk: i64,
+    ) -> Result<Uuid> {
+        Queries::insert_blob(&mut *self.conn, registry_id, digest, bytes_on_disk).await
     }
 
     pub async fn get_blob(
@@ -633,27 +639,6 @@ impl PostgresMetadataConn {
                         .column(Repositories::Id)
                         .and_where(Expr::col(Repositories::RegistryId).eq(*registry_id))
                         .and_where(Expr::col(Repositories::Name).eq(name))
-                        .to_owned(),
-                ),
-                Alias::new("exists"),
-            )
-            .build_sqlx(PostgresQueryBuilder);
-        let row = sqlx::query_with(&sql, values)
-            .fetch_one(&mut *self.conn)
-            .await?;
-
-        Ok(row.try_get("exists")?)
-    }
-
-    pub async fn blob_exists(&mut self, registry_id: &Uuid, digest: &OciDigest) -> Result<bool> {
-        let (sql, values) = Query::select()
-            .expr_as(
-                Expr::exists(
-                    Query::select()
-                        .from(Blobs::Table)
-                        .column(Blobs::Id)
-                        .and_where(Expr::col(Blobs::RegistryId).eq(*registry_id))
-                        .and_where(Expr::col(Blobs::Digest).eq(String::from(digest).as_str()))
                         .to_owned(),
                 ),
                 Alias::new("exists"),
@@ -779,9 +764,14 @@ impl<'a> PostgresMetadataTx<'a> {
         }
     }
 
-    pub async fn insert_blob(&mut self, registry_id: &Uuid, digest: &OciDigest) -> Result<Uuid> {
+    pub async fn insert_blob(
+        &mut self,
+        registry_id: &Uuid,
+        digest: &OciDigest,
+        bytes_on_disk: i64,
+    ) -> Result<Uuid> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::insert_blob(&mut **tx, registry_id, digest).await
+        Queries::insert_blob(&mut **tx, registry_id, digest, bytes_on_disk).await
     }
 
     pub async fn insert_chunk(&mut self, session: &UploadSession, chunk: &Chunk) -> Result<()> {

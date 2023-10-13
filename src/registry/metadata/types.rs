@@ -39,6 +39,7 @@ pub struct Blob {
     pub id: Uuid,
     pub registry_id: Uuid,
     pub digest: OciDigest,
+    pub bytes_on_disk: i64,
 }
 
 #[derive(Iden)]
@@ -47,6 +48,7 @@ pub enum Blobs {
     Id,
     RegistryId,
     Digest,
+    BytesOnDisk,
 }
 
 impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Blob {
@@ -63,6 +65,7 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Blob {
                     })
                 }
             },
+            bytes_on_disk: row.try_get("bytes_on_disk")?,
         })
     }
 }
