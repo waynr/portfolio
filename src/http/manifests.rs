@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use axum::{
-    body::{StreamBody, Bytes},
+    body::{Bytes, StreamBody},
     extract::{DefaultBodyLimit, Extension, Path},
     http::header::{self, HeaderMap, HeaderName, HeaderValue},
     response::{IntoResponse, Response},

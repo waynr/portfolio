@@ -3,12 +3,16 @@ use std::str::FromStr;
 
 use axum::{
     extract::State,
+    http::header::{self, HeaderMap, HeaderName, HeaderValue},
     http::{Request, StatusCode},
     middleware::{self as axum_middleware, Next},
     response::{IntoResponse, Response},
     routing::get,
     Router,
 };
+use http::Response as HttpResponse;
+use http_body::Body;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::{self, TraceLayer};
 
 pub mod headers;
@@ -51,6 +55,17 @@ where
     }
 }
 
+fn maybe_get_content_length(response: &HttpResponse<impl Body>) -> Option<HeaderValue> {
+    if let Some(size) = response.body().size_hint().exact() {
+        Some(
+            HeaderValue::from_str(&size.to_string())
+                .expect("size should have valid to_string conversion"),
+        )
+    } else {
+        None
+    }
+}
+
 pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
     let blobs = blobs::router::<O>();
     let manifests = manifests::router::<O>();
@@ -65,9 +80,22 @@ pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
         .nest("/v2/:repository/tags", tags)
         .layer(
             TraceLayer::new_for_http()
+                .make_span_with(trace::DefaultMakeSpan::new().include_headers(true))
                 .on_response(trace::DefaultOnResponse::new())
                 .on_request(trace::DefaultOnRequest::new()),
         )
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_str("docker-distribution-api-version")?,
+            HeaderValue::from_str("registry/2.0")?,
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_str("content-type")?,
+            HeaderValue::from_str("application/json")?,
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CONTENT_LENGTH,
+            maybe_get_content_length,
+        ))
         .route_layer(axum_middleware::from_fn_with_state(portfolio.clone(), auth));
 
     axum::Server::bind(&"0.0.0.0:13030".parse()?)
