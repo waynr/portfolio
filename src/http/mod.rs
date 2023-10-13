@@ -73,7 +73,7 @@ pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
     let tags = tags::router::<O>();
 
     let app = Router::new()
-        .route("/v2", get(hello_world))
+        .route("/v2/", get(version))
         .nest("/v2/:repository/blobs", blobs)
         .nest("/v2/:repository/manifests", manifests)
         .nest("/v2/:repository/referrers", referrers)
@@ -104,6 +104,11 @@ pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
     Ok(())
 }
 
-async fn hello_world() -> Result<Response> {
-    Ok((StatusCode::OK, "").into_response())
+async fn version() -> Result<Response> {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str("application/json")?,
+    );
+    Ok((StatusCode::OK, headers, "{}").into_response())
 }
