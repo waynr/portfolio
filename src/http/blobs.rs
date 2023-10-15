@@ -64,11 +64,15 @@ async fn get_blob<O: ObjectStore>(
 
     let blob_store = registry.get_blob_store();
 
-    if let Some(body) = blob_store.get_blob(&oci_digest).await? {
+    if let Some((blob, body)) = blob_store.get_blob(&oci_digest).await? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
             HeaderValue::from_str(digest)?,
+        );
+        headers.insert(
+            header::CONTENT_LENGTH,
+            HeaderValue::from_str(blob.bytes_on_disk.to_string().as_str())?,
         );
         Ok((StatusCode::OK, headers, StreamBody::new(body)).into_response())
     } else {

@@ -84,7 +84,7 @@ where
         Ok(uuid)
     }
 
-    pub async fn get_blob(&self, key: &OciDigest) -> Result<Option<ByteStream>> {
+    pub async fn get_blob(&self, key: &OciDigest) -> Result<Option<(Blob, ByteStream)>> {
         if let Some(blob) = self
             .metadata
             .get_conn()
@@ -92,7 +92,8 @@ where
             .get_blob(&self.registry.id, key)
             .await?
         {
-            Ok(Some(self.objects.get_blob(&blob.id).await?))
+            let body = self.objects.get_blob(&blob.id).await?;
+            Ok(Some((blob, body)))
         } else {
             Ok(None)
         }
