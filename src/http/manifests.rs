@@ -64,6 +64,10 @@ async fn head_manifest<O: ObjectStore>(
             HeaderName::from_lowercase(b"docker-content-digest")?,
             HeaderValue::from_str(dgst.as_str())?,
         );
+        headers.insert(
+            header::CONTENT_LENGTH,
+            HeaderValue::from_str(manifest.bytes_on_disk.to_string().as_str())?,
+        );
         return Ok((StatusCode::OK, headers, "").into_response());
     }
 
@@ -111,6 +115,10 @@ async fn get_manifest<O: ObjectStore>(
     headers.insert(
         HeaderName::from_lowercase(b"docker-content-digest")?,
         HeaderValue::from_str(dgst.as_str())?,
+    );
+    headers.insert(
+        header::CONTENT_LENGTH,
+        HeaderValue::from_str(manifest.bytes_on_disk.to_string().as_str())?,
     );
     if let Some(mt) = manifest.media_type {
         let content_type: String = mt.into();

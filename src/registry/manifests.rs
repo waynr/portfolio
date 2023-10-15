@@ -79,9 +79,10 @@ where
     ) -> Result<OciDigest> {
         let calculated_digest: OciDigest = bytes.as_ref().try_into()?;
 
+        let byte_count = bytes.len();
         let blob_uuid = self
             .blobstore
-            .upload(&calculated_digest, bytes.len() as u64, bytes.into())
+            .upload(&calculated_digest, byte_count as u64, bytes.into())
             .await?;
 
         let mut tx = self.blobstore.metadata.get_tx().await?;
@@ -102,6 +103,7 @@ where
             self.repository.id,
             blob_uuid,
             calculated_digest.clone(),
+            byte_count as i64,
         );
         tx.insert_manifest(&manifest).await?;
 
@@ -392,6 +394,7 @@ impl ManifestSpec {
         repository_id: Uuid,
         blob_id: Uuid,
         dgst: OciDigest,
+        bytes_on_disk: i64,
     ) -> Manifest {
         match self {
             ManifestSpec::Image(img) => Manifest {
@@ -399,6 +402,7 @@ impl ManifestSpec {
                 registry_id,
                 repository_id,
                 blob_id,
+                bytes_on_disk,
                 digest: dgst,
                 subject: img.subject().as_ref().map(|v| {
                     v.digest()
@@ -414,6 +418,7 @@ impl ManifestSpec {
                 registry_id,
                 repository_id,
                 blob_id,
+                bytes_on_disk,
                 digest: dgst,
                 subject: ind.subject().as_ref().map(|v| {
                     v.digest()

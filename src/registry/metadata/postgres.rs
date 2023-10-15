@@ -68,7 +68,11 @@ impl Queries {
         let (sql, values) = Query::insert()
             .into_table(Blobs::Table)
             .columns([Blobs::Digest, Blobs::RegistryId, Blobs::BytesOnDisk])
-            .values([String::from(digest).into(), (*registry_id).into(), bytes_on_disk.into()])?
+            .values([
+                String::from(digest).into(),
+                (*registry_id).into(),
+                bytes_on_disk.into(),
+            ])?
             .returning_col(Blobs::Id)
             .build_sqlx(PostgresQueryBuilder);
 
@@ -83,7 +87,12 @@ impl Queries {
     ) -> Result<Option<Blob>> {
         let (sql, values) = Query::select()
             .from(Blobs::Table)
-            .columns([Blobs::Id, Blobs::Digest, Blobs::RegistryId, Blobs::BytesOnDisk])
+            .columns([
+                Blobs::Id,
+                Blobs::Digest,
+                Blobs::RegistryId,
+                Blobs::BytesOnDisk,
+            ])
             .and_where(Expr::col(Blobs::RegistryId).eq(*registry_id))
             // TODO: impl Value for OciDigest
             .and_where(Expr::col(Blobs::Digest).eq(String::from(digest)))
@@ -102,7 +111,12 @@ impl Queries {
         let digests = digests.iter().map(Clone::clone);
         let (sql, values) = Query::select()
             .from(Blobs::Table)
-            .columns([Blobs::Id, Blobs::Digest, Blobs::RegistryId, Blobs::BytesOnDisk])
+            .columns([
+                Blobs::Id,
+                Blobs::Digest,
+                Blobs::RegistryId,
+                Blobs::BytesOnDisk,
+            ])
             .and_where(Expr::col(Blobs::RegistryId).eq(*registry_id))
             // TODO: impl Value for OciDigest
             .and_where(Expr::col(Blobs::Digest).is_in(digests))
@@ -181,6 +195,11 @@ impl Queries {
                 (Manifests::Table, Manifests::Digest),
                 (Manifests::Table, Manifests::Subject),
             ])
+            .column((Blobs::Table, Blobs::BytesOnDisk))
+            .left_join(
+                Blobs::Table,
+                Expr::col((Manifests::Table, Manifests::BlobId)).equals((Blobs::Table, Blobs::Id)),
+            )
             .and_where(Expr::col((Manifests::Table, Manifests::RepositoryId)).eq(*repository_id))
             .and_where(Expr::col(Manifests::RegistryId).eq(*registry_id));
 

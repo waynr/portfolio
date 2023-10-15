@@ -136,6 +136,7 @@ pub struct Manifest {
     pub repository_id: Uuid,
     /// the id of the ObjectStore blob containing this manifest
     pub blob_id: Uuid,
+    pub bytes_on_disk: i64,
     pub digest: OciDigest,
     pub subject: Option<OciDigest>,
     pub media_type: Option<oci_spec::image::MediaType>,
@@ -149,6 +150,7 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Manifest {
             registry_id: row.try_get("registry_id")?,
             repository_id: row.try_get("repository_id")?,
             blob_id: row.try_get("blob_id")?,
+            bytes_on_disk: row.try_get("bytes_on_disk")?,
             digest: match row.try_get::<String, _>("digest")?.as_str().try_into() {
                 Ok(v) => v,
                 Err(e) => {
