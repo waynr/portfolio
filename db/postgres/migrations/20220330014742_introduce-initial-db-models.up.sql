@@ -41,13 +41,15 @@ CREATE TABLE manifests (
 -- an index_manifest is a reference from a parent manifest to a child manifest
 CREATE TABLE index_manifests (
 	parent_manifest UUID NOT NULL REFERENCES manifests (id),
-	child_manifest UUID NOT NULL REFERENCES manifests (id)
+	child_manifest UUID NOT NULL REFERENCES manifests (id),
+	PRIMARY KEY (parent_manifest, child_manifest)
 );
 
 -- a layer is a reference from a manifest to a blob
 CREATE TABLE layers (
 	manifest UUID NOT NULL REFERENCES manifests (id),
-	blob UUID NOT NULL REFERENCES blobs (id)
+	blob UUID NOT NULL REFERENCES blobs (id),
+	PRIMARY KEY (manifest, blob)
 );
 
 -- a tag is a reference to a manifest
@@ -78,5 +80,5 @@ CREATE TABLE chunks (
 	chunk_number INT4 NOT NULL,
 	upload_session_uuid UUID NOT NULL REFERENCES upload_sessions(uuid),
 	e_tag VARCHAR(128),
-	UNIQUE (chunk_number, upload_session_uuid)
+	PRIMARY KEY (chunk_number, upload_session_uuid)
 );
