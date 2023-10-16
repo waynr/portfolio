@@ -1,11 +1,12 @@
-use serde::Serialize;
 use uuid::Uuid;
 
 use crate::errors::Result;
-use crate::metadata::{PostgresMetadataPool, Repository as RepositoryMetadata};
+use crate::metadata::PostgresMetadataPool;
 use crate::objects::ObjectStore;
 use crate::registry::blobs::BlobStore;
 use crate::registry::manifests::ManifestStore;
+use crate::registry::RepositoryMetadata;
+use crate::registry::TagsList;
 use crate::registry::UploadSession;
 
 #[derive(Clone)]
@@ -115,10 +116,4 @@ where
             .insert_repository(name)
             .await
     }
-}
-
-#[derive(Serialize)]
-pub struct TagsList {
-    name: String,
-    tags: Vec<String>,
 }

@@ -1,18 +1,14 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
 
 use aws_sdk_s3::primitives::ByteStream;
 use axum::body::Bytes;
-use axum::Json;
-use oci_spec::image::{Descriptor, ImageIndex, ImageManifest, MediaType};
-use uuid::Uuid;
+use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
 use crate::{
     errors::{DistributionErrorCode, Error, Result},
-    metadata::{Manifest, ManifestRef, Repository},
     objects::ObjectStore,
     oci_digest::OciDigest,
-    registry::BlobStore,
+    registry::{BlobStore, Manifest, ManifestRef, ManifestSpec, RepositoryMetadata},
 };
 
 pub struct ManifestStore<'r, O>
@@ -20,14 +16,14 @@ where
     O: ObjectStore,
 {
     blobstore: BlobStore<O>,
-    repository: &'r Repository,
+    repository: &'r RepositoryMetadata,
 }
 
 impl<'r, O> ManifestStore<'r, O>
 where
     O: ObjectStore,
 {
-    pub fn new(blobstore: BlobStore<O>, repository: &'r Repository) -> Self {
+    pub fn new(blobstore: BlobStore<O>, repository: &'r RepositoryMetadata) -> Self {
         Self {
             blobstore,
             repository,
@@ -36,10 +32,7 @@ where
 
     pub async fn head_manifest(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
-        if let Some(manifest) = conn
-            .get_manifest(&self.repository.id, key)
-            .await?
-        {
+        if let Some(manifest) = conn.get_manifest(&self.repository.id, key).await? {
             Ok(Some(manifest))
         } else {
             Ok(None)
@@ -48,24 +41,9 @@ where
 
     pub async fn get_manifest(&self, key: &ManifestRef) -> Result<Option<(Manifest, ByteStream)>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
-        if let Some(manifest) = conn
-            .get_manifest(&self.repository.id, key)
-            .await?
-        {
+        if let Some(manifest) = conn.get_manifest(&self.repository.id, key).await? {
             let body = self.blobstore.objects.get_blob(&manifest.blob_id).await?;
             Ok(Some((manifest, body)))
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub async fn manifest_exists(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
-        let mut conn = self.blobstore.metadata.get_conn().await?;
-        if let Some(manifest) = conn
-            .get_manifest(&self.repository.id, key)
-            .await?
-        {
-            Ok(Some(manifest))
         } else {
             Ok(None)
         }
@@ -139,9 +117,7 @@ where
                     .iter()
                     .map(|desc| desc.digest().as_str())
                     .collect();
-                let manifests = tx
-                    .get_manifests(&self.repository.id, &digests)
-                    .await?;
+                let manifests = tx.get_manifests(&self.repository.id, &digests).await?;
 
                 let mut hs: HashSet<String> = HashSet::new();
                 for manifest in &manifests {
@@ -179,12 +155,9 @@ where
     pub async fn delete(&mut self, key: &ManifestRef) -> Result<()> {
         let mut tx = self.blobstore.metadata.get_tx().await?;
 
-        let manifest = tx
-            .get_manifest(&self.repository.id, key)
-            .await?
-            .ok_or(Error::DistributionSpecError(
-                DistributionErrorCode::ManifestUnknown,
-            ))?;
+        let manifest = tx.get_manifest(&self.repository.id, key).await?.ok_or(
+            Error::DistributionSpecError(DistributionErrorCode::ManifestUnknown),
+        )?;
 
         // NOTE: it's possible (but how likely?) for a manifest to include both layers and
         // manifests; we don't support creating both types of association for now, but we should
@@ -226,11 +199,7 @@ where
         let mut conn = self.blobstore.metadata.get_conn().await?;
 
         let manifests = conn
-            .get_referrers(
-                &self.repository.id,
-                subject,
-                &artifact_type,
-            )
+            .get_referrers(&self.repository.id, subject, &artifact_type)
             .await?;
         let count = manifests.len();
 
@@ -280,151 +249,5 @@ where
         index.set_manifests(ds);
 
         Ok(index)
-    }
-}
-
-pub enum ManifestSpec {
-    Image(ImageManifest),
-    Index(ImageIndex),
-}
-
-impl TryFrom<&Bytes> for ManifestSpec {
-    type Error = Error;
-
-    fn try_from(bs: &Bytes) -> Result<Self> {
-        let img_rej_err = match axum::Json::from_bytes(bs) {
-            Ok(Json(m)) => return Ok(ManifestSpec::Image(m)),
-            Err(e) => e,
-        };
-        match axum::Json::from_bytes(bs) {
-            Ok(Json(m)) => return Ok(ManifestSpec::Index(m)),
-            Err(ind_rej_err) => {
-                tracing::warn!("unable to deserialize manifest as image: {img_rej_err:?}");
-                tracing::warn!("unable to deserialize manifest as index: {ind_rej_err:?}");
-                Err(Error::DistributionSpecError(
-                    DistributionErrorCode::ManifestInvalid,
-                ))
-            }
-        }
-    }
-}
-
-impl ManifestSpec {
-    #[inline(always)]
-    pub(crate) fn media_type(&self) -> Option<MediaType> {
-        match self {
-            ManifestSpec::Image(im) => im.media_type().clone(),
-            ManifestSpec::Index(ii) => ii.media_type().clone(),
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn artifact_type(&self) -> Option<MediaType> {
-        match self {
-            ManifestSpec::Image(im) => im.artifact_type().clone(),
-            ManifestSpec::Index(ii) => ii.artifact_type().clone(),
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn annotations(&self) -> Option<HashMap<String, String>> {
-        match self {
-            ManifestSpec::Image(im) => im.annotations().clone(),
-            ManifestSpec::Index(ii) => ii.annotations().clone(),
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn subject(&self) -> Option<Descriptor> {
-        match self {
-            ManifestSpec::Image(im) => im.subject().clone(),
-            ManifestSpec::Index(ii) => ii.subject().clone(),
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn set_media_type(&mut self, s: &str) {
-        let mt: MediaType = s.into();
-        match self {
-            ManifestSpec::Image(im) => {
-                im.set_media_type(Some(mt));
-            }
-            ManifestSpec::Index(ii) => {
-                ii.set_media_type(Some(mt));
-            }
-        }
-    }
-
-    pub(crate) fn infer_media_type(&mut self) -> Result<()> {
-        tracing::info!("attempting to infer media type for manifest");
-        match self {
-            ManifestSpec::Image(im) => {
-                // Content other than OCI container images MAY be packaged using the image
-                // manifest. When this is done, the config.mediaType value MUST be set to a value
-                // specific to the artifact type or the empty value. If the config.mediaType is set
-                // to the empty value, the artifactType MUST be defined.
-                if let Some(_artifact_type) = im.artifact_type() {
-                    im.set_media_type(Some(MediaType::ImageManifest));
-                } else if im.config().media_type() == &MediaType::EmptyJSON {
-                    return Err(Error::DistributionSpecError(
-                        DistributionErrorCode::ManifestInvalid,
-                    ));
-                }
-
-                if im.config().media_type() == &MediaType::ImageConfig {
-                    im.set_media_type(Some(MediaType::ImageManifest));
-                    return Ok(());
-                }
-
-                Err(Error::DistributionSpecError(
-                    DistributionErrorCode::ManifestInvalid,
-                ))
-            }
-            ManifestSpec::Index(ii) => {
-                ii.set_media_type(Some(MediaType::ImageIndex));
-                Ok(())
-            }
-        }
-    }
-
-    pub(crate) fn new_manifest(
-        &self,
-        repository_id: Uuid,
-        blob_id: Uuid,
-        dgst: OciDigest,
-        bytes_on_disk: i64,
-    ) -> Manifest {
-        match self {
-            ManifestSpec::Image(img) => Manifest {
-                id: Uuid::new_v4(),
-                repository_id,
-                blob_id,
-                bytes_on_disk,
-                digest: dgst,
-                subject: img.subject().as_ref().map(|v| {
-                    v.digest()
-                        .as_str()
-                        .try_into()
-                        .expect("valid descriptor digest will always product valid OciDigest")
-                }),
-                media_type: img.media_type().clone(),
-                artifact_type: img.artifact_type().clone(),
-            },
-            ManifestSpec::Index(ind) => Manifest {
-                id: Uuid::new_v4(),
-                repository_id,
-                blob_id,
-                bytes_on_disk,
-                digest: dgst,
-                subject: ind.subject().as_ref().map(|v| {
-                    v.digest()
-                        .as_str()
-                        .try_into()
-                        .expect("valid descriptor digest will always product valid OciDigest")
-                }),
-                media_type: ind.media_type().clone(),
-                artifact_type: ind.artifact_type().clone(),
-            },
-        }
     }
 }

@@ -9,10 +9,8 @@ use sqlx::{
 };
 
 use crate::errors::{Error, Result};
-use crate::metadata::{
-    Blob, Blobs, IndexManifests, Layers, Manifest, ManifestRef, Manifests, Repositories,
-    Repository, Tag, Tags,
-};
+use crate::metadata::{Blobs, IndexManifests, Layers, Manifests, Repositories, Tags};
+use crate::registry::{Blob, Manifest, ManifestRef, RepositoryMetadata as Repository, Tag};
 use crate::registry::{Chunk, Chunks, UploadSession, UploadSessions};
 use crate::OciDigest;
 use crate::{DigestState, RegistryDefinition};

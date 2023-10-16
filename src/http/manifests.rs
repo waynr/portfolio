@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::str::FromStr;
+use std::collections::HashMap;
 
 use axum::{
     body::{Bytes, StreamBody},
@@ -13,8 +13,8 @@ use headers::{ContentLength, ContentType};
 use http::StatusCode;
 
 use crate::{
-    metadata::ManifestRef, objects::ObjectStore, registry::manifests::ManifestSpec,
-    registry::repositories::Repository, DistributionErrorCode, Error, Result,
+    objects::ObjectStore, registry::ManifestSpec, registry::repositories::Repository,
+    registry::ManifestRef, DistributionErrorCode, Error, Result,
 };
 
 pub fn router<O: ObjectStore>() -> Router {

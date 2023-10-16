@@ -8,11 +8,11 @@ use uuid::Uuid;
 
 use crate::{
     errors::{Error, Result},
-    metadata::{Blob, PostgresMetadataPool, PostgresMetadataTx},
+    metadata::{PostgresMetadataPool, PostgresMetadataTx},
     objects::ChunkedBody,
     objects::ObjectStore,
     objects::StreamObjectBody,
-    registry::UploadSession,
+    registry::{Blob, UploadSession},
     Digester, DistributionErrorCode, OciDigest,
 };
 
@@ -29,10 +29,7 @@ where
     O: ObjectStore,
 {
     pub fn new(metadata: PostgresMetadataPool, objects: O) -> Self {
-        Self {
-            metadata,
-            objects,
-        }
+        Self { metadata, objects }
     }
 
     pub async fn resume(&self, session: &'b mut UploadSession) -> Result<BlobWriter<'b, O>> {
@@ -82,13 +79,7 @@ where
     }
 
     pub async fn get_blob(&self, key: &OciDigest) -> Result<Option<(Blob, ByteStream)>> {
-        if let Some(blob) = self
-            .metadata
-            .get_conn()
-            .await?
-            .get_blob(key)
-            .await?
-        {
+        if let Some(blob) = self.metadata.get_conn().await?.get_blob(key).await? {
             let body = self.objects.get_blob(&blob.id).await?;
             Ok(Some((blob, body)))
         } else {
@@ -97,22 +88,18 @@ where
     }
 
     pub async fn get_blob_metadata(&self, key: &OciDigest) -> Result<Option<Blob>> {
-        self.metadata
-            .get_conn()
-            .await?
-            .get_blob(key)
-            .await
+        self.metadata.get_conn().await?.get_blob(key).await
     }
 
     pub async fn delete_blob(&mut self, digest: &OciDigest) -> Result<()> {
         let mut tx = self.metadata.get_tx().await?;
 
-        let blob =
-            tx.get_blob(digest)
-                .await?
-                .ok_or(Error::DistributionSpecError(
-                    DistributionErrorCode::BlobUnknown,
-                ))?;
+        let blob = tx
+            .get_blob(digest)
+            .await?
+            .ok_or(Error::DistributionSpecError(
+                DistributionErrorCode::BlobUnknown,
+            ))?;
 
         // TODO: handle the case where the blob is referenced
         tx.delete_blob(&blob.id).await?;
