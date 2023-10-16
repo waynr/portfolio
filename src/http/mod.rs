@@ -72,12 +72,16 @@ pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
     let referrers = referrers::router::<O>();
     let tags = tags::router::<O>();
 
+    let repository = Router::new()
+        .nest("/blobs", blobs)
+        .nest("/manifests", manifests)
+        .nest("/referrers", referrers)
+        .nest("/tags", tags)
+        .route_layer(axum_middleware::from_fn_with_state(portfolio.clone(), auth));
+
     let app = Router::new()
         .route("/v2/", get(version))
-        .nest("/v2/:repository/blobs", blobs)
-        .nest("/v2/:repository/manifests", manifests)
-        .nest("/v2/:repository/referrers", referrers)
-        .nest("/v2/:repository/tags", tags)
+        .nest("/v2/:repository", repository)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(trace::DefaultMakeSpan::new().include_headers(true))
@@ -95,8 +99,7 @@ pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_LENGTH,
             maybe_get_content_length,
-        ))
-        .route_layer(axum_middleware::from_fn_with_state(portfolio.clone(), auth));
+        ));
 
     axum::Server::bind(&"0.0.0.0:13030".parse()?)
         .serve(app.into_make_service())
