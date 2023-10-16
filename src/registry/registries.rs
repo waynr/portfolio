@@ -40,49 +40,25 @@ where
         conn.repository_exists(&self.registry.id, name).await
     }
 
-    pub async fn get_repository(&self, name: &String) -> Result<Repository<O>> {
+    pub async fn get_repository(&self, name: &String) -> Result<Option<Repository<O>>> {
         let mut conn = self.metadata.get_conn().await?;
-        let repository = conn.get_repository(&self.registry.id, name).await?;
+        if let Some(repository) = conn.get_repository(&self.registry.id, name).await? {
+            Ok(Some(Repository {
+                registry: self.clone(),
+                repository,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
 
+    pub async fn insert_repository(&self, name: &String) -> Result<Repository<O>> {
+        let mut conn = self.metadata.get_conn().await?;
+        let repository = conn.insert_repository(&self.registry.id, name).await?;
         Ok(Repository {
             registry: self.clone(),
             repository,
         })
-    }
-
-    pub fn get_blob_store(&self) -> BlobStore<O> {
-        BlobStore::new(self.metadata.clone(), self.objects.clone(), &self.registry)
-    }
-
-    pub async fn new_upload_session(&self) -> Result<UploadSession> {
-        self.metadata.get_conn().await?.new_upload_session().await
-    }
-
-    pub async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<UploadSession> {
-        self.metadata
-            .get_conn()
-            .await?
-            .get_session(session_uuid)
-            .await
-    }
-
-    pub async fn delete_session(&self, session: &UploadSession) -> Result<()> {
-        let mut tx = self.metadata.get_tx().await?;
-
-        tx.delete_chunks(&session.uuid).await?;
-        tx.delete_session(session).await?;
-
-        tx.commit().await?;
-
-        Ok(())
-    }
-
-    pub async fn create_repository(&self, name: &String) -> Result<RepositoryMetadata> {
-        self.metadata
-            .get_conn()
-            .await?
-            .insert_repository(&self.registry.id, name)
-            .await
     }
 }
 
@@ -99,8 +75,16 @@ impl<O> Repository<O>
 where
     O: ObjectStore,
 {
+    pub fn name(&self) -> &str {
+        self.repository.name.as_str()
+    }
+
     pub fn get_manifest_store(&self) -> ManifestStore<O> {
-        let blobstore = self.registry.get_blob_store();
+        let blobstore = BlobStore::new(
+            self.registry.metadata.clone(),
+            self.registry.objects.clone(),
+            &self.registry.registry,
+        );
         ManifestStore::new(blobstore, &self.repository)
     }
 
@@ -116,6 +100,52 @@ where
                 .map(|t| t.name)
                 .collect(),
         })
+    }
+
+    pub fn get_blob_store(&self) -> BlobStore<O> {
+        BlobStore::new(
+            self.registry.metadata.clone(),
+            self.registry.objects.clone(),
+            &self.registry.registry,
+        )
+    }
+
+    pub async fn new_upload_session(&self) -> Result<UploadSession> {
+        self.registry
+            .metadata
+            .get_conn()
+            .await?
+            .new_upload_session()
+            .await
+    }
+
+    pub async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<UploadSession> {
+        self.registry
+            .metadata
+            .get_conn()
+            .await?
+            .get_session(session_uuid)
+            .await
+    }
+
+    pub async fn delete_session(&self, session: &UploadSession) -> Result<()> {
+        let mut tx = self.registry.metadata.get_tx().await?;
+
+        tx.delete_chunks(&session.uuid).await?;
+        tx.delete_session(session).await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub async fn create_repository(&self, name: &String) -> Result<RepositoryMetadata> {
+        self.registry
+            .metadata
+            .get_conn()
+            .await?
+            .insert_repository(&self.registry.registry.id, name)
+            .await
     }
 }
 

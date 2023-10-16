@@ -14,7 +14,7 @@ use http::StatusCode;
 
 use crate::{
     metadata::ManifestRef, objects::ObjectStore, registry::manifests::ManifestSpec,
-    registry::registries::Registry, DistributionErrorCode, Error, Result,
+    registry::registries::Repository, DistributionErrorCode, Error, Result,
 };
 
 pub fn router<O: ObjectStore>() -> Router {
@@ -30,29 +30,14 @@ pub fn router<O: ObjectStore>() -> Router {
 }
 
 async fn head_manifest<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
+    Extension(repository): Extension<Repository<O>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
     let manifest_ref = ManifestRef::from_str(
         path_params
             .get("reference")
             .ok_or_else(|| Error::MissingQueryParameter("reference"))?,
     )?;
-
-    let repository = match registry.get_repository(repo_name).await {
-        Err(e) => {
-            tracing::warn!("error retrieving repository: {e:?}");
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::NameUnknown,
-            ));
-        }
-        Ok(r) => r,
-    };
 
     let mstore = repository.get_manifest_store();
     let manifest = mstore.head_manifest(&manifest_ref).await?;
@@ -77,29 +62,14 @@ async fn head_manifest<O: ObjectStore>(
 }
 
 async fn get_manifest<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
+    Extension(repository): Extension<Repository<O>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
     let manifest_ref = ManifestRef::from_str(
         path_params
             .get("reference")
             .ok_or_else(|| Error::MissingQueryParameter("reference"))?,
     )?;
-
-    let repository = match registry.get_repository(repo_name).await {
-        Err(e) => {
-            tracing::warn!("error retrieving repository: {e:?}");
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::NameUnknown,
-            ));
-        }
-        Ok(r) => r,
-    };
 
     let mstore = repository.get_manifest_store();
     let (manifest, body) = if let Some((m, b)) = mstore.get_manifest(&manifest_ref).await? {
@@ -132,31 +102,16 @@ async fn get_manifest<O: ObjectStore>(
 
 /// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests
 async fn put_manifest<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
+    Extension(repository): Extension<Repository<O>>,
     content_type: Option<TypedHeader<ContentType>>,
     content_length: Option<TypedHeader<ContentLength>>,
     Path(path_params): Path<HashMap<String, String>>,
     bytes: Bytes,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
     let mref = path_params
         .get("reference")
         .ok_or_else(|| Error::MissingPathParameter("reference"))?;
     let manifest_ref = ManifestRef::from_str(mref)?;
-
-    let repository = match registry.get_repository(repo_name).await {
-        Err(e) => {
-            tracing::warn!("error retrieving repository: {e:?}");
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::NameUnknown,
-            ));
-        }
-        Ok(r) => r,
-    };
 
     // we need to deserialize the request body into a type we can use to determine how to represent
     // it in the database, but according to distribution spec we also need to store the exact byte
@@ -212,7 +167,7 @@ async fn put_manifest<O: ObjectStore>(
     let mut mstore = repository.get_manifest_store();
     let calculated_digest = mstore.upload(&manifest_ref, &manifest, bytes).await?;
 
-    let location = format!("/v2/{}/manifests/{}", repo_name, mref);
+    let location = format!("/v2/{}/manifests/{}", repository.name(), mref);
     let mut headers = HeaderMap::new();
     headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
     headers.insert(
@@ -231,28 +186,13 @@ async fn put_manifest<O: ObjectStore>(
 }
 
 async fn delete_manifest<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
+    Extension(repository): Extension<Repository<O>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
     let mref = path_params
         .get("reference")
         .ok_or_else(|| Error::MissingPathParameter("reference"))?;
     let manifest_ref = ManifestRef::from_str(mref)?;
-
-    let repository = match registry.get_repository(repo_name).await {
-        Err(e) => {
-            tracing::warn!("error retrieving repository: {e:?}");
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::NameUnknown,
-            ));
-        }
-        Ok(r) => r,
-    };
 
     let mut mstore = repository.get_manifest_store();
     match mstore.delete(&manifest_ref).await {

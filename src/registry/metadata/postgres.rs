@@ -109,7 +109,7 @@ impl Queries {
         executor: &mut PgConnection,
         registry: &Uuid,
         repository: &String,
-    ) -> Result<Repository> {
+    ) -> Result<Option<Repository>> {
         let (sql, values) = Query::select()
             .from(Repositories::Table)
             .columns([
@@ -125,7 +125,7 @@ impl Queries {
             .and_where(Expr::col((Repositories::Table, Repositories::Name)).eq(repository))
             .build_sqlx(PostgresQueryBuilder);
         Ok(sqlx::query_as_with::<_, Repository, _>(&sql, values)
-            .fetch_one(executor)
+            .fetch_optional(executor)
             .await?)
     }
 
@@ -731,7 +731,7 @@ impl PostgresMetadataConn {
         &mut self,
         registry: &Uuid,
         repository: &String,
-    ) -> Result<Repository> {
+    ) -> Result<Option<Repository>> {
         Queries::get_repository(&mut *self.conn, registry, repository).await
     }
 
@@ -990,8 +990,8 @@ impl PostgresMetadataConn {
                     .get_repository(&registry.id, &repository_config.name)
                     .await
                 {
-                    Ok(r) => r,
-                    Err(Error::SQLXError(sqlx::Error::RowNotFound)) => {
+                    Ok(Some(r)) => r,
+                    Ok(None) => {
                         tracing::info!(
                             "static repository '{}' for registry '{}' not found, inserting into DB",
                             repository_config.name,

@@ -1,8 +1,9 @@
 use serde::{de, Deserialize, Deserializer};
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::header::{self, HeaderMap, HeaderName, HeaderValue},
     http::{Request, StatusCode},
     middleware::{self as axum_middleware, Next},
@@ -22,21 +23,45 @@ mod manifests;
 mod referrers;
 mod tags;
 
-use crate::errors::Result;
+use crate::errors::{DistributionErrorCode, Error, Result};
 use crate::objects::ObjectStore;
 use crate::Portfolio;
 
 async fn auth<B, O: ObjectStore>(
     State(portfolio): State<Portfolio<O>>,
+    Path(path_params): Path<HashMap<String, String>>,
     mut req: Request<B>,
     next: Next<B>,
-) -> std::result::Result<Response, StatusCode> {
-    // TODO: implement actual authentication
+) -> Result<Response> {
+    let repo_name = match path_params.get("repository") {
+        Some(s) => s,
+        None => return Err(Error::MissingPathParameter("repository")),
+    };
+
     let registry = match portfolio.get_registry("meow").await {
-        Err(_) => return Err(StatusCode::UNAUTHORIZED),
+        Err(_) => {
+            return Err(Error::DistributionSpecError(
+                DistributionErrorCode::Unauthorized,
+            ))
+        }
         Ok(r) => r,
     };
+
+    // NOTE/TODO: for now we automatically insert a repository if it's not already there but in the
+    // future we need to implement some kind of limit
+    let repository = match registry.get_repository(repo_name).await {
+        Err(e) => {
+            tracing::warn!("error retrieving repository: {e:?}");
+            return Err(Error::DistributionSpecError(
+                DistributionErrorCode::NameUnknown,
+            ));
+        }
+        Ok(Some(r)) => r,
+        Ok(None) => registry.insert_repository(repo_name).await?,
+    };
+
     req.extensions_mut().insert(registry);
+    req.extensions_mut().insert(repository);
 
     Ok(next.run(req).await)
 }

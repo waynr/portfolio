@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::{
     http::headers::{ContentRange, Range},
     objects::ObjectStore,
-    registry::registries::Registry,
+    registry::registries::Repository,
     registry::UploadSession,
     DistributionErrorCode, Error, OciDigest, Result,
 };
@@ -43,26 +43,15 @@ pub fn router<O: ObjectStore>() -> Router {
 }
 
 async fn get_blob<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
+    Extension(repository): Extension<Repository<O>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
-    if !registry.repository_exists(repo_name).await? {
-        return Err(Error::DistributionSpecError(
-            DistributionErrorCode::NameUnknown,
-        ));
-    }
-
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
     let oci_digest: OciDigest = digest.try_into()?;
 
-    let blob_store = registry.get_blob_store();
+    let blob_store = repository.get_blob_store();
 
     if let Some((blob, body)) = blob_store.get_blob(&oci_digest).await? {
         let mut headers = HeaderMap::new();
@@ -83,26 +72,15 @@ async fn get_blob<O: ObjectStore>(
 }
 
 async fn head_blob<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
+    Extension(repository): Extension<Repository<O>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
-    if !registry.repository_exists(repo_name).await? {
-        return Err(Error::DistributionSpecError(
-            DistributionErrorCode::NameUnknown,
-        ));
-    }
-
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
     let oci_digest: OciDigest = digest.try_into()?;
 
-    let blob_store = registry.get_blob_store();
+    let blob_store = repository.get_blob_store();
 
     if let Some(blob) = blob_store.get_blob_metadata(&oci_digest).await? {
         let mut headers = HeaderMap::new();
@@ -130,21 +108,11 @@ async fn head_blob<O: ObjectStore>(
 //   * must include 'ContentLength' query param
 // * initiate upload session for POST-PUT or POST-PATCH-PUT sequence
 async fn uploads_post<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
-    Path(path_params): Path<HashMap<String, String>>,
+    Extension(repository): Extension<Repository<O>>,
     content_length: Option<TypedHeader<ContentLength>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
-    if !registry.repository_exists(repo_name).await? {
-        registry.create_repository(repo_name).await?;
-    }
-
     let mount = query_params.get("mount");
     let from = query_params.get("from");
     match (mount, from) {
@@ -152,11 +120,11 @@ async fn uploads_post<O: ObjectStore>(
             let mut headers = HeaderMap::new();
             let oci_digest: OciDigest = digest.as_str().try_into()?;
 
-            let store = registry.get_blob_store();
+            let store = repository.get_blob_store();
             if !store.get_blob_metadata(&oci_digest).await?.is_some() {
-                let session: UploadSession = registry.new_upload_session().await?;
+                let session: UploadSession = repository.new_upload_session().await?;
 
-                let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);
+                let location = format!("/v2/{}/blobs/uploads/{}", repository.name(), session.uuid,);
                 let mut headers = HeaderMap::new();
                 headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
                 headers.insert(
@@ -166,7 +134,7 @@ async fn uploads_post<O: ObjectStore>(
                 return Ok((StatusCode::ACCEPTED, headers, "").into_response());
             }
 
-            let location = format!("/v2/{}/blobs/{}", &repo_name, digest);
+            let location = format!("/v2/{}/blobs/{}", repository.name(), digest);
             headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
             return Ok((StatusCode::CREATED, headers, "").into_response());
         }
@@ -198,9 +166,9 @@ async fn uploads_post<O: ObjectStore>(
                     }
                 }
             }
-            let session: UploadSession = registry.new_upload_session().await?;
+            let session: UploadSession = repository.new_upload_session().await?;
 
-            let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session.uuid,);
+            let location = format!("/v2/{}/blobs/uploads/{}", repository.name(), session.uuid,);
             let mut headers = HeaderMap::new();
             headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
             headers.insert(
@@ -212,12 +180,12 @@ async fn uploads_post<O: ObjectStore>(
         Some(dgst) => {
             if let Some(TypedHeader(length)) = content_length {
                 let oci_digest: OciDigest = dgst.as_str().try_into()?;
-                let mut store = registry.get_blob_store();
+                let mut store = repository.get_blob_store();
                 store
                     .upload(&oci_digest, length.0, request.into_body())
                     .await?;
 
-                let location = format!("/v2/{}/blobs/{}", &repo_name, dgst);
+                let location = format!("/v2/{}/blobs/{}", repository.name(), dgst);
                 let mut headers = HeaderMap::new();
                 headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
                 Ok((StatusCode::CREATED, headers, "").into_response())
@@ -243,7 +211,7 @@ async fn uploads_post<O: ObjectStore>(
 //   chunk)
 //
 async fn uploads_put<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
+    Extension(repository): Extension<Repository<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
@@ -251,17 +219,6 @@ async fn uploads_put<O: ObjectStore>(
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
-    if !registry.repository_exists(repo_name).await? {
-        return Err(Error::DistributionSpecError(
-            DistributionErrorCode::NameUnknown,
-        ));
-    }
-
     let digest: &str = query_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
@@ -273,7 +230,7 @@ async fn uploads_put<O: ObjectStore>(
     let session_uuid = Uuid::parse_str(session_uuid_str)?;
 
     // retrieve the session or fail if it doesn't exist
-    let mut session = registry
+    let mut session = repository
         .get_upload_session(&session_uuid)
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
@@ -283,7 +240,7 @@ async fn uploads_put<O: ObjectStore>(
     let response = match session.upload_id {
         // POST-PATCH-PUT
         Some(_) => {
-            let store = registry.get_blob_store();
+            let store = repository.get_blob_store();
             if let Some(TypedHeader(content_range)) = content_range {
                 session.validate_range(&content_range)?;
             }
@@ -308,7 +265,7 @@ async fn uploads_put<O: ObjectStore>(
                 writer.finalize(&oci_digest).await?;
             }
 
-            let location = format!("/v2/{}/blobs/{}", repo_name, digest);
+            let location = format!("/v2/{}/blobs/{}", repository.name(), digest);
             let mut headers = HeaderMap::new();
             headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
             headers.insert(
@@ -320,12 +277,12 @@ async fn uploads_put<O: ObjectStore>(
         // POST-PUT
         None => match (content_type, content_length) {
             (Some(TypedHeader(_content_type)), Some(TypedHeader(content_length))) => {
-                let mut store = registry.get_blob_store();
+                let mut store = repository.get_blob_store();
                 store
                     .upload(&oci_digest, content_length.0, request.into_body())
                     .await?;
 
-                let location = format!("/v2/{}/blobs/{}", repo_name, digest);
+                let location = format!("/v2/{}/blobs/{}", repository.name(), digest);
                 let mut headers = HeaderMap::new();
                 headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
                 headers.insert(
@@ -342,7 +299,7 @@ async fn uploads_put<O: ObjectStore>(
         },
     };
 
-    match registry.delete_session(&session).await {
+    match repository.delete_session(&session).await {
         Ok(_) => (),
         Err(e) => {
             tracing::warn!("failed to delete session: {e:?}");
@@ -353,30 +310,19 @@ async fn uploads_put<O: ObjectStore>(
 }
 
 async fn uploads_patch<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
+    Extension(repository): Extension<Repository<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_range: Option<TypedHeader<ContentRange>>,
     request: Request<Body>,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
-    if !registry.repository_exists(repo_name).await? {
-        return Err(Error::DistributionSpecError(
-            DistributionErrorCode::NameUnknown,
-        ));
-    }
-
     let session_uuid_str = path_params
         .get("session_uuid")
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
     let session_uuid = Uuid::parse_str(session_uuid_str)?;
 
     // retrieve the session or fail if it doesn't exist
-    let mut session = registry
+    let mut session = repository
         .get_upload_session(&session_uuid)
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
@@ -385,7 +331,7 @@ async fn uploads_patch<O: ObjectStore>(
         session.validate_range(&content_range)?;
     }
 
-    let store = registry.get_blob_store();
+    let store = repository.get_blob_store();
     let mut writer = store.resume(&mut session).await?;
     if let Some(TypedHeader(content_length)) = content_length {
         writer.write(content_length.0, request.into_body()).await?;
@@ -398,7 +344,7 @@ async fn uploads_patch<O: ObjectStore>(
 
     let mut headers = HeaderMap::new();
 
-    let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session_uuid);
+    let location = format!("/v2/{}/blobs/uploads/{}", repository.name(), session_uuid);
     headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
     headers.insert(
         HeaderName::from_str("docker-upload-uuid")?,
@@ -416,28 +362,23 @@ async fn uploads_patch<O: ObjectStore>(
 }
 
 async fn uploads_get<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
+    Extension(repository): Extension<Repository<O>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
     let session_uuid_str = path_params
         .get("session_uuid")
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
     let session_uuid = Uuid::parse_str(session_uuid_str)?;
 
     // retrieve the session or fail if it doesn't exist
-    let session = registry
+    let session = repository
         .get_upload_session(&session_uuid)
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
     let mut headers = HeaderMap::new();
 
-    let location = format!("/v2/{}/blobs/uploads/{}", repo_name, session_uuid);
+    let location = format!("/v2/{}/blobs/uploads/{}", repository.name(), session_uuid);
     headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
     headers.insert(
         HeaderName::from_str("docker-upload-uuid")?,
@@ -455,26 +396,15 @@ async fn uploads_get<O: ObjectStore>(
 }
 
 async fn delete_blob<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
+    Extension(repository): Extension<Repository<O>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
-    if !registry.repository_exists(repo_name).await? {
-        return Err(Error::DistributionSpecError(
-            DistributionErrorCode::NameUnknown,
-        ));
-    }
-
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingPathParameter("digest"))?;
     let oci_digest: OciDigest = digest.try_into()?;
 
-    let mut store = registry.get_blob_store();
+    let mut store = repository.get_blob_store();
 
     store.delete_blob(&oci_digest).await?;
 

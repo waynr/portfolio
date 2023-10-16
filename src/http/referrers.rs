@@ -12,8 +12,8 @@ use oci_spec::image::MediaType;
 use serde::Deserialize;
 
 use crate::{
-    http::empty_string_as_none, objects::ObjectStore, registry::registries::Registry,
-    DistributionErrorCode, Error, OciDigest, Result,
+    http::empty_string_as_none, objects::ObjectStore, registry::registries::Repository, Error,
+    OciDigest, Result,
 };
 
 pub fn router<O: ObjectStore>() -> Router {
@@ -27,29 +27,14 @@ struct GetParams {
 }
 
 async fn get_referrers<O: ObjectStore>(
-    Extension(registry): Extension<Registry<O>>,
+    Extension(repository): Extension<Repository<O>>,
     Path(path_params): Path<HashMap<String, String>>,
     Query(params): Query<GetParams>,
 ) -> Result<Response> {
-    let repo_name = match path_params.get("repository") {
-        Some(s) => s,
-        None => return Err(Error::MissingPathParameter("repository")),
-    };
-
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
     let oci_digest: OciDigest = digest.try_into()?;
-
-    let repository = match registry.get_repository(repo_name).await {
-        Err(e) => {
-            tracing::warn!("error retrieving repository: {e:?}");
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::NameUnknown,
-            ));
-        }
-        Ok(r) => r,
-    };
 
     let mstore = repository.get_manifest_store();
     let image_index = mstore
