@@ -157,18 +157,23 @@ impl Queries {
         let (sql, values) = Query::select()
             .from(Manifests::Table)
             .columns([
-                Manifests::Id,
-                Manifests::RegistryId,
-                Manifests::RepositoryId,
-                Manifests::BlobId,
-                Manifests::MediaType,
-                Manifests::ArtifactType,
-                Manifests::Digest,
-                Manifests::Subject,
+                (Manifests::Table, Manifests::Id),
+                (Manifests::Table, Manifests::RegistryId),
+                (Manifests::Table, Manifests::RepositoryId),
+                (Manifests::Table, Manifests::BlobId),
+                (Manifests::Table, Manifests::MediaType),
+                (Manifests::Table, Manifests::ArtifactType),
+                (Manifests::Table, Manifests::Digest),
+                (Manifests::Table, Manifests::Subject),
             ])
-            .and_where(Expr::col(Manifests::RepositoryId).eq(*repository_id))
-            .and_where(Expr::col(Manifests::RegistryId).eq(*registry_id))
-            .and_where(Expr::col(Manifests::Digest).is_in(digests))
+            .column((Blobs::Table, Blobs::BytesOnDisk))
+            .left_join(
+                Blobs::Table,
+                Expr::col((Manifests::Table, Manifests::BlobId)).equals((Blobs::Table, Blobs::Id)),
+            )
+            .and_where(Expr::col((Manifests::Table, Manifests::RepositoryId)).eq(*repository_id))
+            .and_where(Expr::col((Manifests::Table, Manifests::RegistryId)).eq(*registry_id))
+            .and_where(Expr::col((Manifests::Table, Manifests::Digest)).is_in(digests))
             .build_sqlx(PostgresQueryBuilder);
 
         Ok(sqlx::query_as_with::<_, Manifest, _>(&sql, values)
@@ -201,11 +206,13 @@ impl Queries {
                 Expr::col((Manifests::Table, Manifests::BlobId)).equals((Blobs::Table, Blobs::Id)),
             )
             .and_where(Expr::col((Manifests::Table, Manifests::RepositoryId)).eq(*repository_id))
-            .and_where(Expr::col(Manifests::RegistryId).eq(*registry_id));
+            .and_where(Expr::col((Manifests::Table, Manifests::RegistryId)).eq(*registry_id));
 
         match manifest_ref {
             ManifestRef::Digest(d) => {
-                builder.and_where(Expr::col(Manifests::Digest).eq(String::from(d)));
+                builder.and_where(
+                    Expr::col((Manifests::Table, Manifests::Digest)).eq(String::from(d)),
+                );
             }
             ManifestRef::Tag(t) => {
                 builder
@@ -535,22 +542,29 @@ impl Queries {
         builder
             .from(Manifests::Table)
             .columns([
-                Manifests::Id,
-                Manifests::RegistryId,
-                Manifests::RepositoryId,
-                Manifests::BlobId,
-                Manifests::MediaType,
-                Manifests::ArtifactType,
-                Manifests::Digest,
-                Manifests::Subject,
+                (Manifests::Table, Manifests::Id),
+                (Manifests::Table, Manifests::RegistryId),
+                (Manifests::Table, Manifests::RepositoryId),
+                (Manifests::Table, Manifests::BlobId),
+                (Manifests::Table, Manifests::MediaType),
+                (Manifests::Table, Manifests::ArtifactType),
+                (Manifests::Table, Manifests::Digest),
+                (Manifests::Table, Manifests::Subject),
             ])
+            .column((Blobs::Table, Blobs::BytesOnDisk))
+            .left_join(
+                Blobs::Table,
+                Expr::col((Manifests::Table, Manifests::BlobId)).equals((Blobs::Table, Blobs::Id)),
+            )
             .order_by(Manifests::Digest, Order::Asc)
-            .and_where(Expr::col(Manifests::RepositoryId).eq(*repository_id))
-            .and_where(Expr::col(Manifests::Subject).eq(String::from(subject)))
-            .and_where(Expr::col(Manifests::RegistryId).eq(*registry_id));
+            .and_where(Expr::col((Manifests::Table, Manifests::RepositoryId)).eq(*repository_id))
+            .and_where(Expr::col((Manifests::Table, Manifests::RegistryId)).eq(*registry_id))
+            .and_where(Expr::col((Manifests::Table, Manifests::Subject)).eq(String::from(subject)));
 
         if let Some(artifact_type) = artifact_type {
-            builder.and_where(Expr::col(Manifests::ArtifactType).eq(artifact_type));
+            builder.and_where(
+                Expr::col((Manifests::Table, Manifests::ArtifactType)).eq(artifact_type),
+            );
         }
 
         let (sql, values) = builder.build_sqlx(PostgresQueryBuilder);
