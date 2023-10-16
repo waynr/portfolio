@@ -20,7 +20,7 @@ mod sha512;
 pub mod registry;
 pub use registry::metadata;
 pub use registry::objects;
-pub use registry::registries;
+pub use registry::repositories;
 
 mod portfolio;
 pub use portfolio::Portfolio;

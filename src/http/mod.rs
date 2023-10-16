@@ -38,18 +38,9 @@ async fn auth<B, O: ObjectStore>(
         None => return Err(Error::MissingPathParameter("repository")),
     };
 
-    let registry = match portfolio.get_registry("meow").await {
-        Err(_) => {
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::Unauthorized,
-            ))
-        }
-        Ok(r) => r,
-    };
-
     // NOTE/TODO: for now we automatically insert a repository if it's not already there but in the
     // future we need to implement some kind of limit
-    let repository = match registry.get_repository(repo_name).await {
+    let repository = match portfolio.get_repository(repo_name).await {
         Err(e) => {
             tracing::warn!("error retrieving repository: {e:?}");
             return Err(Error::DistributionSpecError(
@@ -57,10 +48,9 @@ async fn auth<B, O: ObjectStore>(
             ));
         }
         Ok(Some(r)) => r,
-        Ok(None) => registry.insert_repository(repo_name).await?,
+        Ok(None) => portfolio.insert_repository(repo_name).await?,
     };
 
-    req.extensions_mut().insert(registry);
     req.extensions_mut().insert(repository);
 
     Ok(next.run(req).await)

@@ -1,41 +1,29 @@
--- a "registry" is a top-level store of container images, eg "meow" in
--- "registry.digitalocean.com/meow/nginx:latest"
-CREATE TABLE registries (
-	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	name VARCHAR(128) UNIQUE NOT NULL
-);
-
 -- a "repository" is the name of an image, eg "nginx" in
 -- "registry.digitalocean.com/meow/nginx:latest"
 CREATE TABLE repositories (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	registry_id UUID NOT NULL REFERENCES registries (id),
-	name VARCHAR(128) NOT NULL,
-	UNIQUE (registry_id, name)
+	name VARCHAR(128) UNIQUE NOT NULL
 );
 
 -- a blob is a chunk of data, most likely either a manifest config file or an
 -- image layer
 CREATE TABLE blobs (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-	digest VARCHAR(256) NOT NULL,
-	registry_id UUID NOT NULL REFERENCES registries (id),
-	bytes_on_disk BIGINT NOT NULL,
-	UNIQUE (digest, registry_id)
+	digest VARCHAR(256) UNIQUE NOT NULL,
+	bytes_on_disk BIGINT NOT NULL
 );
 
 -- a manifest is an OCI image manifest:
 -- https://github.com/opencontainers/image-spec/blob/main/manifest.md
 CREATE TABLE manifests (
 	id UUID PRIMARY KEY,
-	registry_id UUID NOT NULL REFERENCES registries (id),
 	repository_id UUID NOT NULL REFERENCES repositories (id),
 	blob_id UUID NOT NULL REFERENCEs blobs(id),
 	media_type VARCHAR(512) DEFAULT NULL,
 	artifact_type VARCHAR(512) DEFAULT NULL,
 	digest VARCHAR(256) NOT NULL,
 	subject VARCHAR(256) DEFAULT NULL,
-	UNIQUE (registry_id, repository_id, digest)
+	UNIQUE (repository_id, digest)
 );
 
 -- an index_manifest is a reference from a parent manifest to a child manifest

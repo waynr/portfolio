@@ -12,7 +12,7 @@ use oci_spec::image::MediaType;
 use serde::Deserialize;
 
 use crate::{
-    http::empty_string_as_none, objects::ObjectStore, registry::registries::Repository, Error,
+    http::empty_string_as_none, objects::ObjectStore, registry::repositories::Repository, Error,
     OciDigest, Result,
 };
 

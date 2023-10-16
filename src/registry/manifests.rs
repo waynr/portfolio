@@ -15,19 +15,19 @@ use crate::{
     registry::BlobStore,
 };
 
-pub struct ManifestStore<'b, 'r, O>
+pub struct ManifestStore<'r, O>
 where
     O: ObjectStore,
 {
-    blobstore: BlobStore<'b, O>,
+    blobstore: BlobStore<O>,
     repository: &'r Repository,
 }
 
-impl<'b, 'r, O> ManifestStore<'b, 'r, O>
+impl<'r, O> ManifestStore<'r, O>
 where
     O: ObjectStore,
 {
-    pub fn new(blobstore: BlobStore<'b, O>, repository: &'r Repository) -> Self {
+    pub fn new(blobstore: BlobStore<O>, repository: &'r Repository) -> Self {
         Self {
             blobstore,
             repository,
@@ -37,7 +37,7 @@ where
     pub async fn head_manifest(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn
-            .get_manifest(&self.repository.registry_id, &self.repository.id, key)
+            .get_manifest(&self.repository.id, key)
             .await?
         {
             Ok(Some(manifest))
@@ -49,7 +49,7 @@ where
     pub async fn get_manifest(&self, key: &ManifestRef) -> Result<Option<(Manifest, ByteStream)>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn
-            .get_manifest(&self.repository.registry_id, &self.repository.id, key)
+            .get_manifest(&self.repository.id, key)
             .await?
         {
             let body = self.blobstore.objects.get_blob(&manifest.blob_id).await?;
@@ -62,7 +62,7 @@ where
     pub async fn manifest_exists(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn
-            .get_manifest(&self.repository.registry_id, &self.repository.id, key)
+            .get_manifest(&self.repository.id, key)
             .await?
         {
             Ok(Some(manifest))
@@ -89,7 +89,6 @@ where
 
         if let Some(m) = tx
             .get_manifest(
-                &self.repository.registry_id,
                 &self.repository.id,
                 &ManifestRef::Digest(calculated_digest.clone()),
             )
@@ -99,7 +98,6 @@ where
         }
 
         let manifest: Manifest = spec.new_manifest(
-            self.repository.registry_id,
             self.repository.id,
             blob_uuid,
             calculated_digest.clone(),
@@ -113,14 +111,15 @@ where
 
                 // first ensure all referenced layers exist as blobs
                 let digests = layers.iter().map(|desc| desc.digest().as_str()).collect();
-                let blobs = tx.get_blobs(&self.repository.registry_id, &digests).await?;
+                let blobs = tx.get_blobs(&digests).await?;
 
-                let mut hs = HashSet::new();
+                let mut hs: HashSet<String> = HashSet::new();
                 for blob in &blobs {
-                    hs.insert(blob.digest.as_str());
+                    hs.insert((&blob.digest).into());
                 }
                 for digest in &digests {
                     if !hs.contains(*digest) {
+                        tracing::warn!("blob for layer {digest} not found in repository");
                         return Err(Error::DistributionSpecError(
                             DistributionErrorCode::BlobUnknown,
                         ));
@@ -141,7 +140,7 @@ where
                     .map(|desc| desc.digest().as_str())
                     .collect();
                 let manifests = tx
-                    .get_manifests(&self.repository.registry_id, &self.repository.id, &digests)
+                    .get_manifests(&self.repository.id, &digests)
                     .await?;
 
                 let mut hs: HashSet<String> = HashSet::new();
@@ -150,6 +149,7 @@ where
                 }
                 for digest in &digests {
                     if !hs.contains(*digest) {
+                        tracing::warn!("blob for manifest {digest} not found in repository");
                         return Err(Error::DistributionSpecError(
                             DistributionErrorCode::ManifestUnknown,
                         ));
@@ -180,7 +180,7 @@ where
         let mut tx = self.blobstore.metadata.get_tx().await?;
 
         let manifest = tx
-            .get_manifest(&self.repository.registry_id, &self.repository.id, key)
+            .get_manifest(&self.repository.id, key)
             .await?
             .ok_or(Error::DistributionSpecError(
                 DistributionErrorCode::ManifestUnknown,
@@ -227,7 +227,6 @@ where
 
         let manifests = conn
             .get_referrers(
-                &self.repository.registry_id,
                 &self.repository.id,
                 subject,
                 &artifact_type,
@@ -390,7 +389,6 @@ impl ManifestSpec {
 
     pub(crate) fn new_manifest(
         &self,
-        registry_id: Uuid,
         repository_id: Uuid,
         blob_id: Uuid,
         dgst: OciDigest,
@@ -399,7 +397,6 @@ impl ManifestSpec {
         match self {
             ManifestSpec::Image(img) => Manifest {
                 id: Uuid::new_v4(),
-                registry_id,
                 repository_id,
                 blob_id,
                 bytes_on_disk,
@@ -415,7 +412,6 @@ impl ManifestSpec {
             },
             ManifestSpec::Index(ind) => Manifest {
                 id: Uuid::new_v4(),
-                registry_id,
                 repository_id,
                 blob_id,
                 bytes_on_disk,

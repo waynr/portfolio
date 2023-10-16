@@ -10,8 +10,8 @@ use sqlx::{
 
 use crate::errors::{Error, Result};
 use crate::metadata::{
-    Blob, Blobs, IndexManifests, Layers, Manifest, ManifestRef, Manifests, Registries, Registry,
-    Repositories, Repository, Tag, Tags,
+    Blob, Blobs, IndexManifests, Layers, Manifest, ManifestRef, Manifests, Repositories,
+    Repository, Tag, Tags,
 };
 use crate::registry::{Chunk, Chunks, UploadSession, UploadSessions};
 use crate::OciDigest;
@@ -59,45 +59,12 @@ pub struct PostgresMetadataConn {
 struct Queries {}
 
 impl Queries {
-    pub async fn insert_registry(executor: &mut PgConnection, name: &String) -> Result<Registry> {
-        let (sql, values) = Query::insert()
-            .into_table(Registries::Table)
-            .columns([Registries::Name])
-            .values([name.into()])?
-            .returning(Query::returning().columns([Registries::Id, Registries::Name]))
-            .build_sqlx(PostgresQueryBuilder);
-
-        Ok(sqlx::query_as_with::<_, Registry, _>(&sql, values)
-            .fetch_one(executor)
-            .await?)
-    }
-
-    pub async fn get_registry(executor: &mut PgConnection, name: &str) -> Result<Registry> {
-        let (sql, values) = Query::select()
-            .from(Registries::Table)
-            .columns([Registries::Id, Registries::Name])
-            .and_where(Expr::col(Registries::Name).eq(name))
-            .build_sqlx(PostgresQueryBuilder);
-
-        Ok(sqlx::query_as_with::<_, Registry, _>(&sql, values)
-            .fetch_one(executor)
-            .await?)
-    }
-
-    pub async fn insert_repository(
-        executor: &mut PgConnection,
-        registry_id: &Uuid,
-        name: &String,
-    ) -> Result<Repository> {
+    pub async fn insert_repository(executor: &mut PgConnection, name: &str) -> Result<Repository> {
         let (sql, values) = Query::insert()
             .into_table(Repositories::Table)
-            .columns([Repositories::Name, Repositories::RegistryId])
-            .values([Value::from(name).into(), Value::from(*registry_id).into()])?
-            .returning(Query::returning().columns([
-                Repositories::Id,
-                Repositories::Name,
-                Repositories::RegistryId,
-            ]))
+            .columns([Repositories::Name])
+            .values([Value::from(name).into()])?
+            .returning(Query::returning().columns([Repositories::Id, Repositories::Name]))
             .build_sqlx(PostgresQueryBuilder);
 
         Ok(sqlx::query_as_with::<_, Repository, _>(&sql, values)
@@ -107,21 +74,14 @@ impl Queries {
 
     pub async fn get_repository(
         executor: &mut PgConnection,
-        registry: &Uuid,
-        repository: &String,
+        repository: &str,
     ) -> Result<Option<Repository>> {
         let (sql, values) = Query::select()
             .from(Repositories::Table)
             .columns([
                 (Repositories::Table, Repositories::Id),
                 (Repositories::Table, Repositories::Name),
-                (Repositories::Table, Repositories::RegistryId),
             ])
-            .left_join(
-                Registries::Table,
-                Expr::col((Registries::Table, Registries::Id)).equals(Repositories::RegistryId),
-            )
-            .and_where(Expr::col((Registries::Table, Registries::Id)).eq(*registry))
             .and_where(Expr::col((Repositories::Table, Repositories::Name)).eq(repository))
             .build_sqlx(PostgresQueryBuilder);
         Ok(sqlx::query_as_with::<_, Repository, _>(&sql, values)
@@ -129,18 +89,13 @@ impl Queries {
             .await?)
     }
 
-    pub async fn repository_exists(
-        executor: &mut PgConnection,
-        registry_id: &Uuid,
-        name: &String,
-    ) -> Result<bool> {
+    pub async fn repository_exists(executor: &mut PgConnection, name: &str) -> Result<bool> {
         let (sql, values) = Query::select()
             .expr_as(
                 Expr::exists(
                     Query::select()
                         .from(Repositories::Table)
                         .column(Repositories::Id)
-                        .and_where(Expr::col(Repositories::RegistryId).eq(*registry_id))
                         .and_where(Expr::col(Repositories::Name).eq(name))
                         .to_owned(),
                 ),
@@ -153,18 +108,13 @@ impl Queries {
     }
     pub async fn insert_blob(
         executor: &mut PgConnection,
-        registry_id: &Uuid,
         digest: &OciDigest,
         bytes_on_disk: i64,
     ) -> Result<Uuid> {
         let (sql, values) = Query::insert()
             .into_table(Blobs::Table)
-            .columns([Blobs::Digest, Blobs::RegistryId, Blobs::BytesOnDisk])
-            .values([
-                String::from(digest).into(),
-                (*registry_id).into(),
-                bytes_on_disk.into(),
-            ])?
+            .columns([Blobs::Digest, Blobs::BytesOnDisk])
+            .values([String::from(digest).into(), bytes_on_disk.into()])?
             .returning_col(Blobs::Id)
             .build_sqlx(PostgresQueryBuilder);
 
@@ -172,20 +122,10 @@ impl Queries {
         Ok(row.try_get("id")?)
     }
 
-    pub async fn get_blob(
-        executor: &mut PgConnection,
-        registry_id: &Uuid,
-        digest: &OciDigest,
-    ) -> Result<Option<Blob>> {
+    pub async fn get_blob(executor: &mut PgConnection, digest: &OciDigest) -> Result<Option<Blob>> {
         let (sql, values) = Query::select()
             .from(Blobs::Table)
-            .columns([
-                Blobs::Id,
-                Blobs::Digest,
-                Blobs::RegistryId,
-                Blobs::BytesOnDisk,
-            ])
-            .and_where(Expr::col(Blobs::RegistryId).eq(*registry_id))
+            .columns([Blobs::Id, Blobs::Digest, Blobs::BytesOnDisk])
             // TODO: impl Value for OciDigest
             .and_where(Expr::col(Blobs::Digest).eq(String::from(digest)))
             .build_sqlx(PostgresQueryBuilder);
@@ -195,21 +135,11 @@ impl Queries {
             .await?)
     }
 
-    pub async fn get_blobs(
-        executor: &mut PgConnection,
-        registry_id: &Uuid,
-        digests: &Vec<&str>,
-    ) -> Result<Vec<Blob>> {
+    pub async fn get_blobs(executor: &mut PgConnection, digests: &Vec<&str>) -> Result<Vec<Blob>> {
         let digests = digests.iter().map(Clone::clone);
         let (sql, values) = Query::select()
             .from(Blobs::Table)
-            .columns([
-                Blobs::Id,
-                Blobs::Digest,
-                Blobs::RegistryId,
-                Blobs::BytesOnDisk,
-            ])
-            .and_where(Expr::col(Blobs::RegistryId).eq(*registry_id))
+            .columns([Blobs::Id, Blobs::Digest, Blobs::BytesOnDisk])
             // TODO: impl Value for OciDigest
             .and_where(Expr::col(Blobs::Digest).is_in(digests))
             .build_sqlx(PostgresQueryBuilder);
@@ -241,7 +171,6 @@ impl Queries {
 
     pub async fn get_manifests(
         executor: &mut PgConnection,
-        registry_id: &Uuid,
         repository_id: &Uuid,
         digests: &Vec<&str>,
     ) -> Result<Vec<Manifest>> {
@@ -250,7 +179,6 @@ impl Queries {
             .from(Manifests::Table)
             .columns([
                 (Manifests::Table, Manifests::Id),
-                (Manifests::Table, Manifests::RegistryId),
                 (Manifests::Table, Manifests::RepositoryId),
                 (Manifests::Table, Manifests::BlobId),
                 (Manifests::Table, Manifests::MediaType),
@@ -264,7 +192,6 @@ impl Queries {
                 Expr::col((Manifests::Table, Manifests::BlobId)).equals((Blobs::Table, Blobs::Id)),
             )
             .and_where(Expr::col((Manifests::Table, Manifests::RepositoryId)).eq(*repository_id))
-            .and_where(Expr::col((Manifests::Table, Manifests::RegistryId)).eq(*registry_id))
             .and_where(Expr::col((Manifests::Table, Manifests::Digest)).is_in(digests))
             .build_sqlx(PostgresQueryBuilder);
 
@@ -275,7 +202,6 @@ impl Queries {
 
     pub async fn get_manifest(
         executor: &mut PgConnection,
-        registry_id: &Uuid,
         repository_id: &Uuid,
         manifest_ref: &ManifestRef,
     ) -> Result<Option<Manifest>> {
@@ -284,7 +210,6 @@ impl Queries {
             .from(Manifests::Table)
             .columns([
                 (Manifests::Table, Manifests::Id),
-                (Manifests::Table, Manifests::RegistryId),
                 (Manifests::Table, Manifests::RepositoryId),
                 (Manifests::Table, Manifests::BlobId),
                 (Manifests::Table, Manifests::MediaType),
@@ -297,8 +222,7 @@ impl Queries {
                 Blobs::Table,
                 Expr::col((Manifests::Table, Manifests::BlobId)).equals((Blobs::Table, Blobs::Id)),
             )
-            .and_where(Expr::col((Manifests::Table, Manifests::RepositoryId)).eq(*repository_id))
-            .and_where(Expr::col((Manifests::Table, Manifests::RegistryId)).eq(*registry_id));
+            .and_where(Expr::col((Manifests::Table, Manifests::RepositoryId)).eq(*repository_id));
 
         match manifest_ref {
             ManifestRef::Digest(d) => {
@@ -328,7 +252,6 @@ impl Queries {
             .into_table(Manifests::Table)
             .columns([
                 Manifests::Id,
-                Manifests::RegistryId,
                 Manifests::RepositoryId,
                 Manifests::BlobId,
                 Manifests::MediaType,
@@ -338,7 +261,6 @@ impl Queries {
             ])
             .values([
                 Value::from(manifest.id).into(),
-                Value::from(manifest.registry_id).into(),
                 Value::from(manifest.repository_id).into(),
                 Value::from(manifest.blob_id).into(),
                 Value::from(manifest.media_type.clone().map(String::from)).into(),
@@ -668,7 +590,6 @@ impl Queries {
 
     pub async fn get_referrers(
         executor: &mut PgConnection,
-        registry_id: &Uuid,
         repository_id: &Uuid,
         subject: &OciDigest,
         artifact_type: &Option<String>,
@@ -678,7 +599,6 @@ impl Queries {
             .from(Manifests::Table)
             .columns([
                 (Manifests::Table, Manifests::Id),
-                (Manifests::Table, Manifests::RegistryId),
                 (Manifests::Table, Manifests::RepositoryId),
                 (Manifests::Table, Manifests::BlobId),
                 (Manifests::Table, Manifests::MediaType),
@@ -693,7 +613,6 @@ impl Queries {
             )
             .order_by(Manifests::Digest, Order::Asc)
             .and_where(Expr::col((Manifests::Table, Manifests::RepositoryId)).eq(*repository_id))
-            .and_where(Expr::col((Manifests::Table, Manifests::RegistryId)).eq(*registry_id))
             .and_where(Expr::col((Manifests::Table, Manifests::Subject)).eq(String::from(subject)));
 
         if let Some(artifact_type) = artifact_type {
@@ -711,58 +630,32 @@ impl Queries {
 
 // PoolConnection<Postgres>-based metadata queries.
 impl PostgresMetadataConn {
-    pub async fn insert_registry(&mut self, name: &String) -> Result<Registry> {
-        Queries::insert_registry(&mut *self.conn, name).await
+    pub async fn insert_repository(&mut self, name: &str) -> Result<Repository> {
+        Queries::insert_repository(&mut *self.conn, name).await
     }
 
-    pub async fn get_registry(&mut self, name: &str) -> Result<Registry> {
-        Queries::get_registry(&mut *self.conn, name).await
+    pub async fn get_repository(&mut self, repository: &str) -> Result<Option<Repository>> {
+        Queries::get_repository(&mut *self.conn, repository).await
     }
 
-    pub async fn insert_repository(
-        &mut self,
-        registry_id: &Uuid,
-        name: &String,
-    ) -> Result<Repository> {
-        Queries::insert_repository(&mut *self.conn, registry_id, name).await
+    pub async fn repository_exists(&mut self, name: &str) -> Result<bool> {
+        Queries::repository_exists(&mut *self.conn, name).await
     }
 
-    pub async fn get_repository(
-        &mut self,
-        registry: &Uuid,
-        repository: &String,
-    ) -> Result<Option<Repository>> {
-        Queries::get_repository(&mut *self.conn, registry, repository).await
+    pub async fn insert_blob(&mut self, digest: &OciDigest, bytes_on_disk: i64) -> Result<Uuid> {
+        Queries::insert_blob(&mut *self.conn, digest, bytes_on_disk).await
     }
 
-    pub async fn repository_exists(&mut self, registry_id: &Uuid, name: &String) -> Result<bool> {
-        Queries::repository_exists(&mut *self.conn, registry_id, name).await
-    }
-
-    pub async fn insert_blob(
-        &mut self,
-        registry_id: &Uuid,
-        digest: &OciDigest,
-        bytes_on_disk: i64,
-    ) -> Result<Uuid> {
-        Queries::insert_blob(&mut *self.conn, registry_id, digest, bytes_on_disk).await
-    }
-
-    pub async fn get_blob(
-        &mut self,
-        registry_id: &Uuid,
-        digest: &OciDigest,
-    ) -> Result<Option<Blob>> {
-        Queries::get_blob(&mut *self.conn, registry_id, digest).await
+    pub async fn get_blob(&mut self, digest: &OciDigest) -> Result<Option<Blob>> {
+        Queries::get_blob(&mut *self.conn, digest).await
     }
 
     pub async fn get_manifest(
         &mut self,
-        registry_id: &Uuid,
         repository_id: &Uuid,
         manifest_ref: &ManifestRef,
     ) -> Result<Option<Manifest>> {
-        Queries::get_manifest(&mut *self.conn, registry_id, repository_id, manifest_ref).await
+        Queries::get_manifest(&mut *self.conn, repository_id, manifest_ref).await
     }
 
     pub async fn get_tags(
@@ -804,19 +697,11 @@ impl PostgresMetadataConn {
 
     pub async fn get_referrers(
         &mut self,
-        registry_id: &Uuid,
         repository_id: &Uuid,
         subject: &OciDigest,
         artifact_type: &Option<String>,
     ) -> Result<Vec<Manifest>> {
-        Queries::get_referrers(
-            &mut *self.conn,
-            registry_id,
-            repository_id,
-            subject,
-            artifact_type,
-        )
-        .await
+        Queries::get_referrers(&mut *self.conn, repository_id, subject, artifact_type).await
     }
 }
 
@@ -834,14 +719,9 @@ impl<'a> PostgresMetadataTx<'a> {
         }
     }
 
-    pub async fn insert_blob(
-        &mut self,
-        registry_id: &Uuid,
-        digest: &OciDigest,
-        bytes_on_disk: i64,
-    ) -> Result<Uuid> {
+    pub async fn insert_blob(&mut self, digest: &OciDigest, bytes_on_disk: i64) -> Result<Uuid> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::insert_blob(&mut **tx, registry_id, digest, bytes_on_disk).await
+        Queries::insert_blob(&mut **tx, digest, bytes_on_disk).await
     }
 
     pub async fn insert_chunk(&mut self, session: &UploadSession, chunk: &Chunk) -> Result<()> {
@@ -869,22 +749,14 @@ impl<'a> PostgresMetadataTx<'a> {
         Queries::delete_session(&mut **tx, session).await
     }
 
-    pub async fn get_blob(
-        &mut self,
-        registry_id: &Uuid,
-        digest: &OciDigest,
-    ) -> Result<Option<Blob>> {
+    pub async fn get_blob(&mut self, digest: &OciDigest) -> Result<Option<Blob>> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::get_blob(&mut **tx, registry_id, digest).await
+        Queries::get_blob(&mut **tx, digest).await
     }
 
-    pub async fn get_blobs(
-        &mut self,
-        registry_id: &Uuid,
-        digests: &Vec<&str>,
-    ) -> Result<Vec<Blob>> {
+    pub async fn get_blobs(&mut self, digests: &Vec<&str>) -> Result<Vec<Blob>> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::get_blobs(&mut **tx, registry_id, digests).await
+        Queries::get_blobs(&mut **tx, digests).await
     }
 
     pub async fn delete_blob(&mut self, blob_id: &Uuid) -> Result<()> {
@@ -894,22 +766,20 @@ impl<'a> PostgresMetadataTx<'a> {
 
     pub async fn get_manifests(
         &mut self,
-        registry_id: &Uuid,
         repository_id: &Uuid,
         digests: &Vec<&str>,
     ) -> Result<Vec<Manifest>> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::get_manifests(&mut **tx, registry_id, repository_id, digests).await
+        Queries::get_manifests(&mut **tx, repository_id, digests).await
     }
 
     pub async fn get_manifest(
         &mut self,
-        registry_id: &Uuid,
         repository_id: &Uuid,
         reference: &ManifestRef,
     ) -> Result<Option<Manifest>> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::get_manifest(&mut **tx, registry_id, repository_id, reference).await
+        Queries::get_manifest(&mut **tx, repository_id, reference).await
     }
 
     pub async fn insert_manifest(&mut self, manifest: &Manifest) -> Result<()> {
@@ -973,23 +843,8 @@ impl PostgresMetadataConn {
         registries: Vec<RegistryDefinition>,
     ) -> Result<()> {
         for registry_config in registries {
-            let registry = match self.get_registry(&registry_config.name).await {
-                Ok(r) => r,
-                Err(Error::SQLXError(sqlx::Error::RowNotFound)) => {
-                    tracing::info!(
-                        "static registry '{}' not found, inserting into DB",
-                        registry_config.name
-                    );
-                    self.insert_registry(&registry_config.name).await?
-                }
-                Err(e) => return Err(e),
-            };
-
             for repository_config in registry_config.repositories {
-                match self
-                    .get_repository(&registry.id, &repository_config.name)
-                    .await
-                {
+                match self.get_repository(&repository_config.name).await {
                     Ok(Some(r)) => r,
                     Ok(None) => {
                         tracing::info!(
@@ -997,8 +852,7 @@ impl PostgresMetadataConn {
                             repository_config.name,
                             registry_config.name
                         );
-                        self.insert_repository(&registry.id, &repository_config.name)
-                            .await?
+                        self.insert_repository(&repository_config.name).await?
                     }
                     Err(e) => return Err(e),
                 };

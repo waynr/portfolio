@@ -8,7 +8,7 @@ use http::StatusCode;
 use serde::Deserialize;
 
 use crate::{
-    http::empty_string_as_none, objects::ObjectStore, registry::registries::Repository,
+    http::empty_string_as_none, objects::ObjectStore, registry::repositories::Repository,
     Result,
 };
 

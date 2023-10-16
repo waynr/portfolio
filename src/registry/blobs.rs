@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     errors::{Error, Result},
-    metadata::{Blob, PostgresMetadataPool, PostgresMetadataTx, Registry},
+    metadata::{Blob, PostgresMetadataPool, PostgresMetadataTx},
     objects::ChunkedBody,
     objects::ObjectStore,
     objects::StreamObjectBody,
@@ -16,24 +16,22 @@ use crate::{
     Digester, DistributionErrorCode, OciDigest,
 };
 
-pub struct BlobStore<'b, O>
+pub struct BlobStore<O>
 where
     O: ObjectStore,
 {
     pub(crate) metadata: PostgresMetadataPool,
     pub(crate) objects: O,
-    pub(crate) registry: &'b Registry,
 }
 
-impl<'b, O> BlobStore<'b, O>
+impl<'b, O> BlobStore<O>
 where
     O: ObjectStore,
 {
-    pub fn new(metadata: PostgresMetadataPool, objects: O, registry: &'b Registry) -> Self {
+    pub fn new(metadata: PostgresMetadataPool, objects: O) -> Self {
         Self {
             metadata,
             objects,
-            registry,
         }
     }
 
@@ -47,7 +45,6 @@ where
             metadata: self.metadata.clone(),
             objects: self.objects.clone(),
             session,
-            registry: self.registry,
         })
     }
 
@@ -58,7 +55,7 @@ where
         body: Body,
     ) -> Result<Uuid> {
         let mut tx = self.metadata.get_tx().await?;
-        let uuid = match tx.get_blob(&self.registry.id, digest).await? {
+        let uuid = match tx.get_blob(digest).await? {
             Some(b) => {
                 // verify blob actually exists before returning a potentially bogus uuid
                 if self.objects.blob_exists(&b.id).await? {
@@ -66,7 +63,7 @@ where
                 }
                 b.id
             }
-            None => tx.insert_blob(&self.registry.id, digest, content_length as i64).await?,
+            None => tx.insert_blob(digest, content_length as i64).await?,
         };
 
         // upload blob
@@ -89,7 +86,7 @@ where
             .metadata
             .get_conn()
             .await?
-            .get_blob(&self.registry.id, key)
+            .get_blob(key)
             .await?
         {
             let body = self.objects.get_blob(&blob.id).await?;
@@ -103,7 +100,7 @@ where
         self.metadata
             .get_conn()
             .await?
-            .get_blob(&self.registry.id, key)
+            .get_blob(key)
             .await
     }
 
@@ -111,7 +108,7 @@ where
         let mut tx = self.metadata.get_tx().await?;
 
         let blob =
-            tx.get_blob(&self.registry.id, digest)
+            tx.get_blob(digest)
                 .await?
                 .ok_or(Error::DistributionSpecError(
                     DistributionErrorCode::BlobUnknown,
@@ -128,7 +125,6 @@ pub struct BlobWriter<'a, O: ObjectStore> {
     metadata: PostgresMetadataPool,
     objects: O,
 
-    registry: &'a Registry,
     session: &'a mut UploadSession,
 }
 
@@ -202,10 +198,10 @@ where
     pub async fn finalize(&mut self, digest: &OciDigest) -> Result<()> {
         // TODO: validate digest
         let mut tx = self.metadata.get_tx().await?;
-        let uuid = match tx.get_blob(&self.registry.id, &digest).await? {
+        let uuid = match tx.get_blob(&digest).await? {
             Some(b) => b.id,
             None => {
-                tx.insert_blob(&self.registry.id, &digest, self.session.last_range_end + 1)
+                tx.insert_blob(&digest, self.session.last_range_end + 1)
                     .await?
             }
         };

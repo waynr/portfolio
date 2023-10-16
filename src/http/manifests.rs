@@ -14,7 +14,7 @@ use http::StatusCode;
 
 use crate::{
     metadata::ManifestRef, objects::ObjectStore, registry::manifests::ManifestSpec,
-    registry::registries::Repository, DistributionErrorCode, Error, Result,
+    registry::repositories::Repository, DistributionErrorCode, Error, Result,
 };
 
 pub fn router<O: ObjectStore>() -> Router {

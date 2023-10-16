@@ -1,5 +1,5 @@
-pub mod registries;
-pub use registries::Registry;
+pub mod repositories;
+pub use repositories::Repository;
 
 pub mod blobs;
 pub use blobs::BlobStore;
