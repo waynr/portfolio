@@ -59,6 +59,98 @@ pub struct PostgresMetadataConn {
 struct Queries {}
 
 impl Queries {
+    pub async fn insert_registry(executor: &mut PgConnection, name: &String) -> Result<Registry> {
+        let (sql, values) = Query::insert()
+            .into_table(Registries::Table)
+            .columns([Registries::Name])
+            .values([name.into()])?
+            .returning(Query::returning().columns([Registries::Id, Registries::Name]))
+            .build_sqlx(PostgresQueryBuilder);
+
+        Ok(sqlx::query_as_with::<_, Registry, _>(&sql, values)
+            .fetch_one(executor)
+            .await?)
+    }
+
+    pub async fn get_registry(executor: &mut PgConnection, name: &str) -> Result<Registry> {
+        let (sql, values) = Query::select()
+            .from(Registries::Table)
+            .columns([Registries::Id, Registries::Name])
+            .and_where(Expr::col(Registries::Name).eq(name))
+            .build_sqlx(PostgresQueryBuilder);
+
+        Ok(sqlx::query_as_with::<_, Registry, _>(&sql, values)
+            .fetch_one(executor)
+            .await?)
+    }
+
+    pub async fn insert_repository(
+        executor: &mut PgConnection,
+        registry_id: &Uuid,
+        name: &String,
+    ) -> Result<Repository> {
+        let (sql, values) = Query::insert()
+            .into_table(Repositories::Table)
+            .columns([Repositories::Name, Repositories::RegistryId])
+            .values([Value::from(name).into(), Value::from(*registry_id).into()])?
+            .returning(Query::returning().columns([
+                Repositories::Id,
+                Repositories::Name,
+                Repositories::RegistryId,
+            ]))
+            .build_sqlx(PostgresQueryBuilder);
+
+        Ok(sqlx::query_as_with::<_, Repository, _>(&sql, values)
+            .fetch_one(executor)
+            .await?)
+    }
+
+    pub async fn get_repository(
+        executor: &mut PgConnection,
+        registry: &Uuid,
+        repository: &String,
+    ) -> Result<Repository> {
+        let (sql, values) = Query::select()
+            .from(Repositories::Table)
+            .columns([
+                (Repositories::Table, Repositories::Id),
+                (Repositories::Table, Repositories::Name),
+                (Repositories::Table, Repositories::RegistryId),
+            ])
+            .left_join(
+                Registries::Table,
+                Expr::col((Registries::Table, Registries::Id)).equals(Repositories::RegistryId),
+            )
+            .and_where(Expr::col((Registries::Table, Registries::Id)).eq(*registry))
+            .and_where(Expr::col((Repositories::Table, Repositories::Name)).eq(repository))
+            .build_sqlx(PostgresQueryBuilder);
+        Ok(sqlx::query_as_with::<_, Repository, _>(&sql, values)
+            .fetch_one(executor)
+            .await?)
+    }
+
+    pub async fn repository_exists(
+        executor: &mut PgConnection,
+        registry_id: &Uuid,
+        name: &String,
+    ) -> Result<bool> {
+        let (sql, values) = Query::select()
+            .expr_as(
+                Expr::exists(
+                    Query::select()
+                        .from(Repositories::Table)
+                        .column(Repositories::Id)
+                        .and_where(Expr::col(Repositories::RegistryId).eq(*registry_id))
+                        .and_where(Expr::col(Repositories::Name).eq(name))
+                        .to_owned(),
+                ),
+                Alias::new("exists"),
+            )
+            .build_sqlx(PostgresQueryBuilder);
+        let row = sqlx::query_with(&sql, values).fetch_one(executor).await?;
+
+        Ok(row.try_get("exists")?)
+    }
     pub async fn insert_blob(
         executor: &mut PgConnection,
         registry_id: &Uuid,
@@ -500,6 +592,49 @@ impl Queries {
         Ok(())
     }
 
+    pub async fn new_upload_session(executor: &mut PgConnection) -> Result<UploadSession> {
+        let state = DigestState::default();
+        let value = serde_json::value::to_value(state)?;
+        let (sql, values) = Query::insert()
+            .into_table(UploadSessions::Table)
+            .columns([UploadSessions::DigestState])
+            .values([Expr::value(value)])?
+            .returning(Query::returning().columns([
+                UploadSessions::Uuid,
+                UploadSessions::StartDate,
+                UploadSessions::UploadId,
+                UploadSessions::ChunkNumber,
+                UploadSessions::LastRangeEnd,
+                UploadSessions::DigestState,
+            ]))
+            .build_sqlx(PostgresQueryBuilder);
+        let session = sqlx::query_as_with::<_, UploadSession, _>(&sql, values)
+            .fetch_one(executor)
+            .await?;
+
+        Ok(session)
+    }
+
+    pub async fn get_session(executor: &mut PgConnection, uuid: &Uuid) -> Result<UploadSession> {
+        let (sql, values) = Query::select()
+            .from(UploadSessions::Table)
+            .columns([
+                UploadSessions::Uuid,
+                UploadSessions::StartDate,
+                UploadSessions::ChunkNumber,
+                UploadSessions::LastRangeEnd,
+                UploadSessions::UploadId,
+                UploadSessions::DigestState,
+            ])
+            .and_where(Expr::col(UploadSessions::Uuid).eq(*uuid))
+            .build_sqlx(PostgresQueryBuilder);
+        let session = sqlx::query_as_with::<_, UploadSession, _>(&sql, values)
+            .fetch_one(executor)
+            .await?;
+
+        Ok(session)
+    }
+
     pub async fn update_session(
         executor: &mut PgConnection,
         session: &UploadSession,
@@ -577,28 +712,11 @@ impl Queries {
 // PoolConnection<Postgres>-based metadata queries.
 impl PostgresMetadataConn {
     pub async fn insert_registry(&mut self, name: &String) -> Result<Registry> {
-        let (sql, values) = Query::insert()
-            .into_table(Registries::Table)
-            .columns([Registries::Name])
-            .values([name.into()])?
-            .returning(Query::returning().columns([Registries::Id, Registries::Name]))
-            .build_sqlx(PostgresQueryBuilder);
-
-        Ok(sqlx::query_as_with::<_, Registry, _>(&sql, values)
-            .fetch_one(&mut *self.conn)
-            .await?)
+        Queries::insert_registry(&mut *self.conn, name).await
     }
 
     pub async fn get_registry(&mut self, name: &str) -> Result<Registry> {
-        let (sql, values) = Query::select()
-            .from(Registries::Table)
-            .columns([Registries::Id, Registries::Name])
-            .and_where(Expr::col(Registries::Name).eq(name))
-            .build_sqlx(PostgresQueryBuilder);
-
-        Ok(sqlx::query_as_with::<_, Registry, _>(&sql, values)
-            .fetch_one(&mut *self.conn)
-            .await?)
+        Queries::get_registry(&mut *self.conn, name).await
     }
 
     pub async fn insert_repository(
@@ -606,20 +724,7 @@ impl PostgresMetadataConn {
         registry_id: &Uuid,
         name: &String,
     ) -> Result<Repository> {
-        let (sql, values) = Query::insert()
-            .into_table(Repositories::Table)
-            .columns([Repositories::Name, Repositories::RegistryId])
-            .values([Value::from(name).into(), Value::from(*registry_id).into()])?
-            .returning(Query::returning().columns([
-                Repositories::Id,
-                Repositories::Name,
-                Repositories::RegistryId,
-            ]))
-            .build_sqlx(PostgresQueryBuilder);
-
-        Ok(sqlx::query_as_with::<_, Repository, _>(&sql, values)
-            .fetch_one(&mut *self.conn)
-            .await?)
+        Queries::insert_repository(&mut *self.conn, registry_id, name).await
     }
 
     pub async fn get_repository(
@@ -627,23 +732,11 @@ impl PostgresMetadataConn {
         registry: &Uuid,
         repository: &String,
     ) -> Result<Repository> {
-        let (sql, values) = Query::select()
-            .from(Repositories::Table)
-            .columns([
-                (Repositories::Table, Repositories::Id),
-                (Repositories::Table, Repositories::Name),
-                (Repositories::Table, Repositories::RegistryId),
-            ])
-            .left_join(
-                Registries::Table,
-                Expr::col((Registries::Table, Registries::Id)).equals(Repositories::RegistryId),
-            )
-            .and_where(Expr::col((Registries::Table, Registries::Id)).eq(*registry))
-            .and_where(Expr::col((Repositories::Table, Repositories::Name)).eq(repository))
-            .build_sqlx(PostgresQueryBuilder);
-        Ok(sqlx::query_as_with::<_, Repository, _>(&sql, values)
-            .fetch_one(&mut *self.conn)
-            .await?)
+        Queries::get_repository(&mut *self.conn, registry, repository).await
+    }
+
+    pub async fn repository_exists(&mut self, registry_id: &Uuid, name: &String) -> Result<bool> {
+        Queries::repository_exists(&mut *self.conn, registry_id, name).await
     }
 
     pub async fn insert_blob(
@@ -661,27 +754,6 @@ impl PostgresMetadataConn {
         digest: &OciDigest,
     ) -> Result<Option<Blob>> {
         Queries::get_blob(&mut *self.conn, registry_id, digest).await
-    }
-
-    pub async fn repository_exists(&mut self, registry_id: &Uuid, name: &String) -> Result<bool> {
-        let (sql, values) = Query::select()
-            .expr_as(
-                Expr::exists(
-                    Query::select()
-                        .from(Repositories::Table)
-                        .column(Repositories::Id)
-                        .and_where(Expr::col(Repositories::RegistryId).eq(*registry_id))
-                        .and_where(Expr::col(Repositories::Name).eq(name))
-                        .to_owned(),
-                ),
-                Alias::new("exists"),
-            )
-            .build_sqlx(PostgresQueryBuilder);
-        let row = sqlx::query_with(&sql, values)
-            .fetch_one(&mut *self.conn)
-            .await?;
-
-        Ok(row.try_get("exists")?)
     }
 
     pub async fn get_manifest(
@@ -703,46 +775,11 @@ impl PostgresMetadataConn {
     }
 
     pub async fn new_upload_session(&mut self) -> Result<UploadSession> {
-        let state = DigestState::default();
-        let value = serde_json::value::to_value(state)?;
-        let (sql, values) = Query::insert()
-            .into_table(UploadSessions::Table)
-            .columns([UploadSessions::DigestState])
-            .values([Expr::value(value)])?
-            .returning(Query::returning().columns([
-                UploadSessions::Uuid,
-                UploadSessions::StartDate,
-                UploadSessions::UploadId,
-                UploadSessions::ChunkNumber,
-                UploadSessions::LastRangeEnd,
-                UploadSessions::DigestState,
-            ]))
-            .build_sqlx(PostgresQueryBuilder);
-        let session = sqlx::query_as_with::<_, UploadSession, _>(&sql, values)
-            .fetch_one(&mut *self.conn)
-            .await?;
-
-        Ok(session)
+        Queries::new_upload_session(&mut *self.conn).await
     }
 
     pub async fn get_session(&mut self, uuid: &Uuid) -> Result<UploadSession> {
-        let (sql, values) = Query::select()
-            .from(UploadSessions::Table)
-            .columns([
-                UploadSessions::Uuid,
-                UploadSessions::StartDate,
-                UploadSessions::ChunkNumber,
-                UploadSessions::LastRangeEnd,
-                UploadSessions::UploadId,
-                UploadSessions::DigestState,
-            ])
-            .and_where(Expr::col(UploadSessions::Uuid).eq(*uuid))
-            .build_sqlx(PostgresQueryBuilder);
-        let session = sqlx::query_as_with::<_, UploadSession, _>(&sql, values)
-            .fetch_one(&mut *self.conn)
-            .await?;
-
-        Ok(session)
+        Queries::get_session(&mut *self.conn, uuid).await
     }
 
     pub async fn update_session(&mut self, session: &UploadSession) -> Result<()> {
@@ -811,6 +848,7 @@ impl<'a> PostgresMetadataTx<'a> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
         Queries::insert_chunk(&mut **tx, session, chunk).await
     }
+
     pub async fn get_chunks(&mut self, session: &UploadSession) -> Result<Vec<Chunk>> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
         Queries::get_chunks(&mut **tx, session).await
