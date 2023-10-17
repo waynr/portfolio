@@ -1,36 +1,32 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use axum::{
-    body::{Bytes, StreamBody},
-    extract::{DefaultBodyLimit, Extension, Path},
-    http::header::{self, HeaderMap, HeaderName, HeaderValue},
-    response::{IntoResponse, Response},
-    routing::get,
-    Router, TypedHeader,
-};
+use axum::body::{Bytes, StreamBody};
+use axum::extract::{DefaultBodyLimit, Extension, Path};
+use axum::http::header::{self, HeaderMap, HeaderName, HeaderValue};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use axum::{Router, TypedHeader};
 use headers::{ContentLength, ContentType};
 use http::StatusCode;
 
-use crate::{
-    registry::ManifestRef, registry::ManifestSpec, registry::ObjectStore, registry::Repository,
-    DistributionErrorCode, Error, Result,
-};
+use crate::registry::{ManifestRef, ManifestSpec, ManifestStore, RepositoryStore};
+use crate::{DistributionErrorCode, Error, Result};
 
-pub fn router<O: ObjectStore>() -> Router {
+pub fn router<R: RepositoryStore>() -> Router {
     Router::new()
         .route(
             "/:reference",
-            get(get_manifest::<O>)
-                .delete(delete_manifest::<O>)
-                .put(put_manifest::<O>)
-                .head(head_manifest::<O>),
+            get(get_manifest::<R>)
+                .delete(delete_manifest::<R>)
+                .put(put_manifest::<R>)
+                .head(head_manifest::<R>),
         )
         .layer(DefaultBodyLimit::max(6 * 1024 * 1024))
 }
 
-async fn head_manifest<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn head_manifest<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let manifest_ref = ManifestRef::from_str(
@@ -40,7 +36,7 @@ async fn head_manifest<O: ObjectStore>(
     )?;
 
     let mstore = repository.get_manifest_store();
-    let manifest = mstore.head_manifest(&manifest_ref).await?;
+    let manifest = mstore.head(&manifest_ref).await?;
 
     if let Some(manifest) = manifest {
         let mut headers = HeaderMap::new();
@@ -61,8 +57,8 @@ async fn head_manifest<O: ObjectStore>(
     ))
 }
 
-async fn get_manifest<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn get_manifest<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let manifest_ref = ManifestRef::from_str(
@@ -72,7 +68,7 @@ async fn get_manifest<O: ObjectStore>(
     )?;
 
     let mstore = repository.get_manifest_store();
-    let (manifest, body) = if let Some((m, b)) = mstore.get_manifest(&manifest_ref).await? {
+    let (manifest, body) = if let Some((m, b)) = mstore.get(&manifest_ref).await? {
         (m, b)
     } else {
         return Err(Error::DistributionSpecError(
@@ -101,8 +97,8 @@ async fn get_manifest<O: ObjectStore>(
 }
 
 /// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests
-async fn put_manifest<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn put_manifest<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     content_type: Option<TypedHeader<ContentType>>,
     content_length: Option<TypedHeader<ContentLength>>,
     Path(path_params): Path<HashMap<String, String>>,
@@ -165,7 +161,7 @@ async fn put_manifest<O: ObjectStore>(
     }
 
     let mut mstore = repository.get_manifest_store();
-    let calculated_digest = mstore.upload(&manifest_ref, &manifest, bytes).await?;
+    let calculated_digest = mstore.put(&manifest_ref, &manifest, bytes).await?;
 
     let location = format!("/v2/{}/manifests/{}", repository.name(), mref);
     let mut headers = HeaderMap::new();
@@ -185,8 +181,8 @@ async fn put_manifest<O: ObjectStore>(
     Ok((StatusCode::CREATED, headers, "").into_response())
 }
 
-async fn delete_manifest<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn delete_manifest<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let mref = path_params

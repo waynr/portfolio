@@ -52,10 +52,9 @@ impl Stream for StreamObjectBody {
             Poll::Ready(Some(Ok(bytes))) => {
                 // and this is where we calculate incremental digest
                 {
-                    let mut g = object_body
-                        .digester
-                        .lock()
-                        .expect("only one instance of the digester should ever be active at a time");
+                    let mut g = object_body.digester.lock().expect(
+                        "only one instance of the digester should ever be active at a time",
+                    );
                     g.update(bytes.as_ref());
                 }
                 Poll::Ready(Some(Ok(bytes)))
@@ -67,7 +66,7 @@ impl Stream for StreamObjectBody {
     }
 }
 
-const CHUNK_SIZE: usize = 6*1024*1024; // 6 MB
+const CHUNK_SIZE: usize = 6 * 1024 * 1024; // 6 MB
 
 pub struct ChunkedBody {
     body: Body,
@@ -92,8 +91,7 @@ impl ChunkedBody {
 }
 
 impl Stream for ChunkedBody {
-    type Item =
-        std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>;
+    type Item = std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let body = self.as_mut().pin_get_body();
@@ -103,7 +101,8 @@ impl Stream for ChunkedBody {
                 if bytes.len() < remaining {
                     self.buffer.extend_from_slice(&bytes);
                     return Poll::Pending;
-                } if bytes.len() == remaining {
+                }
+                if bytes.len() == remaining {
                     self.buffer.extend_from_slice(&bytes);
                     let buf = self.buffer.split();
                     return Poll::Ready(Some(Ok(buf.freeze())));
@@ -119,7 +118,7 @@ impl Stream for ChunkedBody {
             Poll::Ready(None) => {
                 if self.buffer.len() > 0 {
                     let buf = self.buffer.split();
-                    return Poll::Ready(Some(Ok(buf.freeze())))
+                    return Poll::Ready(Some(Ok(buf.freeze())));
                 }
                 Poll::Ready(None)
             }

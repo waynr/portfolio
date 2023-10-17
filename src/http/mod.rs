@@ -1,18 +1,16 @@
-use serde::{de, Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use axum::{
-    extract::{Path, State},
-    http::header::{self, HeaderMap, HeaderName, HeaderValue},
-    http::{Request, StatusCode},
-    middleware::{self as axum_middleware, Next},
-    response::{IntoResponse, Response},
-    routing::get,
-    Router,
-};
+use axum::extract::{Path, State};
+use axum::http::header::{self, HeaderMap, HeaderName, HeaderValue};
+use axum::http::{Request, StatusCode};
+use axum::middleware::{self as axum_middleware, Next};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use axum::Router;
 use http::Response as HttpResponse;
 use http_body::Body;
+use serde::{de, Deserialize, Deserializer};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::{self, TraceLayer};
 
@@ -24,11 +22,11 @@ mod referrers;
 mod tags;
 
 use crate::errors::{DistributionErrorCode, Error, Result};
-use crate::registry::ObjectStore;
+use crate::registry::{RepositoryStore, RepositoryStoreManager};
 use crate::Portfolio;
 
-async fn auth<B, O: ObjectStore>(
-    State(portfolio): State<Portfolio<O>>,
+async fn auth<B, R: RepositoryStoreManager>(
+    State(portfolio): State<Portfolio<R>>,
     Path(path_params): Path<HashMap<String, String>>,
     mut req: Request<B>,
     next: Next<B>,
@@ -81,11 +79,13 @@ fn maybe_get_content_length(response: &HttpResponse<impl Body>) -> Option<Header
     }
 }
 
-pub async fn serve<O: ObjectStore>(portfolio: Portfolio<O>) -> Result<()> {
-    let blobs = blobs::router::<O>();
-    let manifests = manifests::router::<O>();
-    let referrers = referrers::router::<O>();
-    let tags = tags::router::<O>();
+pub async fn serve<M: RepositoryStoreManager, R: RepositoryStore>(
+    portfolio: Portfolio<M>,
+) -> Result<()> {
+    let blobs = blobs::router::<R>();
+    let manifests = manifests::router::<R>();
+    let referrers = referrers::router::<R>();
+    let tags = tags::router::<R>();
 
     let repository = Router::new()
         .nest("/blobs", blobs)

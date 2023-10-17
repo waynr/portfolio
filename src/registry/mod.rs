@@ -6,28 +6,31 @@ pub use types::{
 };
 
 pub mod session;
-pub use session::{Chunk, Chunks};
-pub use session::{UploadSession, UploadSessions};
-
-pub(crate) use impls::postgres_s3::metadata::PostgresMetadataPool;
-pub(crate) use impls::postgres_s3::metadata::PostgresConfig;
-pub(crate) use impls::postgres_s3::repositories::Repository;
-pub(crate) use impls::postgres_s3::objects::ObjectStore;
-pub(crate) use impls::postgres_s3::objects::S3Config;
-
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
 use axum::body::Bytes;
 use hyper::body::Body;
 use oci_spec::image::ImageIndex;
+pub use session::{Chunk, Chunks, UploadSession, UploadSessions};
 use uuid::Uuid;
 
-use crate::{errors::Result, oci_digest::OciDigest};
+use crate::errors::Result;
+use crate::oci_digest::OciDigest;
+pub use crate::registry::impls::postgres_s3::config::PgS3RepositoryFactory;
+pub use crate::registry::impls::postgres_s3::repositories::PgS3Repository;
 
 #[async_trait]
-pub trait RepositoryStoreTrait: Send + Sync + 'static {
-    type ManifestStore: ManifestStoreTrait;
-    type BlobStore: BlobStoreTrait;
+pub trait RepositoryStoreManager: Clone + Send + Sync + 'static {
+    type RepositoryStore: RepositoryStore;
+
+    async fn get(&self, name: &str) -> Result<Option<Self::RepositoryStore>>;
+    async fn create(&self, name: &str) -> Result<Self::RepositoryStore>;
+}
+
+#[async_trait]
+pub trait RepositoryStore: Clone + Send + Sync + 'static {
+    type ManifestStore: ManifestStore;
+    type BlobStore: BlobStore;
 
     fn name(&self) -> &str;
     fn get_manifest_store(&self) -> Self::ManifestStore;
@@ -45,7 +48,7 @@ pub trait RepositoryStoreTrait: Send + Sync + 'static {
 }
 
 #[async_trait]
-pub trait ManifestStoreTrait: Send + Sync + 'static {
+pub trait ManifestStore: Send + Sync + 'static {
     async fn head(&self, key: &ManifestRef) -> Result<Option<Manifest>>;
 
     async fn get(&self, key: &ManifestRef) -> Result<Option<(Manifest, ByteStream)>>;
@@ -67,8 +70,8 @@ pub trait ManifestStoreTrait: Send + Sync + 'static {
 }
 
 #[async_trait]
-pub trait BlobStoreTrait: Send + Sync + 'static {
-    type BlobWriter: BlobWriterTrait;
+pub trait BlobStore: Send + Sync + 'static {
+    type BlobWriter: BlobWriter;
 
     async fn head(&self, key: &OciDigest) -> Result<Option<Blob>>;
 
@@ -78,14 +81,14 @@ pub trait BlobStoreTrait: Send + Sync + 'static {
 
     async fn delete(&mut self, digest: &OciDigest) -> Result<()>;
 
-    async fn resume(&self, session: &mut UploadSession) -> Result<Self::BlobWriter>;
+    async fn resume(&self, session: UploadSession) -> Result<Self::BlobWriter>;
 }
 
 #[async_trait]
-pub trait BlobWriterTrait: Send + Sync + 'static {
-    async fn write(&mut self, content_length: u64, body: Body) -> Result<()>;
+pub trait BlobWriter: Send + Sync + 'static {
+    async fn write(self, content_length: u64, body: Body) -> Result<UploadSession>;
 
-    async fn write_chunked(&mut self, body: Body) -> Result<()>;
+    async fn write_chunked(self, body: Body) -> Result<UploadSession>;
 
-    async fn finalize(&mut self, digest: &OciDigest) -> Result<()>;
+    async fn finalize(self, digest: &OciDigest) -> Result<UploadSession>;
 }

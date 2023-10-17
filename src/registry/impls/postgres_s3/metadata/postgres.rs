@@ -1,20 +1,18 @@
 use sea_query::{Alias, Expr, OnConflict, Order, PostgresQueryBuilder, Query, Value};
 use sea_query_binder::SqlxBinder;
 use serde::Deserialize;
-use sqlx::{
-    pool::PoolConnection,
-    postgres::{PgPoolOptions, Postgres},
-    types::Uuid,
-    PgConnection, Pool, Row, Transaction,
-};
-
-use crate::errors::{Error, Result};
-use crate::registry::{Blob, Manifest, ManifestRef, RepositoryMetadata as Repository, Tag};
-use crate::registry::{Chunk, Chunks, UploadSession, UploadSessions};
-use crate::OciDigest;
-use crate::{DigestState, RegistryDefinition};
+use sqlx::pool::PoolConnection;
+use sqlx::postgres::{PgPoolOptions, Postgres};
+use sqlx::types::Uuid;
+use sqlx::{PgConnection, Pool, Row, Transaction};
 
 use super::types::{Blobs, IndexManifests, Layers, Manifests, Repositories, Tags};
+use crate::errors::{Error, Result};
+use crate::registry::{
+    Blob, Chunk, Chunks, Manifest, ManifestRef, RepositoryMetadata as Repository, Tag,
+    UploadSession, UploadSessions,
+};
+use crate::{DigestState, OciDigest};
 
 #[derive(Clone, Deserialize)]
 pub struct PostgresConfig {
@@ -832,31 +830,5 @@ impl<'a> PostgresMetadataTx<'a> {
     pub async fn delete_tags_by_manifest_id(&mut self, manifest_id: &Uuid) -> Result<()> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
         Queries::delete_tags_by_manifest_id(&mut **tx, manifest_id).await
-    }
-}
-
-// higher level DB interaction methods
-impl PostgresMetadataConn {
-    pub async fn initialize_static_registries(
-        &mut self,
-        registries: Vec<RegistryDefinition>,
-    ) -> Result<()> {
-        for registry_config in registries {
-            for repository_config in registry_config.repositories {
-                match self.get_repository(&repository_config.name).await {
-                    Ok(Some(r)) => r,
-                    Ok(None) => {
-                        tracing::info!(
-                            "static repository '{}' for registry '{}' not found, inserting into DB",
-                            repository_config.name,
-                            registry_config.name
-                        );
-                        self.insert_repository(&repository_config.name).await?
-                    }
-                    Err(e) => return Err(e),
-                };
-            }
-        }
-        Ok(())
     }
 }

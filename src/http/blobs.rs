@@ -2,48 +2,41 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use ::http::StatusCode;
-use axum::{
-    body::StreamBody,
-    extract::{Extension, Path, Query, TypedHeader},
-    headers::{ContentLength, ContentType},
-    http::header::{self, HeaderMap, HeaderName, HeaderValue},
-    http::Request,
-    response::{IntoResponse, Response},
-    routing::{get, patch, post},
-    Router,
-};
+use axum::body::StreamBody;
+use axum::extract::{Extension, Path, Query, TypedHeader};
+use axum::headers::{ContentLength, ContentType};
+use axum::http::header::{self, HeaderMap, HeaderName, HeaderValue};
+use axum::http::Request;
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, patch, post};
+use axum::Router;
 use headers::Header;
 use hyper::body::Body;
-
 use uuid::Uuid;
 
-use crate::{
-    http::headers::{ContentRange, Range},
-    registry::ObjectStore,
-    registry::Repository,
-    registry::UploadSession,
-    DistributionErrorCode, Error, OciDigest, Result,
-};
+use crate::http::headers::{ContentRange, Range};
+use crate::registry::{BlobStore, BlobWriter, RepositoryStore, UploadSession};
+use crate::{DistributionErrorCode, Error, OciDigest, Result};
 
-pub fn router<O: ObjectStore>() -> Router {
+pub fn router<R: RepositoryStore>() -> Router {
     Router::new()
         .route(
             "/:digest",
-            get(get_blob::<O>)
-                .delete(delete_blob::<O>)
-                .head(head_blob::<O>),
+            get(get_blob::<R>)
+                .delete(delete_blob::<R>)
+                .head(head_blob::<R>),
         )
-        .route("/uploads/", post(uploads_post::<O>))
+        .route("/uploads/", post(uploads_post::<R>))
         .route(
             "/uploads/:session_uuid",
-            patch(uploads_patch::<O>)
-                .put(uploads_put::<O>)
-                .get(uploads_get::<O>),
+            patch(uploads_patch::<R>)
+                .put(uploads_put::<R>)
+                .get(uploads_get::<R>),
         )
 }
 
-async fn get_blob<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn get_blob<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let digest: &str = path_params
@@ -53,7 +46,7 @@ async fn get_blob<O: ObjectStore>(
 
     let blob_store = repository.get_blob_store();
 
-    if let Some((blob, body)) = blob_store.get_blob(&oci_digest).await? {
+    if let Some((blob, body)) = blob_store.get(&oci_digest).await? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
@@ -71,8 +64,8 @@ async fn get_blob<O: ObjectStore>(
     }
 }
 
-async fn head_blob<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn head_blob<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let digest: &str = path_params
@@ -82,7 +75,7 @@ async fn head_blob<O: ObjectStore>(
 
     let blob_store = repository.get_blob_store();
 
-    if let Some(blob) = blob_store.get_blob_metadata(&oci_digest).await? {
+    if let Some(blob) = blob_store.head(&oci_digest).await? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
@@ -107,8 +100,8 @@ async fn head_blob<O: ObjectStore>(
 //   * must include 'digest' query param
 //   * must include 'ContentLength' query param
 // * initiate upload session for POST-PUT or POST-PATCH-PUT sequence
-async fn uploads_post<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn uploads_post<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     content_length: Option<TypedHeader<ContentLength>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
@@ -121,7 +114,7 @@ async fn uploads_post<O: ObjectStore>(
             let oci_digest: OciDigest = digest.as_str().try_into()?;
 
             let store = repository.get_blob_store();
-            if !store.get_blob_metadata(&oci_digest).await?.is_some() {
+            if !store.head(&oci_digest).await?.is_some() {
                 let session: UploadSession = repository.new_upload_session().await?;
 
                 let location = format!("/v2/{}/blobs/uploads/{}", repository.name(), session.uuid,);
@@ -182,7 +175,7 @@ async fn uploads_post<O: ObjectStore>(
                 let oci_digest: OciDigest = dgst.as_str().try_into()?;
                 let mut store = repository.get_blob_store();
                 store
-                    .upload(&oci_digest, length.0, request.into_body())
+                    .put(&oci_digest, length.0, request.into_body())
                     .await?;
 
                 let location = format!("/v2/{}/blobs/{}", repository.name(), dgst);
@@ -210,8 +203,8 @@ async fn uploads_post<O: ObjectStore>(
 //   * must include 'digest' query param, referring to the digest of the entire blob (not the final
 //   chunk)
 //
-async fn uploads_put<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn uploads_put<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
@@ -245,7 +238,7 @@ async fn uploads_put<O: ObjectStore>(
                 session.validate_range(&content_range)?;
             }
 
-            if let (
+            let session = if let (
                 // TODO: what if there is a body but none of the content headers are set? technically
                 // this would be a client bug, but it could also result in data corruption and as such
                 // should probably be handled here. this should probably result in a 400 bad request
@@ -255,15 +248,23 @@ async fn uploads_put<O: ObjectStore>(
                 Some(TypedHeader(content_length)),
             ) = (content_type, content_length)
             {
-                let mut writer = store.resume(&mut session).await?;
-                let _written = writer.write(content_length.0, request.into_body());
+                let writer = store.resume(session).await?;
+                let session = writer.write(content_length.0, request.into_body()).await?;
 
                 // TODO: validate content length of chunk
                 // TODO: update incremental digest state on session
+                session
             } else {
-                let mut writer = store.resume(&mut session).await?;
-                writer.finalize(&oci_digest).await?;
-            }
+                let writer = store.resume(session).await?;
+                writer.finalize(&oci_digest).await?
+            };
+
+            match repository.delete_session(&session).await {
+                Ok(_) => (),
+                Err(e) => {
+                    tracing::warn!("failed to delete session: {e:?}");
+                }
+            };
 
             let location = format!("/v2/{}/blobs/{}", repository.name(), digest);
             let mut headers = HeaderMap::new();
@@ -279,7 +280,7 @@ async fn uploads_put<O: ObjectStore>(
             (Some(TypedHeader(_content_type)), Some(TypedHeader(content_length))) => {
                 let mut store = repository.get_blob_store();
                 store
-                    .upload(&oci_digest, content_length.0, request.into_body())
+                    .put(&oci_digest, content_length.0, request.into_body())
                     .await?;
 
                 let location = format!("/v2/{}/blobs/{}", repository.name(), digest);
@@ -299,18 +300,11 @@ async fn uploads_put<O: ObjectStore>(
         },
     };
 
-    match repository.delete_session(&session).await {
-        Ok(_) => (),
-        Err(e) => {
-            tracing::warn!("failed to delete session: {e:?}");
-        }
-    };
-
     Ok(response)
 }
 
-async fn uploads_patch<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn uploads_patch<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_range: Option<TypedHeader<ContentRange>>,
@@ -332,12 +326,12 @@ async fn uploads_patch<O: ObjectStore>(
     }
 
     let store = repository.get_blob_store();
-    let mut writer = store.resume(&mut session).await?;
-    if let Some(TypedHeader(content_length)) = content_length {
-        writer.write(content_length.0, request.into_body()).await?;
+    let writer = store.resume(session).await?;
+    let session = if let Some(TypedHeader(content_length)) = content_length {
+        writer.write(content_length.0, request.into_body()).await?
     } else {
-        writer.write_chunked(request.into_body()).await?;
-    }
+        writer.write_chunked(request.into_body()).await?
+    };
 
     // TODO: validate content length of chunk
     // TODO: update incremental digest state on session
@@ -361,8 +355,8 @@ async fn uploads_patch<O: ObjectStore>(
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
 }
 
-async fn uploads_get<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn uploads_get<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let session_uuid_str = path_params
@@ -395,8 +389,8 @@ async fn uploads_get<O: ObjectStore>(
     Ok((StatusCode::NO_CONTENT, headers, "").into_response())
 }
 
-async fn delete_blob<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn delete_blob<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let digest: &str = path_params
@@ -406,7 +400,7 @@ async fn delete_blob<O: ObjectStore>(
 
     let mut store = repository.get_blob_store();
 
-    store.delete_blob(&oci_digest).await?;
+    store.delete(&oci_digest).await?;
 
     Ok((StatusCode::ACCEPTED, "").into_response())
 }

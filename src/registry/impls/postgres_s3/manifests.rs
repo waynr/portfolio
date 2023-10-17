@@ -1,38 +1,35 @@
 use std::collections::HashSet;
 
+use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
 use axum::body::Bytes;
 use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
-use crate::{
-    errors::{DistributionErrorCode, Error, Result},
-    oci_digest::OciDigest,
-    registry::{Manifest, ManifestRef, ManifestSpec, RepositoryMetadata},
+use super::blobs::PgS3BlobStore;
+use super::objects::ObjectStore;
+use crate::errors::{DistributionErrorCode, Error, Result};
+use crate::oci_digest::OciDigest;
+use crate::registry::{
+    BlobStore, Manifest, ManifestRef, ManifestSpec, ManifestStore, RepositoryMetadata,
 };
 
-use super::blobs::BlobStore;
-use super::objects::ObjectStore;
-
-pub struct ManifestStore<'r, O>
-where
-    O: ObjectStore,
-{
-    blobstore: BlobStore<O>,
-    repository: &'r RepositoryMetadata,
+pub struct PgS3ManifestStore {
+    blobstore: PgS3BlobStore,
+    repository: RepositoryMetadata,
 }
 
-impl<'r, O> ManifestStore<'r, O>
-where
-    O: ObjectStore,
-{
-    pub fn new(blobstore: BlobStore<O>, repository: &'r RepositoryMetadata) -> Self {
+impl PgS3ManifestStore {
+    pub fn new(blobstore: PgS3BlobStore, repository: RepositoryMetadata) -> Self {
         Self {
             blobstore,
             repository,
         }
     }
+}
 
-    pub async fn head_manifest(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
+#[async_trait]
+impl ManifestStore for PgS3ManifestStore {
+    async fn head(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn.get_manifest(&self.repository.id, key).await? {
             Ok(Some(manifest))
@@ -41,7 +38,7 @@ where
         }
     }
 
-    pub async fn get_manifest(&self, key: &ManifestRef) -> Result<Option<(Manifest, ByteStream)>> {
+    async fn get(&self, key: &ManifestRef) -> Result<Option<(Manifest, ByteStream)>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn.get_manifest(&self.repository.id, key).await? {
             let body = self.blobstore.objects.get_blob(&manifest.blob_id).await?;
@@ -51,7 +48,7 @@ where
         }
     }
 
-    pub async fn upload(
+    async fn put(
         &mut self,
         key: &ManifestRef,
         spec: &ManifestSpec,
@@ -62,7 +59,7 @@ where
         let byte_count = bytes.len();
         let blob_uuid = self
             .blobstore
-            .upload(&calculated_digest, byte_count as u64, bytes.into())
+            .put(&calculated_digest, byte_count as u64, bytes.into())
             .await?;
 
         let mut tx = self.blobstore.metadata.get_tx().await?;
@@ -154,7 +151,7 @@ where
         Ok(calculated_digest)
     }
 
-    pub async fn delete(&mut self, key: &ManifestRef) -> Result<()> {
+    async fn delete(&mut self, key: &ManifestRef) -> Result<()> {
         let mut tx = self.blobstore.metadata.get_tx().await?;
 
         let manifest = tx.get_manifest(&self.repository.id, key).await?.ok_or(
@@ -190,7 +187,7 @@ where
         Ok(())
     }
 
-    pub(crate) async fn get_referrers(
+    async fn get_referrers(
         &self,
         subject: &OciDigest,
         artifact_type: Option<String>,

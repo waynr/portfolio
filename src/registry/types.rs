@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::body::Bytes;
 use axum::Json;
 use oci_spec::image::{Descriptor, ImageIndex, ImageManifest, MediaType};
@@ -5,7 +7,6 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Serialize;
 use sqlx::Row;
-use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::errors::{DistributionErrorCode, Error, Result};

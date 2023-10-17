@@ -1,57 +1,47 @@
 use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
 use bytes::Bytes;
 use hyper::body::Body;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
-use crate::{
-    errors::{Error, Result},
-    registry::{Blob, UploadSession},
-    Digester, DistributionErrorCode, OciDigest,
-};
-
 use super::metadata::{PostgresMetadataPool, PostgresMetadataTx};
-use super::objects::ChunkedBody;
-use super::objects::ObjectStore;
-use super::objects::StreamObjectBody;
+use super::objects::{ChunkedBody, ObjectStore, StreamObjectBody, S3};
+use crate::errors::{Error, Result};
+use crate::registry::{Blob, BlobStore, BlobWriter, UploadSession};
+use crate::{Digester, DistributionErrorCode, OciDigest};
 
-pub struct BlobStore<O>
-where
-    O: ObjectStore,
-{
+pub struct PgS3BlobStore {
     pub(crate) metadata: PostgresMetadataPool,
-    pub(crate) objects: O,
+    pub(crate) objects: S3,
 }
 
-impl<'b, O> BlobStore<O>
-where
-    O: ObjectStore,
-{
-    pub fn new(metadata: PostgresMetadataPool, objects: O) -> Self {
+impl PgS3BlobStore {
+    pub fn new(metadata: PostgresMetadataPool, objects: S3) -> Self {
         Self { metadata, objects }
     }
+}
 
-    pub async fn resume(&self, session: &'b mut UploadSession) -> Result<BlobWriter<'b, O>> {
+#[async_trait]
+impl BlobStore for PgS3BlobStore {
+    type BlobWriter = PgS3BlobWriter;
+
+    async fn resume(&self, mut session: UploadSession) -> Result<PgS3BlobWriter> {
         match session.upload_id {
             Some(_) => (),
-            None => self.objects.initiate_chunked_upload(session).await?,
+            None => self.objects.initiate_chunked_upload(&mut session).await?,
         };
 
-        Ok(BlobWriter {
+        Ok(PgS3BlobWriter {
             metadata: self.metadata.clone(),
             objects: self.objects.clone(),
             session,
         })
     }
 
-    pub async fn upload(
-        &mut self,
-        digest: &OciDigest,
-        content_length: u64,
-        body: Body,
-    ) -> Result<Uuid> {
+    async fn put(&mut self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid> {
         let mut tx = self.metadata.get_tx().await?;
         let uuid = match tx.get_blob(digest).await? {
             Some(b) => {
@@ -79,7 +69,7 @@ where
         Ok(uuid)
     }
 
-    pub async fn get_blob(&self, key: &OciDigest) -> Result<Option<(Blob, ByteStream)>> {
+    async fn get(&self, key: &OciDigest) -> Result<Option<(Blob, ByteStream)>> {
         if let Some(blob) = self.metadata.get_conn().await?.get_blob(key).await? {
             let body = self.objects.get_blob(&blob.id).await?;
             Ok(Some((blob, body)))
@@ -88,11 +78,11 @@ where
         }
     }
 
-    pub async fn get_blob_metadata(&self, key: &OciDigest) -> Result<Option<Blob>> {
+    async fn head(&self, key: &OciDigest) -> Result<Option<Blob>> {
         self.metadata.get_conn().await?.get_blob(key).await
     }
 
-    pub async fn delete_blob(&mut self, digest: &OciDigest) -> Result<()> {
+    async fn delete(&mut self, digest: &OciDigest) -> Result<()> {
         let mut tx = self.metadata.get_tx().await?;
 
         let blob = tx
@@ -109,28 +99,38 @@ where
     }
 }
 
-pub struct BlobWriter<'a, O: ObjectStore> {
+pub struct PgS3BlobWriter {
     metadata: PostgresMetadataPool,
-    objects: O,
+    objects: S3,
 
-    session: &'a mut UploadSession,
+    session: UploadSession,
 }
 
-impl<'a, O> BlobWriter<'a, O>
-where
-    O: ObjectStore,
-{
-    pub async fn write(&mut self, content_length: u64, body: Body) -> Result<()> {
+impl PgS3BlobWriter {
+    async fn write_chunk(&mut self, tx: &mut PostgresMetadataTx<'_>, bytes: Bytes) -> Result<()> {
+        let chunk = self
+            .objects
+            .upload_chunk(&self.session, bytes.len() as u64, bytes.into())
+            .await?;
+
+        tx.insert_chunk(&self.session, &chunk).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl BlobWriter for PgS3BlobWriter {
+    async fn write(mut self, content_length: u64, body: Body) -> Result<UploadSession> {
         tracing::debug!("before chunk upload: {:?}", self.session);
         let digester = Arc::new(Mutex::new(Digester::default()));
         let stream_body = StreamObjectBody::from_body(body, digester.clone());
         let chunk = self
             .objects
-            .upload_chunk(self.session, content_length, stream_body.into())
+            .upload_chunk(&self.session, content_length, stream_body.into())
             .await?;
 
         let mut conn = self.metadata.get_conn().await?;
-        conn.insert_chunk(self.session, &chunk).await?;
+        conn.insert_chunk(&self.session, &chunk).await?;
 
         let digester = Arc::into_inner(digester)
             .expect("no other references should exist at this point")
@@ -140,13 +140,13 @@ where
         self.session.chunk_number += 1;
         self.session.last_range_end += digester.bytes() as i64 - 1;
 
-        conn.update_session(self.session).await?;
+        conn.update_session(&self.session).await?;
 
         // TODO: return uploaded content length here
-        Ok(())
+        Ok(self.session)
     }
 
-    pub async fn write_chunked(&mut self, body: Body) -> Result<()> {
+    async fn write_chunked(mut self, body: Body) -> Result<UploadSession> {
         let md = self.metadata.clone();
         let mut tx = md.get_tx().await?;
         let mut digester = Digester::default();
@@ -163,46 +163,33 @@ where
         }
 
         self.session.last_range_end += digester.bytes() as i64 - 1;
-        tx.update_session(self.session).await?;
+        tx.update_session(&self.session).await?;
 
         tx.commit().await?;
-        Ok(())
+        Ok(self.session)
     }
 
-    pub async fn write_chunk(
-        &mut self,
-        tx: &mut PostgresMetadataTx<'_>,
-        bytes: Bytes,
-    ) -> Result<()> {
-        let chunk = self
-            .objects
-            .upload_chunk(self.session, bytes.len() as u64, bytes.into())
-            .await?;
-
-        tx.insert_chunk(self.session, &chunk).await?;
-        Ok(())
-    }
-
-    pub async fn finalize(&mut self, digest: &OciDigest) -> Result<()> {
+    async fn finalize(self, digest: &OciDigest) -> Result<UploadSession> {
         // TODO: validate digest
         let mut tx = self.metadata.get_tx().await?;
         let uuid = match tx.get_blob(&digest).await? {
             Some(b) => b.id,
             None => {
-                tx.insert_blob(&digest, self.session.last_range_end + 1)
+                tx.insert_blob(&digest, &self.session.last_range_end + 1)
                     .await?
             }
         };
 
         if !self.objects.blob_exists(&uuid).await? {
-            let chunks = tx.get_chunks(self.session).await?;
+            let chunks = tx.get_chunks(&self.session).await?;
             self.objects
-                .finalize_chunked_upload(self.session, chunks, &uuid)
+                .finalize_chunked_upload(&self.session, chunks, &uuid)
                 .await?;
         } else {
-            self.objects.abort_chunked_upload(self.session).await?;
+            self.objects.abort_chunked_upload(&self.session).await?;
         }
 
-        tx.commit().await
+        tx.commit().await?;
+        Ok(self.session)
     }
 }

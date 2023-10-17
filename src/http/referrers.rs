@@ -1,23 +1,20 @@
 use std::collections::HashMap;
 
-use axum::{
-    extract::{Extension, Path, Query},
-    http::header::{self, HeaderMap, HeaderName, HeaderValue},
-    response::{IntoResponse, Response},
-    routing::get,
-    Json, Router,
-};
+use axum::extract::{Extension, Path, Query};
+use axum::http::header::{self, HeaderMap, HeaderName, HeaderValue};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use axum::{Json, Router};
 use http::StatusCode;
 use oci_spec::image::MediaType;
 use serde::Deserialize;
 
-use crate::{
-    http::empty_string_as_none, registry::ObjectStore, registry::Repository, Error, OciDigest,
-    Result,
-};
+use crate::http::empty_string_as_none;
+use crate::registry::{ManifestStore, RepositoryStore};
+use crate::{Error, OciDigest, Result};
 
-pub fn router<O: ObjectStore>() -> Router {
-    Router::new().route("/:digest", get(get_referrers::<O>))
+pub fn router<R: RepositoryStore>() -> Router {
+    Router::new().route("/:digest", get(get_referrers::<R>))
 }
 
 #[derive(Debug, Deserialize)]
@@ -26,8 +23,8 @@ struct GetParams {
     artifact_type: Option<String>,
 }
 
-async fn get_referrers<O: ObjectStore>(
-    Extension(repository): Extension<Repository<O>>,
+async fn get_referrers<R: RepositoryStore>(
+    Extension(repository): Extension<R>,
     Path(path_params): Path<HashMap<String, String>>,
     Query(params): Query<GetParams>,
 ) -> Result<Response> {

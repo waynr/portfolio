@@ -1,7 +1,5 @@
 mod postgres;
-pub use postgres::PostgresConfig;
-pub use postgres::PostgresMetadataPool;
-pub use postgres::PostgresMetadataTx;
+pub use postgres::{PostgresConfig, PostgresMetadataPool, PostgresMetadataTx};
 
 mod traits;
 

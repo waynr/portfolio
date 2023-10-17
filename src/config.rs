@@ -1,31 +1,17 @@
 use serde::Deserialize;
 
-use crate::registry::PostgresConfig;
-use crate::registry::S3Config;
+use crate::registry::impls::postgres_s3::config::PgS3RepositoryConfig;
 
 #[derive(Clone, Deserialize)]
 pub struct Config {
-    pub metadata: MetadataBackend,
-    pub objects: ObjectsBackend,
-    pub static_registries: Option<Vec<RegistryDefinition>>,
+    pub backend: RepositoryBackend,
+    pub static_repositories: Option<Vec<RepositoryDefinition>>,
 }
 
 #[derive(Clone, Deserialize)]
 #[serde(tag = "type")]
-pub enum MetadataBackend {
-    Postgres(PostgresConfig),
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(tag = "type")]
-pub enum ObjectsBackend {
-    S3(S3Config),
-}
-
-#[derive(Clone, Deserialize)]
-pub struct RegistryDefinition {
-    pub name: String,
-    pub repositories: Vec<RepositoryDefinition>,
+pub enum RepositoryBackend {
+    PostgresS3(PgS3RepositoryConfig),
 }
 
 #[derive(Clone, Deserialize)]

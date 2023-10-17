@@ -3,8 +3,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use hyper::body::Body;
 use uuid::Uuid;
 
-use crate::registry::Chunk;
-use crate::registry::UploadSession;
+use crate::registry::{Chunk, UploadSession};
 use crate::Result;
 
 #[async_trait]
@@ -21,7 +20,7 @@ pub trait ObjectStore: Clone + Send + Sync + 'static {
 
     async fn upload_chunk(
         &self,
-        session: &mut UploadSession,
+        session: &UploadSession,
         content_length: u64,
         body: Body,
     ) -> Result<Chunk>;

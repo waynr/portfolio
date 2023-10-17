@@ -1,34 +1,26 @@
+use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::errors::Result;
-use crate::registry::RepositoryMetadata;
-use crate::registry::TagsList;
-use crate::registry::UploadSession;
-
+use super::blobs::PgS3BlobStore;
+use super::manifests::PgS3ManifestStore;
 use super::metadata::PostgresMetadataPool;
-use super::objects::ObjectStore;
-use super::blobs::BlobStore;
-use super::manifests::ManifestStore;
+use super::objects::S3;
+use crate::errors::Result;
+use crate::registry::{RepositoryMetadata, RepositoryStore, TagsList, UploadSession};
 
 #[derive(Clone)]
-pub struct Repository<O>
-where
-    O: ObjectStore,
-{
-    objects: O,
+pub struct PgS3Repository {
+    objects: S3,
     metadata: PostgresMetadataPool,
 
     repository: RepositoryMetadata,
 }
 
-impl<O> Repository<O>
-where
-    O: ObjectStore,
-{
+impl PgS3Repository {
     pub async fn get(
         name: &str,
         metadata: PostgresMetadataPool,
-        objects: O,
+        objects: S3,
     ) -> Result<Option<Self>> {
         if let Some(repository) = metadata.get_conn().await?.get_repository(name).await? {
             Ok(Some(Self {
@@ -44,7 +36,7 @@ where
     pub async fn get_or_insert(
         name: &str,
         metadata: PostgresMetadataPool,
-        objects: O,
+        objects: S3,
     ) -> Result<Self> {
         let mut conn = metadata.get_conn().await?;
 
@@ -59,17 +51,27 @@ where
             repository,
         })
     }
+}
 
-    pub fn name(&self) -> &str {
+#[async_trait]
+impl RepositoryStore for PgS3Repository {
+    type ManifestStore = PgS3ManifestStore;
+    type BlobStore = PgS3BlobStore;
+
+    fn name(&self) -> &str {
         self.repository.name.as_str()
     }
 
-    pub fn get_manifest_store(&self) -> ManifestStore<O> {
-        let blobstore = BlobStore::new(self.metadata.clone(), self.objects.clone());
-        ManifestStore::new(blobstore, &self.repository)
+    fn get_manifest_store(&self) -> Self::ManifestStore {
+        let blobstore = PgS3BlobStore::new(self.metadata.clone(), self.objects.clone());
+        PgS3ManifestStore::new(blobstore, self.repository.clone())
     }
 
-    pub async fn get_tags(&self, n: Option<i64>, last: Option<String>) -> Result<TagsList> {
+    fn get_blob_store(&self) -> Self::BlobStore {
+        PgS3BlobStore::new(self.metadata.clone(), self.objects.clone())
+    }
+
+    async fn get_tags(&self, n: Option<i64>, last: Option<String>) -> Result<TagsList> {
         let mut conn = self.metadata.get_conn().await?;
 
         Ok(TagsList {
@@ -83,15 +85,11 @@ where
         })
     }
 
-    pub fn get_blob_store(&self) -> BlobStore<O> {
-        BlobStore::new(self.metadata.clone(), self.objects.clone())
-    }
-
-    pub async fn new_upload_session(&self) -> Result<UploadSession> {
+    async fn new_upload_session(&self) -> Result<UploadSession> {
         self.metadata.get_conn().await?.new_upload_session().await
     }
 
-    pub async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<UploadSession> {
+    async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<UploadSession> {
         self.metadata
             .get_conn()
             .await?
@@ -99,7 +97,7 @@ where
             .await
     }
 
-    pub async fn delete_session(&self, session: &UploadSession) -> Result<()> {
+    async fn delete_session(&self, session: &UploadSession) -> Result<()> {
         let mut tx = self.metadata.get_tx().await?;
 
         tx.delete_chunks(&session.uuid).await?;
@@ -110,7 +108,7 @@ where
         Ok(())
     }
 
-    pub async fn create_repository(&self, name: &String) -> Result<RepositoryMetadata> {
+    async fn create_repository(&self, name: &String) -> Result<RepositoryMetadata> {
         self.metadata
             .get_conn()
             .await?

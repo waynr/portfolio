@@ -1,26 +1,45 @@
-use crate::{
-    errors::Result, registry::ObjectStore, registry::PostgresMetadataPool, registry::Repository,
-};
+use crate::config::RepositoryDefinition;
+use crate::errors::Result;
+use crate::registry::RepositoryStoreManager;
 
 #[derive(Clone)]
-pub struct Portfolio<O>
+pub struct Portfolio<R>
 where
-    O: ObjectStore,
+    R: RepositoryStoreManager,
 {
-    objects: O,
-    metadata: PostgresMetadataPool,
+    manager: R,
 }
 
-impl<O: ObjectStore> Portfolio<O> {
-    pub fn new(objects: O, metadata: PostgresMetadataPool) -> Self {
-        Self { objects, metadata }
+impl<R: RepositoryStoreManager> Portfolio<R> {
+    pub fn new(manager: R) -> Self {
+        Self { manager }
     }
 
-    pub async fn get_repository(&self, name: &str) -> Result<Option<Repository<O>>> {
-        Repository::get(name, self.metadata.clone(), self.objects.clone()).await
+    pub async fn initialize_static_repositories(
+        &self,
+        repositories: Vec<RepositoryDefinition>,
+    ) -> Result<()> {
+        for repository_config in repositories {
+            match self.get_repository(&repository_config.name).await {
+                Ok(Some(r)) => r,
+                Ok(None) => {
+                    tracing::info!(
+                        "static repository '{}' not found, inserting into DB",
+                        repository_config.name,
+                    );
+                    self.insert_repository(&repository_config.name).await?
+                }
+                Err(e) => return Err(e),
+            };
+        }
+        Ok(())
     }
 
-    pub async fn insert_repository(&self, name: &str) -> Result<Repository<O>> {
-        Ok(Repository::get_or_insert(name, self.metadata.clone(), self.objects.clone()).await?)
+    pub async fn get_repository(&self, name: &str) -> Result<Option<R::RepositoryStore>> {
+        self.manager.get(name).await
+    }
+
+    pub async fn insert_repository(&self, name: &str) -> Result<R::RepositoryStore> {
+        Ok(self.manager.create(name).await?)
     }
 }

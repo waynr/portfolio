@@ -3,10 +3,8 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use clap::Parser;
-
-use portfolio::http;
-use portfolio::Result;
-use portfolio::{Config, MetadataBackend, ObjectsBackend};
+use portfolio::registry::{PgS3Repository, PgS3RepositoryFactory};
+use portfolio::{http, Config, RepositoryBackend, Result};
 
 #[derive(Parser)]
 struct Cli {
@@ -36,19 +34,19 @@ async fn main() -> Result<()> {
     let config: Config = serde_yaml::from_str(&s)?;
 
     // initialize persistence layer
-    let metadata = match config.metadata {
-        MetadataBackend::Postgres(cfg) => cfg.new_metadata().await?,
-    };
-    let objects = match config.objects {
-        ObjectsBackend::S3(cfg) => cfg.new_objects().await?,
-    };
+    match config.backend {
+        RepositoryBackend::PostgresS3(cfg) => {
+            let manager = cfg.get_manager().await?;
+            let portfolio = portfolio::Portfolio::new(manager);
 
-    if let Some(registries) = config.static_registries {
-        metadata.get_conn().await?.initialize_static_registries(registries).await?;
+            if let Some(repositories) = config.static_repositories {
+                portfolio
+                    .initialize_static_repositories(repositories)
+                    .await?;
+            }
+
+            // run HTTP server
+            http::serve::<PgS3RepositoryFactory, PgS3Repository>(portfolio).await
+        }
     }
-
-    let portfolio = portfolio::Portfolio::new(objects, metadata);
-
-    // run HTTP server
-    http::serve(portfolio).await
 }

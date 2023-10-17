@@ -1,5 +1,3 @@
-use serde::Deserialize;
-
 use async_trait::async_trait;
 use aws_credential_types::provider::{ProvideCredentials, SharedCredentialsProvider};
 use aws_credential_types::Credentials;
@@ -10,15 +8,14 @@ use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::Client;
 use http::{StatusCode, Uri};
 use hyper::body::Body;
+use serde::Deserialize;
 use uuid::Uuid;
 
 pub(crate) mod logging;
-use crate::{
-    errors::{Error, Result},
-    registry::{Chunk, UploadSession},
-};
 use super::s3::logging::LoggingInterceptor;
 use super::traits::ObjectStore;
+use crate::errors::{Error, Result};
+use crate::registry::{Chunk, UploadSession};
 
 #[derive(Clone, Deserialize)]
 pub struct S3Config {
@@ -153,7 +150,7 @@ impl ObjectStore for S3 {
 
     async fn upload_chunk(
         &self,
-        session: &mut UploadSession,
+        session: &UploadSession,
         content_length: u64,
         body: Body,
     ) -> Result<Chunk> {
