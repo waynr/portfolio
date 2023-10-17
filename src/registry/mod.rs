@@ -2,7 +2,7 @@ pub(crate) mod impls;
 
 pub mod types;
 pub use types::{
-    Blob, Manifest, ManifestRef, ManifestSpec, Repository as RepositoryMetadata, Tag, TagsList,
+    ManifestRef, ManifestSpec, TagsList,
 };
 
 pub mod session;
@@ -11,6 +11,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use axum::body::Bytes;
 use hyper::body::Body;
 use oci_spec::image::ImageIndex;
+use oci_spec::image::MediaType;
 pub use session::{Chunk, Chunks, UploadSession, UploadSessions};
 use uuid::Uuid;
 
@@ -43,15 +44,21 @@ pub trait RepositoryStore: Clone + Send + Sync + 'static {
     async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<UploadSession>;
 
     async fn delete_session(&self, session: &UploadSession) -> Result<()>;
+}
 
-    async fn create_repository(&self, name: &String) -> Result<RepositoryMetadata>;
+pub trait Manifest {
+    fn bytes_on_disk(&self) -> u64;
+    fn digest(&self) -> &OciDigest;
+    fn media_type(&self) -> &Option<MediaType>;
 }
 
 #[async_trait]
 pub trait ManifestStore: Send + Sync + 'static {
-    async fn head(&self, key: &ManifestRef) -> Result<Option<Manifest>>;
+    type Manifest: Manifest;
 
-    async fn get(&self, key: &ManifestRef) -> Result<Option<(Manifest, ByteStream)>>;
+    async fn head(&self, key: &ManifestRef) -> Result<Option<Self::Manifest>>;
+
+    async fn get(&self, key: &ManifestRef) -> Result<Option<(Self::Manifest, ByteStream)>>;
 
     async fn put(
         &mut self,
@@ -69,13 +76,18 @@ pub trait ManifestStore: Send + Sync + 'static {
     ) -> Result<ImageIndex>;
 }
 
+pub trait Blob {
+    fn bytes_on_disk(&self) -> u64;
+}
+
 #[async_trait]
 pub trait BlobStore: Send + Sync + 'static {
     type BlobWriter: BlobWriter;
+    type Blob: Blob;
 
-    async fn head(&self, key: &OciDigest) -> Result<Option<Blob>>;
+    async fn head(&self, key: &OciDigest) -> Result<Option<Self::Blob>>;
 
-    async fn get(&self, key: &OciDigest) -> Result<Option<(Blob, ByteStream)>>;
+    async fn get(&self, key: &OciDigest) -> Result<Option<(Self::Blob, ByteStream)>>;
 
     async fn put(&mut self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid>;
 

@@ -6,12 +6,11 @@ use sqlx::postgres::{PgPoolOptions, Postgres};
 use sqlx::types::Uuid;
 use sqlx::{PgConnection, Pool, Row, Transaction};
 
-use super::types::{Blobs, IndexManifests, Layers, Manifests, Repositories, Tags};
-use crate::errors::{Error, Result};
-use crate::registry::{
-    Blob, Chunk, Chunks, Manifest, ManifestRef, RepositoryMetadata as Repository, Tag,
-    UploadSession, UploadSessions,
+use super::types::{
+    Blob, Blobs, IndexManifests, Layers, Manifest, Manifests, Repositories, Repository, Tag, Tags,
 };
+use crate::errors::{Error, Result};
+use crate::registry::{Chunk, Chunks, ManifestRef, UploadSession, UploadSessions};
 use crate::{DigestState, OciDigest};
 
 #[derive(Clone, Deserialize)]

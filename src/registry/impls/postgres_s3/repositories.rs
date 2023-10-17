@@ -4,16 +4,17 @@ use uuid::Uuid;
 use super::blobs::PgS3BlobStore;
 use super::manifests::PgS3ManifestStore;
 use super::metadata::PostgresMetadataPool;
+use super::metadata::Repository;
 use super::objects::S3;
 use crate::errors::Result;
-use crate::registry::{RepositoryMetadata, RepositoryStore, TagsList, UploadSession};
+use crate::registry::{RepositoryStore, TagsList, UploadSession};
 
 #[derive(Clone)]
 pub struct PgS3Repository {
     objects: S3,
     metadata: PostgresMetadataPool,
 
-    repository: RepositoryMetadata,
+    repository: Repository,
 }
 
 impl PgS3Repository {
@@ -106,13 +107,5 @@ impl RepositoryStore for PgS3Repository {
         tx.commit().await?;
 
         Ok(())
-    }
-
-    async fn create_repository(&self, name: &String) -> Result<RepositoryMetadata> {
-        self.metadata
-            .get_conn()
-            .await?
-            .insert_repository(name)
-            .await
     }
 }

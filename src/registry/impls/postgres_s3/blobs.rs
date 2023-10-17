@@ -7,10 +7,10 @@ use hyper::body::Body;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
-use super::metadata::{PostgresMetadataPool, PostgresMetadataTx};
+use super::metadata::{Blob, PostgresMetadataPool, PostgresMetadataTx};
 use super::objects::{ChunkedBody, ObjectStore, StreamObjectBody, S3};
 use crate::errors::{Error, Result};
-use crate::registry::{Blob, BlobStore, BlobWriter, UploadSession};
+use crate::registry::{BlobStore, BlobWriter, UploadSession};
 use crate::{Digester, DistributionErrorCode, OciDigest};
 
 pub struct PgS3BlobStore {
@@ -27,6 +27,7 @@ impl PgS3BlobStore {
 #[async_trait]
 impl BlobStore for PgS3BlobStore {
     type BlobWriter = PgS3BlobWriter;
+    type Blob = Blob;
 
     async fn resume(&self, mut session: UploadSession) -> Result<PgS3BlobWriter> {
         match session.upload_id {

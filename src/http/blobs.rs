@@ -15,7 +15,7 @@ use hyper::body::Body;
 use uuid::Uuid;
 
 use crate::http::headers::{ContentRange, Range};
-use crate::registry::{BlobStore, BlobWriter, RepositoryStore, UploadSession};
+use crate::registry::{Blob, BlobStore, BlobWriter, RepositoryStore, UploadSession};
 use crate::{DistributionErrorCode, Error, OciDigest, Result};
 
 pub fn router<R: RepositoryStore>() -> Router {
@@ -54,7 +54,7 @@ async fn get_blob<R: RepositoryStore>(
         );
         headers.insert(
             header::CONTENT_LENGTH,
-            HeaderValue::from_str(blob.bytes_on_disk.to_string().as_str())?,
+            HeaderValue::from_str(blob.bytes_on_disk().to_string().as_str())?,
         );
         Ok((StatusCode::OK, headers, StreamBody::new(body)).into_response())
     } else {
@@ -83,7 +83,7 @@ async fn head_blob<R: RepositoryStore>(
         );
         headers.insert(
             header::CONTENT_LENGTH,
-            HeaderValue::from_str(blob.bytes_on_disk.to_string().as_str())?,
+            HeaderValue::from_str(blob.bytes_on_disk().to_string().as_str())?,
         );
         Ok((StatusCode::OK, headers, "").into_response())
     } else {

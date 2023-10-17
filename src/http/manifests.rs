@@ -10,7 +10,7 @@ use axum::{Router, TypedHeader};
 use headers::{ContentLength, ContentType};
 use http::StatusCode;
 
-use crate::registry::{ManifestRef, ManifestSpec, ManifestStore, RepositoryStore};
+use crate::registry::{Manifest, ManifestRef, ManifestSpec, ManifestStore, RepositoryStore};
 use crate::{DistributionErrorCode, Error, Result};
 
 pub fn router<R: RepositoryStore>() -> Router {
@@ -40,14 +40,14 @@ async fn head_manifest<R: RepositoryStore>(
 
     if let Some(manifest) = manifest {
         let mut headers = HeaderMap::new();
-        let dgst: String = manifest.digest.into();
+        let dgst: String = manifest.digest().into();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
             HeaderValue::from_str(dgst.as_str())?,
         );
         headers.insert(
             header::CONTENT_LENGTH,
-            HeaderValue::from_str(manifest.bytes_on_disk.to_string().as_str())?,
+            HeaderValue::from_str(manifest.bytes_on_disk().to_string().as_str())?,
         );
         return Ok((StatusCode::OK, headers, "").into_response());
     }
@@ -77,17 +77,17 @@ async fn get_manifest<R: RepositoryStore>(
     };
 
     let mut headers = HeaderMap::new();
-    let dgst: String = manifest.digest.into();
+    let dgst: String = manifest.digest().into();
     headers.insert(
         HeaderName::from_lowercase(b"docker-content-digest")?,
         HeaderValue::from_str(dgst.as_str())?,
     );
     headers.insert(
         header::CONTENT_LENGTH,
-        HeaderValue::from_str(manifest.bytes_on_disk.to_string().as_str())?,
+        HeaderValue::from_str(manifest.bytes_on_disk().to_string().as_str())?,
     );
-    if let Some(mt) = manifest.media_type {
-        let content_type: String = mt.into();
+    if let Some(mt) = manifest.media_type() {
+        let content_type: String = mt.clone().into();
         headers.insert(
             http::header::CONTENT_TYPE,
             HeaderValue::from_str(content_type.as_str())?,

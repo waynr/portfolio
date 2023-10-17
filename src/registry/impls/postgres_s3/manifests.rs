@@ -6,20 +6,20 @@ use axum::body::Bytes;
 use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
 use super::blobs::PgS3BlobStore;
+use super::metadata::Manifest;
+use super::metadata::Repository;
 use super::objects::ObjectStore;
 use crate::errors::{DistributionErrorCode, Error, Result};
 use crate::oci_digest::OciDigest;
-use crate::registry::{
-    BlobStore, Manifest, ManifestRef, ManifestSpec, ManifestStore, RepositoryMetadata,
-};
+use crate::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
 
 pub struct PgS3ManifestStore {
     blobstore: PgS3BlobStore,
-    repository: RepositoryMetadata,
+    repository: Repository,
 }
 
 impl PgS3ManifestStore {
-    pub fn new(blobstore: PgS3BlobStore, repository: RepositoryMetadata) -> Self {
+    pub fn new(blobstore: PgS3BlobStore, repository: Repository) -> Self {
         Self {
             blobstore,
             repository,
@@ -29,7 +29,9 @@ impl PgS3ManifestStore {
 
 #[async_trait]
 impl ManifestStore for PgS3ManifestStore {
-    async fn head(&self, key: &ManifestRef) -> Result<Option<Manifest>> {
+    type Manifest = Manifest;
+
+    async fn head(&self, key: &ManifestRef) -> Result<Option<Self::Manifest>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn.get_manifest(&self.repository.id, key).await? {
             Ok(Some(manifest))
@@ -38,7 +40,7 @@ impl ManifestStore for PgS3ManifestStore {
         }
     }
 
-    async fn get(&self, key: &ManifestRef) -> Result<Option<(Manifest, ByteStream)>> {
+    async fn get(&self, key: &ManifestRef) -> Result<Option<(Self::Manifest, ByteStream)>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn.get_manifest(&self.repository.id, key).await? {
             let body = self.blobstore.objects.get_blob(&manifest.blob_id).await?;
@@ -74,7 +76,8 @@ impl ManifestStore for PgS3ManifestStore {
             return Ok(m.digest);
         }
 
-        let manifest: Manifest = spec.new_manifest(
+        let manifest = Manifest::from_spec_with_params(
+            spec,
             self.repository.id,
             blob_uuid,
             calculated_digest.clone(),
