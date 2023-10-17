@@ -46,7 +46,7 @@ async fn get_blob<R: RepositoryStore>(
 
     let blob_store = repository.get_blob_store();
 
-    if let Some((blob, body)) = blob_store.get(&oci_digest).await? {
+    if let Some((blob, body)) = blob_store.get(&oci_digest).await.map_err(|e| e.into())? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
@@ -75,7 +75,7 @@ async fn head_blob<R: RepositoryStore>(
 
     let blob_store = repository.get_blob_store();
 
-    if let Some(blob) = blob_store.head(&oci_digest).await? {
+    if let Some(blob) = blob_store.head(&oci_digest).await.map_err(|e| e.into())? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
@@ -114,8 +114,16 @@ async fn uploads_post<R: RepositoryStore>(
             let oci_digest: OciDigest = digest.as_str().try_into()?;
 
             let store = repository.get_blob_store();
-            if !store.head(&oci_digest).await?.is_some() {
-                let session: UploadSession = repository.new_upload_session().await?;
+            if !store
+                .head(&oci_digest)
+                .await
+                .map_err(|e| e.into())?
+                .is_some()
+            {
+                let session: UploadSession = repository
+                    .new_upload_session()
+                    .await
+                    .map_err(|e| e.into())?;
 
                 let location = format!("/v2/{}/blobs/uploads/{}", repository.name(), session.uuid,);
                 let mut headers = HeaderMap::new();
@@ -159,7 +167,10 @@ async fn uploads_post<R: RepositoryStore>(
                     }
                 }
             }
-            let session: UploadSession = repository.new_upload_session().await?;
+            let session: UploadSession = repository
+                .new_upload_session()
+                .await
+                .map_err(|e| e.into())?;
 
             let location = format!("/v2/{}/blobs/uploads/{}", repository.name(), session.uuid,);
             let mut headers = HeaderMap::new();
@@ -176,7 +187,8 @@ async fn uploads_post<R: RepositoryStore>(
                 let mut store = repository.get_blob_store();
                 store
                     .put(&oci_digest, length.0, request.into_body())
-                    .await?;
+                    .await
+                    .map_err(|e| e.into())?;
 
                 let location = format!("/v2/{}/blobs/{}", repository.name(), dgst);
                 let mut headers = HeaderMap::new();
@@ -248,15 +260,18 @@ async fn uploads_put<R: RepositoryStore>(
                 Some(TypedHeader(content_length)),
             ) = (content_type, content_length)
             {
-                let writer = store.resume(session).await?;
-                let session = writer.write(content_length.0, request.into_body()).await?;
+                let writer = store.resume(session).await.map_err(|e| e.into())?;
+                let session = writer
+                    .write(content_length.0, request.into_body())
+                    .await
+                    .map_err(|e| e.into())?;
 
                 // TODO: validate content length of chunk
                 // TODO: update incremental digest state on session
                 session
             } else {
-                let writer = store.resume(session).await?;
-                writer.finalize(&oci_digest).await?
+                let writer = store.resume(session).await.map_err(|e| e.into())?;
+                writer.finalize(&oci_digest).await.map_err(|e| e.into())?
             };
 
             match repository.delete_session(&session).await {
@@ -281,7 +296,8 @@ async fn uploads_put<R: RepositoryStore>(
                 let mut store = repository.get_blob_store();
                 store
                     .put(&oci_digest, content_length.0, request.into_body())
-                    .await?;
+                    .await
+                    .map_err(|e| e.into())?;
 
                 let location = format!("/v2/{}/blobs/{}", repository.name(), digest);
                 let mut headers = HeaderMap::new();
@@ -326,11 +342,17 @@ async fn uploads_patch<R: RepositoryStore>(
     }
 
     let store = repository.get_blob_store();
-    let writer = store.resume(session).await?;
+    let writer = store.resume(session).await.map_err(|e| e.into())?;
     let session = if let Some(TypedHeader(content_length)) = content_length {
-        writer.write(content_length.0, request.into_body()).await?
+        writer
+            .write(content_length.0, request.into_body())
+            .await
+            .map_err(|e| e.into())?
     } else {
-        writer.write_chunked(request.into_body()).await?
+        writer
+            .write_chunked(request.into_body())
+            .await
+            .map_err(|e| e.into())?
     };
 
     // TODO: validate content length of chunk
@@ -400,7 +422,7 @@ async fn delete_blob<R: RepositoryStore>(
 
     let mut store = repository.get_blob_store();
 
-    store.delete(&oci_digest).await?;
+    store.delete(&oci_digest).await.map_err(|e| e.into())?;
 
     Ok((StatusCode::ACCEPTED, "").into_response())
 }

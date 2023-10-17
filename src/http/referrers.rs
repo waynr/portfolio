@@ -36,7 +36,8 @@ async fn get_referrers<R: RepositoryStore>(
     let mstore = repository.get_manifest_store();
     let image_index = mstore
         .get_referrers(&oci_digest, params.artifact_type.clone())
-        .await?;
+        .await
+        .map_err(|e| e.into())?;
 
     let mut headers = HeaderMap::new();
     headers.insert(

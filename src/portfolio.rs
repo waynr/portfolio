@@ -1,5 +1,4 @@
 use crate::config::RepositoryDefinition;
-use crate::errors::Result;
 use crate::registry::RepositoryStoreManager;
 
 #[derive(Clone)]
@@ -18,7 +17,7 @@ impl<R: RepositoryStoreManager> Portfolio<R> {
     pub async fn initialize_static_repositories(
         &self,
         repositories: Vec<RepositoryDefinition>,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), R::Error> {
         for repository_config in repositories {
             match self.get_repository(&repository_config.name).await {
                 Ok(Some(r)) => r,
@@ -35,11 +34,17 @@ impl<R: RepositoryStoreManager> Portfolio<R> {
         Ok(())
     }
 
-    pub async fn get_repository(&self, name: &str) -> Result<Option<R::RepositoryStore>> {
-        self.manager.get(name).await
+    pub async fn get_repository(
+        &self,
+        name: &str,
+    ) -> std::result::Result<Option<R::RepositoryStore>, R::Error> {
+        Ok(self.manager.get(name).await?)
     }
 
-    pub async fn insert_repository(&self, name: &str) -> Result<R::RepositoryStore> {
+    pub async fn insert_repository(
+        &self,
+        name: &str,
+    ) -> std::result::Result<R::RepositoryStore, R::Error> {
         Ok(self.manager.create(name).await?)
     }
 }

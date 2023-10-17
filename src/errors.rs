@@ -9,13 +9,6 @@ pub enum Error {
     #[error("{0}")]
     AddrParseError(#[from] std::net::AddrParseError),
 
-    #[error("sqlx error")]
-    SQLXError(#[from] sqlx::Error),
-    #[error("sqlx migration error")]
-    SQLXMigrateError(#[from] sqlx::migrate::MigrateError),
-    #[error("sea-query error")]
-    SeaQueryError(#[from] sea_query::error::Error),
-
     #[error("config deserialization error")]
     ConfigError(#[from] serde_yaml::Error),
     #[error("io error")]
@@ -28,70 +21,6 @@ pub enum Error {
     HTTPInvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
     #[error("{0}")]
     HyperError(#[from] hyper::Error),
-
-    #[error("{0}")]
-    ByteStreamError(#[from] aws_sdk_s3::primitives::ByteStreamError),
-    #[error("{0}")]
-    TokioJoinError(#[from] tokio::task::JoinError),
-
-    // #[error("aws sdk credentials error")]
-    // AWSSDKCredentialsError(#[from] aws_types::credentials::CredentialsError),
-    #[error("aws sdk put object error")]
-    AWSSDKPutObjectError(
-        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::put_object::PutObjectError>,
-    ),
-    #[error("aws sdk get object error")]
-    AWSSDKGetObjectError(
-        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError>,
-    ),
-    #[error("aws sdk head object error")]
-    AWSSDKHeadObjectError(
-        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::head_object::HeadObjectError>,
-    ),
-    #[error("aws sdk copy object error")]
-    AWSSDKCopyObjectError(
-        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::copy_object::CopyObjectError>,
-    ),
-    #[error("aws sdk delete object error")]
-    AWSSDKDeleteObjectError(
-        #[from]
-        aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::delete_object::DeleteObjectError>,
-    ),
-    #[error("aws sdk create multipart upload error")]
-    AWSSDKCreateMultiPartUploadError(
-        #[from]
-        aws_sdk_s3::error::SdkError<
-            aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadError,
-        >,
-    ),
-    #[error("aws sdk upload part error")]
-    AWSSDKUploadPartError(
-        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::upload_part::UploadPartError>,
-    ),
-    #[error("aws sdk complete multipart upload error")]
-    AWSSDKCompleteMultipartUploadError(
-        #[from]
-        aws_sdk_s3::error::SdkError<
-            aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError,
-        >,
-    ),
-    #[error("aws sdk abort multipart upload error")]
-    AWSSDKAbortMultipartUploadError(
-        #[from]
-        aws_sdk_s3::error::SdkError<
-            aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError,
-        >,
-    ),
-    #[error("aws sdk credentials error")]
-    AWSSDKCredentialsError(#[from] aws_credential_types::provider::error::CredentialsError),
-
-    #[error("failed to initiate chunked upload: {0}")]
-    ObjectsFailedToInitiateChunkedUpload(&'static str),
-    #[error("missing upload id for session: {0}")]
-    ObjectsMissingUploadID(uuid::Uuid),
-
-    #[error("error serializing to value")]
-    SerdeJsonToValueError(#[from] serde_json::Error),
 
     // input validation errors
     #[error("invalid uuid")]
@@ -110,14 +39,24 @@ pub enum Error {
     #[error("invalid header value: {0}")]
     InvalidHeaderValue(&'static str),
 
-    // metadata errors
-    #[error("PostgresMetadataTx already rolled back or committed")]
-    PostgresMetadataTxInactive,
+    #[error("postgres + s3 backend error: {0}")]
+    PostgresS3BackendError(PostgresS3Error),
 
     // distribution error codes
     // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
     #[error("distribution spec error")]
     DistributionSpecError(DistributionErrorCode),
+}
+
+use crate::registry::impls::postgres_s3::errors::Error as PostgresS3Error;
+
+impl From<PostgresS3Error> for Error {
+    fn from(e: PostgresS3Error) -> Self {
+        match e {
+            PostgresS3Error::DistributionSpecError(c) => Error::DistributionSpecError(c),
+            _ => Error::PostgresS3BackendError(e),
+        }
+    }
 }
 
 // TODO: need to generate JSON error body format as described in https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes

@@ -6,10 +6,10 @@ use sqlx::postgres::{PgPoolOptions, Postgres};
 use sqlx::types::Uuid;
 use sqlx::{PgConnection, Pool, Row, Transaction};
 
+use super::super::errors::{Error, Result};
 use super::types::{
     Blob, Blobs, IndexManifests, Layers, Manifest, Manifests, Repositories, Repository, Tag, Tags,
 };
-use crate::errors::{Error, Result};
 use crate::registry::{Chunk, Chunks, ManifestRef, UploadSession, UploadSessions};
 use crate::{DigestState, OciDigest};
 

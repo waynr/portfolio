@@ -2,11 +2,11 @@ use async_trait::async_trait;
 use uuid::Uuid;
 
 use super::blobs::PgS3BlobStore;
+use super::errors::{Error, Result};
 use super::manifests::PgS3ManifestStore;
 use super::metadata::PostgresMetadataPool;
 use super::metadata::Repository;
 use super::objects::S3;
-use crate::errors::Result;
 use crate::registry::{RepositoryStore, TagsList, UploadSession};
 
 #[derive(Clone)]
@@ -58,6 +58,7 @@ impl PgS3Repository {
 impl RepositoryStore for PgS3Repository {
     type ManifestStore = PgS3ManifestStore;
     type BlobStore = PgS3BlobStore;
+    type Error = Error;
 
     fn name(&self) -> &str {
         self.repository.name.as_str()

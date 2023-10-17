@@ -25,7 +25,10 @@ async fn get_tags<R: RepositoryStore>(
     Extension(repository): Extension<R>,
     Query(params): Query<GetListParams>,
 ) -> Result<Response> {
-    let tags_list = repository.get_tags(params.n, params.last).await?;
+    let tags_list = repository
+        .get_tags(params.n, params.last)
+        .await
+        .map_err(|e| e.into())?;
 
     Ok((StatusCode::OK, Json(tags_list)).into_response())
 }

@@ -9,9 +9,9 @@ use uuid::Uuid;
 
 use super::metadata::{Blob, PostgresMetadataPool, PostgresMetadataTx};
 use super::objects::{ChunkedBody, ObjectStore, StreamObjectBody, S3};
-use crate::errors::{Error, Result};
+use super::errors::{Error, Result};
 use crate::registry::{BlobStore, BlobWriter, UploadSession};
-use crate::{Digester, DistributionErrorCode, OciDigest};
+use crate::{Digester, OciDigest};
 
 pub struct PgS3BlobStore {
     pub(crate) metadata: PostgresMetadataPool,
@@ -28,6 +28,7 @@ impl PgS3BlobStore {
 impl BlobStore for PgS3BlobStore {
     type BlobWriter = PgS3BlobWriter;
     type Blob = Blob;
+    type Error = Error;
 
     async fn resume(&self, mut session: UploadSession) -> Result<PgS3BlobWriter> {
         match session.upload_id {
@@ -90,7 +91,7 @@ impl BlobStore for PgS3BlobStore {
             .get_blob(digest)
             .await?
             .ok_or(Error::DistributionSpecError(
-                DistributionErrorCode::BlobUnknown,
+                crate::DistributionErrorCode::BlobUnknown,
             ))?;
 
         // TODO: handle the case where the blob is referenced
@@ -121,6 +122,8 @@ impl PgS3BlobWriter {
 
 #[async_trait]
 impl BlobWriter for PgS3BlobWriter {
+    type Error = Error;
+
     async fn write(mut self, content_length: u64, body: Body) -> Result<UploadSession> {
         tracing::debug!("before chunk upload: {:?}", self.session);
         let digester = Arc::new(Mutex::new(Digester::default()));

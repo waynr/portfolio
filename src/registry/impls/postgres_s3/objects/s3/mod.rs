@@ -12,9 +12,9 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 pub(crate) mod logging;
+use super::super::errors::{Error, Result};
 use super::s3::logging::LoggingInterceptor;
 use super::traits::ObjectStore;
-use crate::errors::{Error, Result};
 use crate::registry::{Chunk, UploadSession};
 
 #[derive(Clone, Deserialize)]
@@ -72,6 +72,8 @@ pub struct S3 {
 
 #[async_trait]
 impl ObjectStore for S3 {
+    type Error = Error;
+
     async fn get_blob(&self, key: &Uuid) -> Result<ByteStream> {
         let get_object_output = self
             .client

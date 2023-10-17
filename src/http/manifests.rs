@@ -36,7 +36,7 @@ async fn head_manifest<R: RepositoryStore>(
     )?;
 
     let mstore = repository.get_manifest_store();
-    let manifest = mstore.head(&manifest_ref).await?;
+    let manifest = mstore.head(&manifest_ref).await.map_err(|e| e.into())?;
 
     if let Some(manifest) = manifest {
         let mut headers = HeaderMap::new();
@@ -68,13 +68,14 @@ async fn get_manifest<R: RepositoryStore>(
     )?;
 
     let mstore = repository.get_manifest_store();
-    let (manifest, body) = if let Some((m, b)) = mstore.get(&manifest_ref).await? {
-        (m, b)
-    } else {
-        return Err(Error::DistributionSpecError(
-            DistributionErrorCode::ManifestUnknown,
-        ));
-    };
+    let (manifest, body) =
+        if let Some((m, b)) = mstore.get(&manifest_ref).await.map_err(|e| e.into())? {
+            (m, b)
+        } else {
+            return Err(Error::DistributionSpecError(
+                DistributionErrorCode::ManifestUnknown,
+            ));
+        };
 
     let mut headers = HeaderMap::new();
     let dgst: String = manifest.digest().into();
@@ -161,7 +162,10 @@ async fn put_manifest<R: RepositoryStore>(
     }
 
     let mut mstore = repository.get_manifest_store();
-    let calculated_digest = mstore.put(&manifest_ref, &manifest, bytes).await?;
+    let calculated_digest = mstore
+        .put(&manifest_ref, &manifest, bytes)
+        .await
+        .map_err(|e| e.into())?;
 
     let location = format!("/v2/{}/manifests/{}", repository.name(), mref);
     let mut headers = HeaderMap::new();
@@ -191,7 +195,7 @@ async fn delete_manifest<R: RepositoryStore>(
     let manifest_ref = ManifestRef::from_str(mref)?;
 
     let mut mstore = repository.get_manifest_store();
-    match mstore.delete(&manifest_ref).await {
+    match mstore.delete(&manifest_ref).await.map_err(|e| e.into()) {
         Ok(_) => Ok((StatusCode::ACCEPTED, "").into_response()),
         Err(e @ Error::DistributionSpecError(DistributionErrorCode::ContentReferenced)) => {
             Ok(e.into_response())

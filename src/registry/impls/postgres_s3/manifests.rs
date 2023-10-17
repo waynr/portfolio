@@ -6,10 +6,10 @@ use axum::body::Bytes;
 use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
 use super::blobs::PgS3BlobStore;
+use super::errors::{Error, Result};
 use super::metadata::Manifest;
 use super::metadata::Repository;
 use super::objects::ObjectStore;
-use crate::errors::{DistributionErrorCode, Error, Result};
 use crate::oci_digest::OciDigest;
 use crate::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
 
@@ -30,6 +30,7 @@ impl PgS3ManifestStore {
 #[async_trait]
 impl ManifestStore for PgS3ManifestStore {
     type Manifest = Manifest;
+    type Error = Error;
 
     async fn head(&self, key: &ManifestRef) -> Result<Option<Self::Manifest>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
@@ -101,7 +102,7 @@ impl ManifestStore for PgS3ManifestStore {
                     if !hs.contains(*digest) {
                         tracing::warn!("blob for layer {digest} not found in repository");
                         return Err(Error::DistributionSpecError(
-                            DistributionErrorCode::BlobUnknown,
+                            crate::DistributionErrorCode::BlobUnknown,
                         ));
                     }
                 }
@@ -129,7 +130,7 @@ impl ManifestStore for PgS3ManifestStore {
                     if !hs.contains(*digest) {
                         tracing::warn!("blob for manifest {digest} not found in repository");
                         return Err(Error::DistributionSpecError(
-                            DistributionErrorCode::ManifestUnknown,
+                            crate::DistributionErrorCode::ManifestUnknown,
                         ));
                     }
                 }
@@ -158,7 +159,7 @@ impl ManifestStore for PgS3ManifestStore {
         let mut tx = self.blobstore.metadata.get_tx().await?;
 
         let manifest = tx.get_manifest(&self.repository.id, key).await?.ok_or(
-            Error::DistributionSpecError(DistributionErrorCode::ManifestUnknown),
+            Error::DistributionSpecError(crate::DistributionErrorCode::ManifestUnknown),
         )?;
 
         // NOTE: it's possible (but how likely?) for a manifest to include both layers and

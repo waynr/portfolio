@@ -46,7 +46,10 @@ async fn auth<B, R: RepositoryStoreManager>(
             ));
         }
         Ok(Some(r)) => r,
-        Ok(None) => portfolio.insert_repository(repo_name).await?,
+        Ok(None) => portfolio
+            .insert_repository(repo_name)
+            .await
+            .map_err(|e| e.into())?,
     };
 
     req.extensions_mut().insert(repository);
