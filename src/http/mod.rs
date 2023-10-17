@@ -24,7 +24,7 @@ mod referrers;
 mod tags;
 
 use crate::errors::{DistributionErrorCode, Error, Result};
-use crate::objects::ObjectStore;
+use crate::registry::ObjectStore;
 use crate::Portfolio;
 
 async fn auth<B, O: ObjectStore>(

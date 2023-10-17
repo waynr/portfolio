@@ -1,13 +1,14 @@
 use uuid::Uuid;
 
 use crate::errors::Result;
-use crate::metadata::PostgresMetadataPool;
-use crate::objects::ObjectStore;
-use crate::registry::blobs::BlobStore;
-use crate::registry::manifests::ManifestStore;
 use crate::registry::RepositoryMetadata;
 use crate::registry::TagsList;
 use crate::registry::UploadSession;
+
+use super::metadata::PostgresMetadataPool;
+use super::objects::ObjectStore;
+use super::blobs::BlobStore;
+use super::manifests::ManifestStore;
 
 #[derive(Clone)]
 pub struct Repository<O>

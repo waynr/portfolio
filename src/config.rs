@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
-use crate::metadata;
-use crate::objects;
+use crate::registry::PostgresConfig;
+use crate::registry::S3Config;
 
 #[derive(Clone, Deserialize)]
 pub struct Config {
@@ -13,13 +13,13 @@ pub struct Config {
 #[derive(Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum MetadataBackend {
-    Postgres(metadata::PostgresConfig),
+    Postgres(PostgresConfig),
 }
 
 #[derive(Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum ObjectsBackend {
-    S3(objects::S3Config),
+    S3(S3Config),
 }
 
 #[derive(Clone, Deserialize)]

@@ -1,14 +1,4 @@
-pub mod repositories;
-pub use repositories::Repository;
-
-pub mod blobs;
-pub use blobs::BlobStore;
-
-pub mod manifests;
-pub use manifests::ManifestStore;
-
-pub mod metadata;
-pub mod objects;
+pub(crate) mod impls;
 
 pub mod types;
 pub use types::{
@@ -18,6 +8,12 @@ pub use types::{
 pub mod session;
 pub use session::{Chunk, Chunks};
 pub use session::{UploadSession, UploadSessions};
+
+pub(crate) use impls::postgres_s3::metadata::PostgresMetadataPool;
+pub(crate) use impls::postgres_s3::metadata::PostgresConfig;
+pub(crate) use impls::postgres_s3::repositories::Repository;
+pub(crate) use impls::postgres_s3::objects::ObjectStore;
+pub(crate) use impls::postgres_s3::objects::S3Config;
 
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;

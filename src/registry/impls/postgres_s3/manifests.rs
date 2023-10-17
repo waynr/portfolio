@@ -6,10 +6,12 @@ use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
 use crate::{
     errors::{DistributionErrorCode, Error, Result},
-    objects::ObjectStore,
     oci_digest::OciDigest,
-    registry::{BlobStore, Manifest, ManifestRef, ManifestSpec, RepositoryMetadata},
+    registry::{Manifest, ManifestRef, ManifestSpec, RepositoryMetadata},
 };
+
+use super::blobs::BlobStore;
+use super::objects::ObjectStore;
 
 pub struct ManifestStore<'r, O>
 where

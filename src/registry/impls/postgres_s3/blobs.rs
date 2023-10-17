@@ -8,13 +8,14 @@ use uuid::Uuid;
 
 use crate::{
     errors::{Error, Result},
-    metadata::{PostgresMetadataPool, PostgresMetadataTx},
-    objects::ChunkedBody,
-    objects::ObjectStore,
-    objects::StreamObjectBody,
     registry::{Blob, UploadSession},
     Digester, DistributionErrorCode, OciDigest,
 };
+
+use super::metadata::{PostgresMetadataPool, PostgresMetadataTx};
+use super::objects::ChunkedBody;
+use super::objects::ObjectStore;
+use super::objects::StreamObjectBody;
 
 pub struct BlobStore<O>
 where

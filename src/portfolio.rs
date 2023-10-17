@@ -1,5 +1,5 @@
 use crate::{
-    errors::Result, metadata::PostgresMetadataPool, objects::ObjectStore, repositories::Repository,
+    errors::Result, registry::ObjectStore, registry::PostgresMetadataPool, registry::Repository,
 };
 
 #[derive(Clone)]

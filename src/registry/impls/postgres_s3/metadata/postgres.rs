@@ -9,11 +9,12 @@ use sqlx::{
 };
 
 use crate::errors::{Error, Result};
-use crate::metadata::{Blobs, IndexManifests, Layers, Manifests, Repositories, Tags};
 use crate::registry::{Blob, Manifest, ManifestRef, RepositoryMetadata as Repository, Tag};
 use crate::registry::{Chunk, Chunks, UploadSession, UploadSessions};
 use crate::OciDigest;
 use crate::{DigestState, RegistryDefinition};
+
+use super::types::{Blobs, IndexManifests, Layers, Manifests, Repositories, Tags};
 
 #[derive(Clone, Deserialize)]
 pub struct PostgresConfig {

@@ -7,10 +7,7 @@ use axum::{
 use http::StatusCode;
 use serde::Deserialize;
 
-use crate::{
-    http::empty_string_as_none, objects::ObjectStore, registry::repositories::Repository,
-    Result,
-};
+use crate::{http::empty_string_as_none, registry::ObjectStore, registry::Repository, Result};
 
 pub fn router<O: ObjectStore>() -> Router {
     Router::new().route("/list", get(get_tags::<O>))

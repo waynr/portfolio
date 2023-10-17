@@ -15,10 +15,10 @@ use uuid::Uuid;
 pub(crate) mod logging;
 use crate::{
     errors::{Error, Result},
-    objects::s3::logging::LoggingInterceptor,
-    objects::traits::ObjectStore,
     registry::{Chunk, UploadSession},
 };
+use super::s3::logging::LoggingInterceptor;
+use super::traits::ObjectStore;
 
 #[derive(Clone, Deserialize)]
 pub struct S3Config {
@@ -122,7 +122,8 @@ impl ObjectStore for S3 {
     }
 
     async fn delete_blob(&self, key: &Uuid) -> Result<()> {
-        self.client.delete_object()
+        self.client
+            .delete_object()
             .key(key.to_string())
             .bucket(&self.bucket_name)
             .send()

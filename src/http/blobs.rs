@@ -19,8 +19,8 @@ use uuid::Uuid;
 
 use crate::{
     http::headers::{ContentRange, Range},
-    objects::ObjectStore,
-    registry::repositories::Repository,
+    registry::ObjectStore,
+    registry::Repository,
     registry::UploadSession,
     DistributionErrorCode, Error, OciDigest, Result,
 };
