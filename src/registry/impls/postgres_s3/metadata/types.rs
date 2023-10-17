@@ -4,7 +4,6 @@ use sea_query::Iden;
 pub enum Repositories {
     Table,
     Id,
-    RegistryId,
     Name,
 }
 
@@ -12,7 +11,6 @@ pub enum Repositories {
 pub enum Blobs {
     Table,
     Id,
-    RegistryId,
     Digest,
     BytesOnDisk,
 }
@@ -20,7 +18,6 @@ pub enum Blobs {
 #[derive(Iden)]
 pub enum Tags {
     Table,
-    Id,
     RepositoryId,
     ManifestId,
     Name,
@@ -30,7 +27,6 @@ pub enum Tags {
 pub enum Manifests {
     Table,
     Id,
-    RegistryId,
     BlobId,
     MediaType,
     ArtifactType,
