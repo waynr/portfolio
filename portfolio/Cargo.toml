@@ -34,9 +34,6 @@ bytes = "1.5"
 sqlx = { version = "0.7.2", features = [ "runtime-tokio-native-tls", "postgres", "migrate", "json", "chrono", "uuid" ] }
 sea-query = { version = "0.30", features = [ "with-json", "with-uuid", "backend-postgres" ] }
 
-# TODO: replace ByteStream return valeus with `impl Stream`
-aws-sdk-s3 = "0.31.2"
-
 async-trait = "0.1.56"
 futures-core = "0.3"
 

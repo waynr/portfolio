@@ -1867,7 +1867,6 @@ name = "portfolio"
 version = "0.0.0"
 dependencies = [
  "async-trait",
- "aws-sdk-s3",
  "axum",
  "bytes",
  "chrono",
@@ -1908,7 +1907,6 @@ dependencies = [
  "aws-sdk-s3",
  "aws-smithy-client",
  "aws-types",
- "axum",
  "bytes",
  "chrono",
  "futures-core",
@@ -1930,8 +1928,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tower",
- "tower-http",
  "tracing",
  "uuid",
 ]

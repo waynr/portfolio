@@ -3,7 +3,6 @@ pub use types::{ManifestRef, ManifestSpec, TagsList};
 
 pub mod session;
 use async_trait::async_trait;
-use aws_sdk_s3::primitives::ByteStream;
 use axum::body::Bytes;
 use hyper::body::Body;
 use oci_spec::image::ImageIndex;
@@ -61,6 +60,12 @@ pub trait Manifest {
 #[async_trait]
 pub trait ManifestStore: Send + Sync + 'static {
     type Manifest: Manifest;
+    type ManifestBodyStreamError: std::error::Error + Send + Sync + 'static;
+    type ManifestBody: futures_core::stream::Stream<
+            Item = std::result::Result<Bytes, Self::ManifestBodyStreamError>,
+        > + Send
+        + Sync
+        + 'static;
     type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
 
     async fn head(
@@ -71,7 +76,7 @@ pub trait ManifestStore: Send + Sync + 'static {
     async fn get(
         &self,
         key: &ManifestRef,
-    ) -> std::result::Result<Option<(Self::Manifest, ByteStream)>, Self::Error>;
+    ) -> std::result::Result<Option<(Self::Manifest, Self::ManifestBody)>, Self::Error>;
 
     async fn put(
         &mut self,
@@ -97,6 +102,11 @@ pub trait Blob {
 pub trait BlobStore: Send + Sync + 'static {
     type BlobWriter: BlobWriter;
     type Blob: Blob;
+    type BlobBodyStreamError: std::error::Error + Send + Sync + 'static;
+    type BlobBody: futures_core::stream::Stream<Item = std::result::Result<Bytes, Self::BlobBodyStreamError>>
+        + Send
+        + Sync
+        + 'static;
     type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
 
     async fn head(&self, key: &OciDigest) -> std::result::Result<Option<Self::Blob>, Self::Error>;
@@ -104,7 +114,7 @@ pub trait BlobStore: Send + Sync + 'static {
     async fn get(
         &self,
         key: &OciDigest,
-    ) -> std::result::Result<Option<(Self::Blob, ByteStream)>, Self::Error>;
+    ) -> std::result::Result<Option<(Self::Blob, Self::BlobBody)>, Self::Error>;
 
     async fn put(
         &mut self,

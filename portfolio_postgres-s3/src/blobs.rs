@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::primitives::ByteStreamError;
 use bytes::Bytes;
 use hyper::body::Body;
 use tokio_stream::StreamExt;
@@ -29,6 +30,8 @@ impl PgS3BlobStore {
 impl BlobStore for PgS3BlobStore {
     type BlobWriter = PgS3BlobWriter;
     type Blob = Blob;
+    type BlobBody = ByteStream;
+    type BlobBodyStreamError = ByteStreamError;
     type Error = Error;
 
     async fn resume(&self, mut session: UploadSession) -> Result<PgS3BlobWriter> {

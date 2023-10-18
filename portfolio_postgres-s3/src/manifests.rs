@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::primitives::ByteStreamError;
 use bytes::Bytes;
 use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
@@ -30,6 +31,8 @@ impl PgS3ManifestStore {
 #[async_trait]
 impl ManifestStore for PgS3ManifestStore {
     type Manifest = Manifest;
+    type ManifestBody = ByteStream;
+    type ManifestBodyStreamError = ByteStreamError;
     type Error = Error;
 
     async fn head(&self, key: &ManifestRef) -> Result<Option<Self::Manifest>> {
