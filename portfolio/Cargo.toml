@@ -17,7 +17,8 @@ path = "src/main.rs"
 
 [dependencies]
 
-axum = { version = "0.6", features = [ "headers" ] }
+#axum = { version = "0.6", features = [ "headers" ] }
+axum = { path = "/home/wayne/projects/tokio-rs/axum/axum", features = [ "headers" ] }
 hyper = { version = "0.14", features = [ "full" ] }
 tokio = { version = "1.17", features = [ "full" ] }
 tokio-stream = "0.1"
@@ -62,7 +63,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"]}
 
 # OCI & Distribution Spec
-oci-spec = "0.5"
+oci-spec = { path = "/home/wayne/projects/containers/oci-spec-rs" }
 
 [dev-dependencies]
 
