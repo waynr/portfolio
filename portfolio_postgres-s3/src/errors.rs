@@ -4,8 +4,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("meow")]
-    PortfolioError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("portfolio error: {0}")]
+    PortfolioError(String),
 
     #[error("sqlx error")]
     SQLXError(#[from] sqlx::Error),
@@ -89,11 +89,20 @@ pub enum Error {
     // distribution error codes
     // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
     #[error("distribution spec error")]
-    DistributionSpecError(crate::errors::DistributionErrorCode),
+    DistributionSpecError(portfolio::errors::DistributionErrorCode),
 }
 
-impl From<crate::errors::Error> for Error {
-    fn from(e: crate::errors::Error) -> Error {
-        Error::PortfolioError(Box::new(e))
+impl From<portfolio::errors::Error> for Error {
+    fn from(e: portfolio::errors::Error) -> Error {
+        Error::PortfolioError(format!("{}", e))
+    }
+}
+
+impl From<Error> for portfolio::errors::Error {
+    fn from(e: Error) -> Self {
+        match e {
+            Error::DistributionSpecError(c) => portfolio::errors::Error::DistributionSpecError(c),
+            _ => portfolio::errors::Error::BackendError(Box::new(e)),
+        }
     }
 }

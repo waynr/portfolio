@@ -72,25 +72,26 @@ build-and-run config:
     just build
     just run {{config}}
 
-we-build-refactor:
+watchexec target:
   watchexec \
     -c \
-    -w src \
-    -w Cargo.toml \
-    -w justfile \
     -e toml,rs \
+    -w justfile \
+    -w Cargo.toml \
+    -w portfolio_postgres-s3/src \
+    -w portfolio_postgres-s3/Cargo.toml \
+    -w portfolio/src \
+    -w portfolio/Cargo.toml \
+    -w portfoliod/src \
+    -w portfoliod/Cargo.toml \
     --restart \
-    just build-refactor
+    just {{target}}
+
+we-build-refactor:
+  just watchexec build-refactor
 
 we-build:
-  watchexec \
-    -c \
-    -w src \
-    -w Cargo.toml \
-    -w justfile \
-    -e toml,rs \
-    --restart \
-    just build
+  just watchexec build
 
 we-run-dev config:
   watchexec \

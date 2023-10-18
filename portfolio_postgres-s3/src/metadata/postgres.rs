@@ -6,12 +6,13 @@ use sqlx::postgres::{PgPoolOptions, Postgres};
 use sqlx::types::Uuid;
 use sqlx::{PgConnection, Pool, Row, Transaction};
 
+use portfolio::registry::{Chunk, Chunks, ManifestRef, UploadSession, UploadSessions};
+use portfolio::{DigestState, OciDigest};
+
 use super::super::errors::{Error, Result};
 use super::types::{
     Blob, Blobs, IndexManifests, Layers, Manifest, Manifests, Repositories, Repository, Tag, Tags,
 };
-use crate::registry::{Chunk, Chunks, ManifestRef, UploadSession, UploadSessions};
-use crate::{DigestState, OciDigest};
 
 #[derive(Clone, Deserialize)]
 pub struct PostgresConfig {
@@ -156,7 +157,7 @@ impl Queries {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
                     Err(Error::DistributionSpecError(
-                        crate::DistributionErrorCode::ContentReferenced,
+                        portfolio::DistributionErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),
@@ -282,7 +283,7 @@ impl Queries {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
                     Err(Error::DistributionSpecError(
-                        crate::DistributionErrorCode::ContentReferenced,
+                        portfolio::DistributionErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),
@@ -326,7 +327,7 @@ impl Queries {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
                     Err(Error::DistributionSpecError(
-                        crate::DistributionErrorCode::ContentReferenced,
+                        portfolio::DistributionErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),
@@ -370,7 +371,7 @@ impl Queries {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
                     Err(Error::DistributionSpecError(
-                        crate::DistributionErrorCode::ContentReferenced,
+                        portfolio::DistributionErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),

@@ -1,11 +1,12 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
+use portfolio::registry::RepositoryStoreManager;
+
 use super::errors::{Error, Result};
 use super::metadata::{PostgresConfig, PostgresMetadataPool};
 use super::objects::{S3Config, S3};
 use super::repositories::PgS3Repository;
-use crate::registry::RepositoryStoreManager;
 
 #[derive(Clone, Deserialize)]
 pub struct PgS3RepositoryConfig {

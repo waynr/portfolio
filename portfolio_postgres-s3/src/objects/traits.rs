@@ -3,7 +3,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use hyper::body::Body;
 use uuid::Uuid;
 
-use crate::registry::{Chunk, UploadSession};
+use portfolio::registry::{Chunk, UploadSession};
 
 #[async_trait]
 pub trait ObjectStore: Clone + Send + Sync + 'static {

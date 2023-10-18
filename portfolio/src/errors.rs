@@ -39,24 +39,13 @@ pub enum Error {
     #[error("invalid header value: {0}")]
     InvalidHeaderValue(&'static str),
 
-    #[error("postgres + s3 backend error: {0}")]
-    PostgresS3BackendError(PostgresS3Error),
+    #[error("backend error: {0}")]
+    BackendError(Box<dyn std::error::Error>),
 
     // distribution error codes
     // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
     #[error("distribution spec error")]
     DistributionSpecError(DistributionErrorCode),
-}
-
-use crate::registry::impls::postgres_s3::errors::Error as PostgresS3Error;
-
-impl From<PostgresS3Error> for Error {
-    fn from(e: PostgresS3Error) -> Self {
-        match e {
-            PostgresS3Error::DistributionSpecError(c) => Error::DistributionSpecError(c),
-            _ => Error::PostgresS3BackendError(e),
-        }
-    }
 }
 
 // TODO: need to generate JSON error body format as described in https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes

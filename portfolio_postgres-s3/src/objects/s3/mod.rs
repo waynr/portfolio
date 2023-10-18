@@ -11,11 +11,12 @@ use hyper::body::Body;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use portfolio::registry::{Chunk, UploadSession};
+
 pub(crate) mod logging;
 use super::super::errors::{Error, Result};
 use super::s3::logging::LoggingInterceptor;
 use super::traits::ObjectStore;
-use crate::registry::{Chunk, UploadSession};
 
 #[derive(Clone, Deserialize)]
 pub struct S3Config {

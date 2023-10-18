@@ -1,5 +1,3 @@
-pub(crate) mod impls;
-
 pub mod types;
 pub use types::{ManifestRef, ManifestSpec, TagsList};
 
@@ -14,8 +12,6 @@ pub use session::{Chunk, Chunks, UploadSession, UploadSessions};
 use uuid::Uuid;
 
 use crate::oci_digest::OciDigest;
-pub use crate::registry::impls::postgres_s3::config::PgS3RepositoryFactory;
-pub use crate::registry::impls::postgres_s3::repositories::PgS3Repository;
 
 #[async_trait]
 pub trait RepositoryStoreManager: Clone + Send + Sync + 'static {

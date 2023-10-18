@@ -38,7 +38,7 @@ impl TryFrom<&Bytes> for ManifestSpec {
 
 impl ManifestSpec {
     #[inline(always)]
-    pub(crate) fn media_type(&self) -> Option<MediaType> {
+    pub fn media_type(&self) -> Option<MediaType> {
         match self {
             ManifestSpec::Image(im) => im.media_type().clone(),
             ManifestSpec::Index(ii) => ii.media_type().clone(),
@@ -46,7 +46,7 @@ impl ManifestSpec {
     }
 
     #[inline(always)]
-    pub(crate) fn artifact_type(&self) -> Option<MediaType> {
+    pub fn artifact_type(&self) -> Option<MediaType> {
         match self {
             ManifestSpec::Image(im) => im.artifact_type().clone(),
             ManifestSpec::Index(ii) => ii.artifact_type().clone(),
@@ -54,7 +54,7 @@ impl ManifestSpec {
     }
 
     #[inline(always)]
-    pub(crate) fn annotations(&self) -> Option<HashMap<String, String>> {
+    pub fn annotations(&self) -> Option<HashMap<String, String>> {
         match self {
             ManifestSpec::Image(im) => im.annotations().clone(),
             ManifestSpec::Index(ii) => ii.annotations().clone(),
@@ -62,7 +62,7 @@ impl ManifestSpec {
     }
 
     #[inline(always)]
-    pub(crate) fn subject(&self) -> Option<Descriptor> {
+    pub fn subject(&self) -> Option<Descriptor> {
         match self {
             ManifestSpec::Image(im) => im.subject().clone(),
             ManifestSpec::Index(ii) => ii.subject().clone(),
@@ -70,7 +70,7 @@ impl ManifestSpec {
     }
 
     #[inline(always)]
-    pub(crate) fn set_media_type(&mut self, s: &str) {
+    pub fn set_media_type(&mut self, s: &str) {
         let mt: MediaType = s.into();
         match self {
             ManifestSpec::Image(im) => {
@@ -82,7 +82,7 @@ impl ManifestSpec {
         }
     }
 
-    pub(crate) fn infer_media_type(&mut self) -> Result<()> {
+    pub fn infer_media_type(&mut self) -> Result<()> {
         tracing::info!("attempting to infer media type for manifest");
         match self {
             ManifestSpec::Image(im) => {

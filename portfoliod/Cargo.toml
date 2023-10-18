@@ -1,0 +1,25 @@
+[package]
+name = "portfoliod"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "portfolio"
+path = "src/main.rs"
+
+[dependencies]
+
+portfolio_postgres-s3 = { path = "../portfolio_postgres-s3" }
+portfolio = { path = "../portfolio" }
+
+tokio = { version = "1.17", features = [ "full" ] }
+
+clap = { version = "4.4.4", features = [ "derive" ] }
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"]}
+
+serde = { version = "1", features = [ "derive" ] }
+serde_yaml = "0.8"

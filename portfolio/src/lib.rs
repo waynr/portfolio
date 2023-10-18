@@ -1,5 +1,5 @@
 mod config;
-pub use config::{Config, RepositoryBackend, RepositoryDefinition};
+pub use config::RepositoryDefinition;
 
 pub mod errors;
 pub use errors::{DistributionErrorCode, Error, Result};
@@ -7,8 +7,7 @@ pub use errors::{DistributionErrorCode, Error, Result};
 pub mod http;
 
 mod oci_digest;
-pub(crate) use oci_digest::DigestState;
-pub use oci_digest::{Digester, OciDigest};
+pub use oci_digest::{DigestState, Digester, OciDigest};
 
 mod sha256;
 mod sha512;
@@ -17,3 +16,7 @@ pub mod registry;
 
 mod portfolio;
 pub use portfolio::Portfolio;
+
+mod object_body;
+pub use object_body::ChunkedBody;
+pub use object_body::StreamObjectBody;

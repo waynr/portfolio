@@ -3,8 +3,11 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use clap::Parser;
-use portfolio::registry::{PgS3Repository, PgS3RepositoryFactory};
-use portfolio::{http, Config, RepositoryBackend, Result};
+use portfolio::{http, Result};
+use portfolio_pgs3::{PgS3Repository, PgS3RepositoryFactory};
+
+mod config;
+use crate::config::{Config, RepositoryBackend};
 
 #[derive(Parser)]
 struct Cli {

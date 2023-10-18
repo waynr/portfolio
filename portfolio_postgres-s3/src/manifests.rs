@@ -2,17 +2,17 @@ use std::collections::HashSet;
 
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
-use axum::body::Bytes;
+use bytes::Bytes;
 use oci_spec::image::{Descriptor, ImageIndex, MediaType};
+
+use portfolio::OciDigest;
+use portfolio::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
 
 use super::blobs::PgS3BlobStore;
 use super::errors::{Error, Result};
 use super::metadata::Manifest;
 use super::metadata::Repository;
 use super::objects::ObjectStore;
-use crate::oci_digest::OciDigest;
-use crate::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
-
 pub struct PgS3ManifestStore {
     blobstore: PgS3BlobStore,
     repository: Repository,
@@ -102,7 +102,7 @@ impl ManifestStore for PgS3ManifestStore {
                     if !hs.contains(*digest) {
                         tracing::warn!("blob for layer {digest} not found in repository");
                         return Err(Error::DistributionSpecError(
-                            crate::DistributionErrorCode::BlobUnknown,
+                            portfolio::DistributionErrorCode::BlobUnknown,
                         ));
                     }
                 }
@@ -130,7 +130,7 @@ impl ManifestStore for PgS3ManifestStore {
                     if !hs.contains(*digest) {
                         tracing::warn!("blob for manifest {digest} not found in repository");
                         return Err(Error::DistributionSpecError(
-                            crate::DistributionErrorCode::ManifestUnknown,
+                            portfolio::DistributionErrorCode::ManifestUnknown,
                         ));
                     }
                 }
@@ -159,7 +159,7 @@ impl ManifestStore for PgS3ManifestStore {
         let mut tx = self.blobstore.metadata.get_tx().await?;
 
         let manifest = tx.get_manifest(&self.repository.id, key).await?.ok_or(
-            Error::DistributionSpecError(crate::DistributionErrorCode::ManifestUnknown),
+            Error::DistributionSpecError(portfolio::DistributionErrorCode::ManifestUnknown),
         )?;
 
         // NOTE: it's possible (but how likely?) for a manifest to include both layers and

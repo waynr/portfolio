@@ -7,11 +7,12 @@ use hyper::body::Body;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
+use portfolio::registry::{BlobStore, BlobWriter, UploadSession};
+use portfolio::{ChunkedBody, StreamObjectBody, Digester, OciDigest};
+
 use super::metadata::{Blob, PostgresMetadataPool, PostgresMetadataTx};
-use super::objects::{ChunkedBody, ObjectStore, StreamObjectBody, S3};
+use super::objects::{ObjectStore, S3};
 use super::errors::{Error, Result};
-use crate::registry::{BlobStore, BlobWriter, UploadSession};
-use crate::{Digester, OciDigest};
 
 pub struct PgS3BlobStore {
     pub(crate) metadata: PostgresMetadataPool,
@@ -91,7 +92,7 @@ impl BlobStore for PgS3BlobStore {
             .get_blob(digest)
             .await?
             .ok_or(Error::DistributionSpecError(
-                crate::DistributionErrorCode::BlobUnknown,
+                portfolio::DistributionErrorCode::BlobUnknown,
             ))?;
 
         // TODO: handle the case where the blob is referenced

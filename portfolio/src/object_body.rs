@@ -11,7 +11,7 @@ use crate::Digester;
 type StreamableBody = Box<
     (dyn futures_core::stream::Stream<
         Item = std::result::Result<
-            axum::body::Bytes,
+            Bytes,
             Box<dyn std::error::Error + Send + Sync + 'static>,
         >,
     > + Send),
@@ -44,7 +44,7 @@ impl StreamObjectBody {
 
 impl Stream for StreamObjectBody {
     type Item =
-        std::result::Result<axum::body::Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>;
+        std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let object_body = self.pin_get_body();

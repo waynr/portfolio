@@ -1,13 +1,14 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
+use portfolio::registry::{RepositoryStore, TagsList, UploadSession};
+
 use super::blobs::PgS3BlobStore;
 use super::errors::{Error, Result};
 use super::manifests::PgS3ManifestStore;
 use super::metadata::PostgresMetadataPool;
 use super::metadata::Repository;
 use super::objects::S3;
-use crate::registry::{RepositoryStore, TagsList, UploadSession};
 
 #[derive(Clone)]
 pub struct PgS3Repository {

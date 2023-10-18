@@ -3,9 +3,9 @@ use sea_query::Iden;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::oci_digest::OciDigest;
-use crate::registry;
-use crate::registry::ManifestSpec;
+use portfolio::registry;
+use portfolio::registry::ManifestSpec;
+use portfolio::OciDigest;
 
 #[derive(sqlx::FromRow, Clone)]
 pub struct Repository {
@@ -35,7 +35,7 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Blob {
                 Err(e) => {
                     return Err(sqlx::Error::ColumnDecode {
                         index: "digest".to_string(),
-                        source: Box::new(e),
+                        source: format!("{}", e).into(),
                     })
                 }
             },
@@ -76,7 +76,7 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Tag {
                 Err(e) => {
                     return Err(sqlx::Error::ColumnDecode {
                         index: "digest".to_string(),
-                        source: Box::new(e),
+                        source: format!("{}", e).into(),
                     })
                 }
             },
@@ -111,12 +111,12 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Manifest {
             repository_id: row.try_get("repository_id")?,
             blob_id: row.try_get("blob_id")?,
             bytes_on_disk: row.try_get("bytes_on_disk")?,
-            digest: match row.try_get::<String, _>("digest")?.as_str().try_into() {
+            digest: match OciDigest::try_from(row.try_get::<String, _>("digest")?.as_str()) {
                 Ok(v) => v,
                 Err(e) => {
                     return Err(sqlx::Error::ColumnDecode {
                         index: "digest".to_string(),
-                        source: Box::new(e),
+                        source: format!("{}", e).into(),
                     })
                 }
             },
@@ -127,7 +127,7 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Manifest {
                     Err(e) => {
                         return Err(sqlx::Error::ColumnDecode {
                             index: "subject".to_string(),
-                            source: Box::new(e),
+                            source: format!("{}", e).into(),
                         })
                     }
                 })
