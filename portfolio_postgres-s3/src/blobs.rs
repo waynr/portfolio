@@ -59,10 +59,9 @@ impl BlobStore for PgS3BlobStore {
             }
         }
 
-        match session.upload_id {
-            Some(_) => (),
-            None => self.objects.initiate_chunked_upload(&mut session).await?,
-        };
+        if session.upload_id.is_none() {
+            session.upload_id = Some(self.objects.initiate_chunked_upload(&session.uuid).await?);
+        }
 
         Ok(PgS3BlobWriter {
             metadata: self.metadata.clone(),
@@ -140,7 +139,18 @@ impl PgS3BlobWriter {
     async fn write_chunk(&mut self, tx: &mut PostgresMetadataTx<'_>, bytes: Bytes) -> Result<()> {
         let chunk = self
             .objects
-            .upload_chunk(&self.session, bytes.len() as u64, bytes.into())
+            .upload_chunk(
+                &self
+                    .session
+                    .upload_id
+                    .as_ref()
+                    .expect("should always be Some here")
+                    .as_str(),
+                &self.session.uuid,
+                self.session.chunk_number,
+                bytes.len() as u64,
+                bytes.into(),
+            )
             .await?;
 
         tx.insert_chunk(&self.session, &chunk).await?;
@@ -159,7 +169,18 @@ impl BlobWriter for PgS3BlobWriter {
         let stream_body = StreamObjectBody::from_body(body, digester.clone());
         let chunk = self
             .objects
-            .upload_chunk(&self.session, content_length, stream_body.into())
+            .upload_chunk(
+                &self
+                    .session
+                    .upload_id
+                    .as_ref()
+                    .expect("should always be Some here")
+                    .as_str(),
+                &self.session.uuid,
+                self.session.chunk_number,
+                content_length,
+                stream_body.into(),
+            )
             .await?;
 
         let mut conn = self.metadata.get_conn().await?;
@@ -216,10 +237,28 @@ impl BlobWriter for PgS3BlobWriter {
         if !self.objects.blob_exists(&uuid).await? {
             let chunks = tx.get_chunks(&self.session).await?;
             self.objects
-                .finalize_chunked_upload(&self.session, chunks, &uuid)
+                .finalize_chunked_upload(
+                    self.session
+                        .upload_id
+                        .as_ref()
+                        .expect("should always be Some here")
+                        .as_str(),
+                    &self.session.uuid,
+                    chunks,
+                    &uuid,
+                )
                 .await?;
         } else {
-            self.objects.abort_chunked_upload(&self.session).await?;
+            self.objects
+                .abort_chunked_upload(
+                    self.session
+                        .upload_id
+                        .as_ref()
+                        .expect("should always be Some here")
+                        .as_str(),
+                    &self.session.uuid,
+                )
+                .await?;
         }
 
         tx.commit().await?;

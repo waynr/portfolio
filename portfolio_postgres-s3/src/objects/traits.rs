@@ -3,7 +3,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use hyper::body::Body;
 use uuid::Uuid;
 
-use crate::metadata::{Chunk, UploadSession};
+use crate::metadata::Chunk;
 
 #[async_trait]
 pub trait ObjectStore: Clone + Send + Sync + 'static {
@@ -24,25 +24,29 @@ pub trait ObjectStore: Clone + Send + Sync + 'static {
 
     async fn initiate_chunked_upload(
         &self,
-        session: &mut UploadSession,
-    ) -> std::result::Result<(), Self::Error>;
+        session_uuid: &Uuid,
+    ) -> std::result::Result<String, Self::Error>;
 
     async fn upload_chunk(
         &self,
-        session: &UploadSession,
+        upload_id: &str,
+        session_uuid: &Uuid,
+        chunk_number: i32,
         content_length: u64,
         body: Body,
     ) -> std::result::Result<Chunk, Self::Error>;
 
     async fn finalize_chunked_upload(
         &self,
-        session: &UploadSession,
+        upload_id: &str,
+        session_uuid: &Uuid,
         chunks: Vec<Chunk>,
         key: &Uuid,
     ) -> std::result::Result<(), Self::Error>;
 
     async fn abort_chunked_upload(
         &self,
-        session: &UploadSession,
+        upload_id: &str,
+        session_uuid: &Uuid,
     ) -> std::result::Result<(), Self::Error>;
 }

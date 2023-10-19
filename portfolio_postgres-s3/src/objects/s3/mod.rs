@@ -11,7 +11,7 @@ use hyper::body::Body;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::metadata::{Chunk, UploadSession};
+use crate::metadata::Chunk;
 
 pub(crate) mod logging;
 use super::super::errors::{Error, Result};
@@ -131,44 +131,36 @@ impl ObjectStore for S3 {
         Ok(())
     }
 
-    async fn initiate_chunked_upload(&self, session: &mut UploadSession) -> Result<()> {
+    async fn initiate_chunked_upload(&self, session_uuid: &Uuid) -> Result<String> {
         let create_multipart_upload_output = self
             .client
             .create_multipart_upload()
-            .key(session.uuid.to_string())
+            .key(session_uuid.to_string())
             .bucket(&self.bucket_name)
             .send()
             .await?;
 
-        if let Some(upload_id) = create_multipart_upload_output.upload_id {
-            session.upload_id = Some(upload_id);
-        } else {
-            return Err(Error::ObjectsFailedToInitiateChunkedUpload(
-                "missing upload id",
-            ));
-        }
+        let upload_id = create_multipart_upload_output.upload_id.ok_or(
+            Error::ObjectsFailedToInitiateChunkedUpload("missing upload id"),
+        )?;
 
-        Ok(())
+        Ok(upload_id)
     }
 
     async fn upload_chunk(
         &self,
-        session: &UploadSession,
+        upload_id: &str,
+        session_uuid: &Uuid,
+        chunk_number: i32,
         content_length: u64,
         body: Body,
     ) -> Result<Chunk> {
-        // this state shouldn't be reachable, but if it is then consider it an error so we can
-        // learn about it at runtime (rather than simply ignoring it)
-        let upload_id = session
-            .upload_id
-            .as_ref()
-            .ok_or_else(|| Error::ObjectsMissingUploadID(session.uuid))?;
         let upload_part_output = self
             .client
             .upload_part()
             .upload_id(upload_id)
-            .part_number(session.chunk_number)
-            .key(session.uuid.to_string())
+            .part_number(chunk_number)
+            .key(session_uuid.to_string())
             .body(body.into())
             .content_length(content_length as i64)
             .bucket(&self.bucket_name)
@@ -177,7 +169,7 @@ impl ObjectStore for S3 {
 
         let chunk = Chunk {
             e_tag: upload_part_output.e_tag,
-            chunk_number: session.chunk_number,
+            chunk_number,
         };
 
         Ok(chunk)
@@ -185,18 +177,12 @@ impl ObjectStore for S3 {
 
     async fn finalize_chunked_upload(
         &self,
-        session: &UploadSession,
+        upload_id: &str,
+        session_uuid: &Uuid,
         chunks: Vec<Chunk>,
         key: &Uuid,
     ) -> Result<()> {
-        // this state shouldn't be reachable, but if it is then consider it an error so we can
-        // learn about it at runtime (rather than simply ignoring it)
-        let upload_id = session
-            .upload_id
-            .as_ref()
-            .ok_or_else(|| Error::ObjectsMissingUploadID(session.uuid))?;
-
-        let session_uuid = session.uuid.to_string();
+        let session_uuid = session_uuid.to_string();
         let key = key.to_string();
 
         let mut mpu = CompletedMultipartUpload::builder();
@@ -217,7 +203,7 @@ impl ObjectStore for S3 {
             .send()
             .await?;
 
-        let copy_source = format!("{}/{}", &self.bucket_name, session.uuid);
+        let copy_source = format!("{}/{}", &self.bucket_name, session_uuid);
         let _copy_object_output = self
             .client
             .copy_object()
@@ -237,16 +223,12 @@ impl ObjectStore for S3 {
         Ok(())
     }
 
-    async fn abort_chunked_upload(&self, session: &UploadSession) -> Result<()> {
-        let upload_id = session
-            .upload_id
-            .as_ref()
-            .ok_or_else(|| Error::ObjectsMissingUploadID(session.uuid))?;
+    async fn abort_chunked_upload(&self, upload_id: &str, session_uuid: &Uuid) -> Result<()> {
         let _complete_multipart_upload_output = self
             .client
             .abort_multipart_upload()
             .upload_id(upload_id)
-            .key(session.uuid.to_string())
+            .key(session_uuid.to_string())
             .bucket(&self.bucket_name)
             .send()
             .await?;
