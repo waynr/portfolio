@@ -48,10 +48,10 @@ init-cockroachdb:
     ./cockroach --host=roach1:26257 init --insecure
 
 cockroachdb-migrate $DATABASE_URL="postgresql://root@localhost:26258/defaultdb?sslmode=disable":
-  sqlx migrate --source db/postgres/migrations run
+  sqlx migrate --source portfolio_postgres-s3/migrations run
 
 postgresql-migrate $DATABASE_URL="postgresql://postgres:password@localhost:5432/postgres?sslmode=disable":
-  sqlx migrate --source db/postgres/migrations run
+  sqlx migrate --source portfolio_postgres-s3/migrations run
 
 build:
   cargo build
