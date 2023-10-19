@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use portfolio::{http, Result};
-use portfolio_pgs3::{PgS3Repository, PgS3RepositoryFactory};
+use portfolio_postgres_s3::{PgS3Repository, PgS3RepositoryFactory};
 
 mod config;
 use crate::config::{Config, RepositoryBackend};

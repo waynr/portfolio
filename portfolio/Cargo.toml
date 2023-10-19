@@ -16,23 +16,14 @@ path = "src/lib.rs"
 #axum = { version = "0.6", features = [ "headers" ] }
 axum = { path = "/home/wayne/projects/tokio-rs/axum/axum", features = [ "headers" ] }
 hyper = { version = "0.14", features = [ "full" ] }
-tokio = { version = "1.17", features = [ "full" ] }
-tokio-stream = "0.1"
-tower = "0.4"
 tower-http = { version = "0.4", features = ["trace", "set-header"] }
 
-chrono = "~0.4"
 uuid = { version = "1.4", features = [ "v4" ] }
 
 http = "0.2"
 http-body = "0.4"
 headers = "0.3.9"
 bytes = "1.5"
-
-# TODO: implement Session/Chunk traits to abstract over those in the portfolio
-# core library
-sqlx = { version = "0.7.2", features = [ "runtime-tokio-native-tls", "postgres", "migrate", "json", "chrono", "uuid" ] }
-sea-query = { version = "0.30", features = [ "with-json", "with-uuid", "backend-postgres" ] }
 
 async-trait = "0.1.56"
 futures-core = "0.3"
@@ -43,14 +34,11 @@ digest = { version = "0.10" }
 regex = "1.9"
 once_cell = "1.4"
 
-clap = { version = "4.4.4", features = [ "derive" ] }
 thiserror = "1"
 serde = { version = "1", features = [ "derive" ] }
 serde_yaml = "0.8"
-serde_json = "~1.0"
 
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"]}
 
 # OCI & Distribution Spec
 oci-spec = { path = "/home/wayne/projects/containers/oci-spec-rs" }

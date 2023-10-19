@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use portfolio_pgs3::PgS3RepositoryConfig;
+use portfolio_postgres_s3::PgS3RepositoryConfig;
 use portfolio::RepositoryDefinition;
 
 #[derive(Clone, Deserialize)]
