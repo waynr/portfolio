@@ -11,7 +11,7 @@ use hyper::body::Body;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use portfolio::registry::{Chunk, UploadSession};
+use crate::metadata::{Chunk, UploadSession};
 
 pub(crate) mod logging;
 use super::super::errors::{Error, Result};

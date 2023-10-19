@@ -1,10 +1,13 @@
+use chrono::NaiveDate;
 use oci_spec::image::MediaType;
 use sea_query::Iden;
+use sqlx::types::Json;
 use sqlx::Row;
 use uuid::Uuid;
 
 use portfolio::registry;
 use portfolio::registry::ManifestSpec;
+use portfolio::DigestState;
 use portfolio::OciDigest;
 
 #[derive(sqlx::FromRow, Clone)]
@@ -226,4 +229,68 @@ pub enum IndexManifests {
     Table,
     ParentManifest,
     ChildManifest,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct UploadSession {
+    pub uuid: Uuid,
+    pub start_date: NaiveDate,
+    pub upload_id: Option<String>,
+    pub chunk_number: i32,
+    pub last_range_end: i64,
+    pub digest_state: Option<Json<DigestState>>,
+}
+
+impl UploadSession {
+    pub(crate) fn validate_range(&self, start: u64) -> bool {
+        if start == 0 && self.chunk_number == 1 {
+            return true;
+        }
+        if start as i64 != self.last_range_end + 1 {
+            return false;
+        }
+        return true;
+    }
+}
+
+impl registry::UploadSession for UploadSession {
+    #[inline]
+    fn uuid(&self) -> &Uuid {
+        &self.uuid
+    }
+
+    #[inline]
+    fn upload_id(&self) -> &Option<String> {
+        &self.upload_id
+    }
+
+    #[inline]
+    fn last_range_end(&self) -> i64 {
+        self.last_range_end
+    }
+}
+
+#[derive(Iden)]
+pub enum UploadSessions {
+    Table,
+    Uuid,
+    StartDate,
+    UploadId,
+    ChunkNumber,
+    LastRangeEnd,
+    DigestState,
+}
+
+#[derive(Default, sqlx::FromRow)]
+pub struct Chunk {
+    pub e_tag: Option<String>,
+    pub chunk_number: i32,
+}
+
+#[derive(Iden)]
+pub enum Chunks {
+    Table,
+    ChunkNumber,
+    UploadSessionUuid,
+    ETag,
 }

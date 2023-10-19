@@ -6,9 +6,10 @@ use sqlx::postgres::{PgPoolOptions, Postgres};
 use sqlx::types::Uuid;
 use sqlx::{PgConnection, Pool, Row, Transaction};
 
-use portfolio::registry::{Chunk, Chunks, ManifestRef, UploadSession, UploadSessions};
+use portfolio::registry::ManifestRef;
 use portfolio::{DigestState, OciDigest};
 
+use super::{Chunk, Chunks, UploadSession, UploadSessions};
 use super::super::errors::{Error, Result};
 use super::types::{
     Blob, Blobs, IndexManifests, Layers, Manifest, Manifests, Repositories, Repository, Tag, Tags,
@@ -574,11 +575,11 @@ impl Queries {
 
     pub async fn delete_session(
         executor: &mut PgConnection,
-        session: &UploadSession,
+        session_uuid: &Uuid,
     ) -> Result<()> {
         let (sql, values) = Query::delete()
             .from_table(UploadSessions::Table)
-            .and_where(Expr::col(UploadSessions::Uuid).eq(session.uuid))
+            .and_where(Expr::col(UploadSessions::Uuid).eq(*session_uuid))
             .build_sqlx(PostgresQueryBuilder);
 
         sqlx::query_with(&sql, values).execute(executor).await?;
@@ -680,8 +681,8 @@ impl PostgresMetadataConn {
         Queries::delete_chunks(&mut *self.conn, uuid).await
     }
 
-    pub async fn delete_session(&mut self, session: &UploadSession) -> Result<()> {
-        Queries::delete_session(&mut *self.conn, session).await
+    pub async fn delete_session(&mut self, session_uuid: &Uuid) -> Result<()> {
+        Queries::delete_session(&mut *self.conn, session_uuid).await
     }
 
     pub async fn get_chunks(&mut self, session: &UploadSession) -> Result<Vec<Chunk>> {
@@ -741,9 +742,9 @@ impl<'a> PostgresMetadataTx<'a> {
         Queries::update_session(&mut **tx, session).await
     }
 
-    pub async fn delete_session(&mut self, session: &UploadSession) -> Result<()> {
+    pub async fn delete_session(&mut self, session_uuid: &Uuid) -> Result<()> {
         let tx = self.tx.as_mut().ok_or(Error::PostgresMetadataTxInactive)?;
-        Queries::delete_session(&mut **tx, session).await
+        Queries::delete_session(&mut **tx, session_uuid).await
     }
 
     pub async fn get_blob(&mut self, digest: &OciDigest) -> Result<Option<Blob>> {

@@ -120,17 +120,18 @@ async fn uploads_post<R: RepositoryStore>(
                 .map_err(|e| e.into())?
                 .is_some()
             {
-                let session: UploadSession = repository
+                let session = repository
                     .new_upload_session()
                     .await
                     .map_err(|e| e.into())?;
 
-                let location = format!("/v2/{}/blobs/uploads/{}", repository.name(), session.uuid,);
+                let location =
+                    format!("/v2/{}/blobs/uploads/{}", repository.name(), session.uuid(),);
                 let mut headers = HeaderMap::new();
                 headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
                 headers.insert(
                     HeaderName::from_str("docker-upload-uuid")?,
-                    HeaderValue::from_str(session.uuid.to_string().as_str())?,
+                    HeaderValue::from_str(session.uuid().to_string().as_str())?,
                 );
                 return Ok((StatusCode::ACCEPTED, headers, "").into_response());
             }
@@ -167,17 +168,17 @@ async fn uploads_post<R: RepositoryStore>(
                     }
                 }
             }
-            let session: UploadSession = repository
+            let session = repository
                 .new_upload_session()
                 .await
                 .map_err(|e| e.into())?;
 
-            let location = format!("/v2/{}/blobs/uploads/{}", repository.name(), session.uuid,);
+            let location = format!("/v2/{}/blobs/uploads/{}", repository.name(), session.uuid(),);
             let mut headers = HeaderMap::new();
             headers.insert(header::LOCATION, HeaderValue::from_str(&location)?);
             headers.insert(
                 HeaderName::from_str("docker-upload-uuid")?,
-                HeaderValue::from_str(session.uuid.to_string().as_str())?,
+                HeaderValue::from_str(session.uuid().to_string().as_str())?,
             );
             Ok((StatusCode::ACCEPTED, headers, "").into_response())
         }
@@ -234,22 +235,22 @@ async fn uploads_put<R: RepositoryStore>(
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
     let session_uuid = Uuid::parse_str(session_uuid_str)?;
 
+    let start = content_range.map(|TypedHeader(content_range)| content_range.start);
+
     // retrieve the session or fail if it doesn't exist
-    let mut session = repository
+    // TODO: refactor this method to avoid retrieving the upload session twice (once here, once in
+    // the resume method)
+    let session = repository
         .get_upload_session(&session_uuid)
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
 
     // determine if this is a monolithic POST-PUT or the final request in a chunked POST-PATCH-PUT
     // sequence
-    let response = match session.upload_id {
+    let response = match session.upload_id() {
         // POST-PATCH-PUT
         Some(_) => {
             let store = repository.get_blob_store();
-            if let Some(TypedHeader(content_range)) = content_range {
-                session.validate_range(&content_range)?;
-            }
-
             let session = if let (
                 // TODO: what if there is a body but none of the content headers are set? technically
                 // this would be a client bug, but it could also result in data corruption and as such
@@ -260,7 +261,10 @@ async fn uploads_put<R: RepositoryStore>(
                 Some(TypedHeader(content_length)),
             ) = (content_type, content_length)
             {
-                let writer = store.resume(session).await.map_err(|e| e.into())?;
+                let writer = store
+                    .resume(&session_uuid, start)
+                    .await
+                    .map_err(|e| e.into())?;
                 let session = writer
                     .write(content_length.0, request.into_body())
                     .await
@@ -270,11 +274,11 @@ async fn uploads_put<R: RepositoryStore>(
                 // TODO: update incremental digest state on session
                 session
             } else {
-                let writer = store.resume(session).await.map_err(|e| e.into())?;
+                let writer = store.resume(&session_uuid, start).await.map_err(|e| e.into())?;
                 writer.finalize(&oci_digest).await.map_err(|e| e.into())?
             };
 
-            match repository.delete_session(&session).await {
+            match repository.delete_session(&session.uuid()).await {
                 Ok(_) => (),
                 Err(e) => {
                     tracing::warn!("failed to delete session: {e:?}");
@@ -331,18 +335,13 @@ async fn uploads_patch<R: RepositoryStore>(
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
     let session_uuid = Uuid::parse_str(session_uuid_str)?;
 
-    // retrieve the session or fail if it doesn't exist
-    let mut session = repository
-        .get_upload_session(&session_uuid)
-        .await
-        .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
-
-    if let Some(TypedHeader(content_range)) = content_range {
-        session.validate_range(&content_range)?;
-    }
+    let start = content_range.map(|TypedHeader(content_range)| content_range.start);
 
     let store = repository.get_blob_store();
-    let writer = store.resume(session).await.map_err(|e| e.into())?;
+    let writer = store
+        .resume(&session_uuid, start)
+        .await
+        .map_err(|e| e.into())?;
     let session = if let Some(TypedHeader(content_length)) = content_length {
         writer
             .write(content_length.0, request.into_body())
@@ -369,7 +368,7 @@ async fn uploads_patch<R: RepositoryStore>(
 
     let range = Range {
         start: 0,
-        end: session.last_range_end as u64,
+        end: session.last_range_end() as u64,
     };
     let range: String = (&range).into();
     headers.insert(Range::name(), HeaderValue::from_str(&range).expect("meow"));
@@ -403,7 +402,7 @@ async fn uploads_get<R: RepositoryStore>(
 
     let range = Range {
         start: 0,
-        end: session.last_range_end as u64,
+        end: session.last_range_end() as u64,
     };
     let range: String = (&range).into();
     headers.insert(Range::name(), HeaderValue::from_str(&range).expect("meow"));

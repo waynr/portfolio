@@ -3,5 +3,6 @@ pub use postgres::{PostgresConfig, PostgresMetadataPool, PostgresMetadataTx};
 
 mod types;
 pub use types::{
-    Blob, Blobs, IndexManifests, Layers, Manifest, Manifests, Repositories, Repository, Tag, Tags,
+    Blob, Blobs, Chunk, Chunks, IndexManifests, Layers, Manifest, Manifests, Repositories,
+    Repository, Tag, Tags, UploadSession, UploadSessions,
 };

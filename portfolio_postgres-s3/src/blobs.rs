@@ -8,12 +8,13 @@ use hyper::body::Body;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
-use portfolio::registry::{BlobStore, BlobWriter, UploadSession};
-use portfolio::{ChunkedBody, StreamObjectBody, Digester, OciDigest};
+use portfolio::registry::{BlobStore, BlobWriter};
+use portfolio::DistributionErrorCode;
+use portfolio::{ChunkedBody, Digester, OciDigest, StreamObjectBody};
 
-use super::metadata::{Blob, PostgresMetadataPool, PostgresMetadataTx};
-use super::objects::{ObjectStore, S3};
 use super::errors::{Error, Result};
+use super::metadata::{Blob, PostgresMetadataPool, PostgresMetadataTx, UploadSession};
+use super::objects::{ObjectStore, S3};
 
 pub struct PgS3BlobStore {
     pub(crate) metadata: PostgresMetadataPool,
@@ -33,8 +34,31 @@ impl BlobStore for PgS3BlobStore {
     type BlobBody = ByteStream;
     type BlobBodyStreamError = ByteStreamError;
     type Error = Error;
+    type UploadSession = UploadSession;
 
-    async fn resume(&self, mut session: UploadSession) -> Result<PgS3BlobWriter> {
+    async fn resume(
+        &self,
+        session_uuid: &Uuid,
+        start_of_range: Option<u64>,
+    ) -> Result<PgS3BlobWriter> {
+        // retrieve the session or fail if it doesn't exist
+        let mut session = self
+            .metadata
+            .get_conn()
+            .await?
+            .get_session(session_uuid)
+            .await
+            .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
+
+        if let Some(start) = start_of_range {
+            if !session.validate_range(start) {
+                tracing::debug!("content range start {start} is invalid");
+                return Err(Error::DistributionSpecError(
+                    DistributionErrorCode::BlobUploadInvalid,
+                ));
+            }
+        }
+
         match session.upload_id {
             Some(_) => (),
             None => self.objects.initiate_chunked_upload(&mut session).await?,
@@ -127,8 +151,9 @@ impl PgS3BlobWriter {
 #[async_trait]
 impl BlobWriter for PgS3BlobWriter {
     type Error = Error;
+    type UploadSession = UploadSession;
 
-    async fn write(mut self, content_length: u64, body: Body) -> Result<UploadSession> {
+    async fn write(mut self, content_length: u64, body: Body) -> Result<Self::UploadSession> {
         tracing::debug!("before chunk upload: {:?}", self.session);
         let digester = Arc::new(Mutex::new(Digester::default()));
         let stream_body = StreamObjectBody::from_body(body, digester.clone());
@@ -154,7 +179,7 @@ impl BlobWriter for PgS3BlobWriter {
         Ok(self.session)
     }
 
-    async fn write_chunked(mut self, body: Body) -> Result<UploadSession> {
+    async fn write_chunked(mut self, body: Body) -> Result<Self::UploadSession> {
         let md = self.metadata.clone();
         let mut tx = md.get_tx().await?;
         let mut digester = Digester::default();
@@ -177,7 +202,7 @@ impl BlobWriter for PgS3BlobWriter {
         Ok(self.session)
     }
 
-    async fn finalize(self, digest: &OciDigest) -> Result<UploadSession> {
+    async fn finalize(self, digest: &OciDigest) -> Result<Self::UploadSession> {
         // TODO: validate digest
         let mut tx = self.metadata.get_tx().await?;
         let uuid = match tx.get_blob(&digest).await? {

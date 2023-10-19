@@ -1,13 +1,14 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use portfolio::registry::{RepositoryStore, TagsList, UploadSession};
+use portfolio::registry::{RepositoryStore, TagsList};
 
 use super::blobs::PgS3BlobStore;
 use super::errors::{Error, Result};
 use super::manifests::PgS3ManifestStore;
 use super::metadata::PostgresMetadataPool;
 use super::metadata::Repository;
+use super::metadata::UploadSession;
 use super::objects::S3;
 
 #[derive(Clone)]
@@ -60,6 +61,7 @@ impl RepositoryStore for PgS3Repository {
     type ManifestStore = PgS3ManifestStore;
     type BlobStore = PgS3BlobStore;
     type Error = Error;
+    type UploadSession = UploadSession;
 
     fn name(&self) -> &str {
         self.repository.name.as_str()
@@ -88,11 +90,11 @@ impl RepositoryStore for PgS3Repository {
         })
     }
 
-    async fn new_upload_session(&self) -> Result<UploadSession> {
+    async fn new_upload_session(&self) -> Result<Self::UploadSession> {
         self.metadata.get_conn().await?.new_upload_session().await
     }
 
-    async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<UploadSession> {
+    async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<Self::UploadSession> {
         self.metadata
             .get_conn()
             .await?
@@ -100,11 +102,11 @@ impl RepositoryStore for PgS3Repository {
             .await
     }
 
-    async fn delete_session(&self, session: &UploadSession) -> Result<()> {
+    async fn delete_session(&self, session_uuid: &Uuid) -> Result<()> {
         let mut tx = self.metadata.get_tx().await?;
 
-        tx.delete_chunks(&session.uuid).await?;
-        tx.delete_session(session).await?;
+        tx.delete_chunks(session_uuid).await?;
+        tx.delete_session(session_uuid).await?;
 
         tx.commit().await?;
 
