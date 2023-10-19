@@ -13,8 +13,10 @@ use portfolio::DistributionErrorCode;
 use portfolio::{ChunkedBody, Digester, OciDigest, StreamObjectBody};
 
 use super::errors::{Error, Result};
-use super::metadata::{Blob, PostgresMetadataPool, PostgresMetadataTx, UploadSession};
-use super::objects::{ObjectStore, S3};
+use super::metadata::{
+    Blob, Chunk as MetadataChunk, PostgresMetadataPool, PostgresMetadataTx, UploadSession,
+};
+use super::objects::{Chunk, ObjectStore, S3};
 
 pub struct PgS3BlobStore {
     pub(crate) metadata: PostgresMetadataPool,
@@ -144,7 +146,7 @@ impl PgS3BlobWriter {
                     .session
                     .upload_id
                     .as_ref()
-                    .expect("should always be Some here")
+                    .expect("UploadSession.upload_id should always be Some here")
                     .as_str(),
                 &self.session.uuid,
                 self.session.chunk_number,
@@ -153,7 +155,8 @@ impl PgS3BlobWriter {
             )
             .await?;
 
-        tx.insert_chunk(&self.session, &chunk).await?;
+        tx.insert_chunk(&self.session, &MetadataChunk::from(chunk))
+            .await?;
         Ok(())
     }
 }
@@ -174,7 +177,7 @@ impl BlobWriter for PgS3BlobWriter {
                     .session
                     .upload_id
                     .as_ref()
-                    .expect("should always be Some here")
+                    .expect("UploadSession.upload_id should always be Some here")
                     .as_str(),
                 &self.session.uuid,
                 self.session.chunk_number,
@@ -184,7 +187,8 @@ impl BlobWriter for PgS3BlobWriter {
             .await?;
 
         let mut conn = self.metadata.get_conn().await?;
-        conn.insert_chunk(&self.session, &chunk).await?;
+        conn.insert_chunk(&self.session, &MetadataChunk::from(chunk))
+            .await?;
 
         let digester = Arc::into_inner(digester)
             .expect("no other references should exist at this point")
@@ -235,13 +239,18 @@ impl BlobWriter for PgS3BlobWriter {
         };
 
         if !self.objects.blob_exists(&uuid).await? {
-            let chunks = tx.get_chunks(&self.session).await?;
+            let chunks = tx
+                .get_chunks(&self.session)
+                .await?
+                .into_iter()
+                .map(Chunk::from)
+                .collect();
             self.objects
                 .finalize_chunked_upload(
                     self.session
                         .upload_id
                         .as_ref()
-                        .expect("should always be Some here")
+                        .expect("UploadSession.upload_id should always be Some here")
                         .as_str(),
                     &self.session.uuid,
                     chunks,
@@ -254,7 +263,7 @@ impl BlobWriter for PgS3BlobWriter {
                     self.session
                         .upload_id
                         .as_ref()
-                        .expect("should always be Some here")
+                        .expect("UploadSession.upload_id should always be Some here")
                         .as_str(),
                     &self.session.uuid,
                 )

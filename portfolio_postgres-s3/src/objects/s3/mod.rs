@@ -11,7 +11,7 @@ use hyper::body::Body;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::metadata::Chunk;
+use crate::objects::Chunk;
 
 pub(crate) mod logging;
 use super::super::errors::{Error, Result};

@@ -3,7 +3,10 @@ use aws_sdk_s3::primitives::ByteStream;
 use hyper::body::Body;
 use uuid::Uuid;
 
-use crate::metadata::Chunk;
+pub struct Chunk {
+    pub e_tag: Option<String>,
+    pub chunk_number: i32,
+}
 
 #[async_trait]
 pub trait ObjectStore: Clone + Send + Sync + 'static {
