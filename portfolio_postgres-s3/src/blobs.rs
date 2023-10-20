@@ -11,12 +11,12 @@ use uuid::Uuid;
 use portfolio::registry::{BlobStore, BlobWriter};
 use portfolio::DistributionErrorCode;
 use portfolio::{ChunkedBody, Digester, OciDigest, StreamObjectBody};
+use portfolio_objectstore::{Chunk, ObjectStore, S3};
 
 use super::errors::{Error, Result};
 use super::metadata::{
     Blob, Chunk as MetadataChunk, PostgresMetadataPool, PostgresMetadataTx, UploadSession,
 };
-use super::objects::{Chunk, ObjectStore, S3};
 
 pub struct PgS3BlobStore {
     pub(crate) metadata: PostgresMetadataPool,

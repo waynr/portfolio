@@ -4,6 +4,7 @@ use aws_credential_types::Credentials;
 use aws_sdk_s3::config::Region;
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::primitives::ByteStreamError;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::Client;
 use http::{StatusCode, Uri};
@@ -11,12 +12,12 @@ use hyper::body::Body;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::objects::Chunk;
+use super::Chunk;
 
 pub(crate) mod logging;
-use super::super::errors::{Error, Result};
+use super::errors::{Error, Result};
 use super::s3::logging::LoggingInterceptor;
-use super::traits::ObjectStore;
+use super::ObjectStore;
 
 #[derive(Clone, Deserialize)]
 pub struct S3Config {
@@ -74,8 +75,10 @@ pub struct S3 {
 #[async_trait]
 impl ObjectStore for S3 {
     type Error = Error;
+    type ObjectStreamError = ByteStreamError;
+    type Object = ByteStream;
 
-    async fn get_blob(&self, key: &Uuid) -> Result<ByteStream> {
+    async fn get_blob(&self, key: &Uuid) -> Result<Self::Object> {
         let get_object_output = self
             .client
             .get_object()

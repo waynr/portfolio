@@ -3,7 +3,6 @@ mod config;
 mod errors;
 mod manifests;
 mod metadata;
-mod objects;
 mod repositories;
 
 pub use config::PgS3RepositoryFactory;

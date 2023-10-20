@@ -9,8 +9,7 @@ use portfolio::registry;
 use portfolio::registry::ManifestSpec;
 use portfolio::DigestState;
 use portfolio::OciDigest;
-
-use super::super::objects::Chunk as ObjectStoreChunk;
+use portfolio_objectstore::Chunk as ObjectStoreChunk;
 
 #[derive(sqlx::FromRow, Clone)]
 pub struct Repository {

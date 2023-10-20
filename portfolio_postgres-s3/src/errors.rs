@@ -7,6 +7,9 @@ pub enum Error {
     #[error("portfolio error: {0}")]
     PortfolioError(String),
 
+    #[error("objectstore error: {0}")]
+    ObjectStoreError(#[from] portfolio_objectstore::Error),
+
     #[error("sqlx error")]
     SQLXError(#[from] sqlx::Error),
     #[error("sqlx migration error")]
@@ -21,55 +24,6 @@ pub enum Error {
     ByteStreamError(#[from] aws_sdk_s3::primitives::ByteStreamError),
     #[error("{0}")]
     TokioJoinError(#[from] tokio::task::JoinError),
-
-    #[error("aws sdk put object error")]
-    AWSSDKPutObjectError(
-        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::put_object::PutObjectError>,
-    ),
-    #[error("aws sdk get object error")]
-    AWSSDKGetObjectError(
-        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError>,
-    ),
-    #[error("aws sdk head object error")]
-    AWSSDKHeadObjectError(
-        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::head_object::HeadObjectError>,
-    ),
-    #[error("aws sdk copy object error")]
-    AWSSDKCopyObjectError(
-        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::copy_object::CopyObjectError>,
-    ),
-    #[error("aws sdk delete object error")]
-    AWSSDKDeleteObjectError(
-        #[from]
-        aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::delete_object::DeleteObjectError>,
-    ),
-    #[error("aws sdk create multipart upload error")]
-    AWSSDKCreateMultiPartUploadError(
-        #[from]
-        aws_sdk_s3::error::SdkError<
-            aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadError,
-        >,
-    ),
-    #[error("aws sdk upload part error")]
-    AWSSDKUploadPartError(
-        #[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::upload_part::UploadPartError>,
-    ),
-    #[error("aws sdk complete multipart upload error")]
-    AWSSDKCompleteMultipartUploadError(
-        #[from]
-        aws_sdk_s3::error::SdkError<
-            aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError,
-        >,
-    ),
-    #[error("aws sdk abort multipart upload error")]
-    AWSSDKAbortMultipartUploadError(
-        #[from]
-        aws_sdk_s3::error::SdkError<
-            aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError,
-        >,
-    ),
-    #[error("aws sdk credentials error")]
-    AWSSDKCredentialsError(#[from] aws_credential_types::provider::error::CredentialsError),
 
     #[error("failed to initiate chunked upload: {0}")]
     ObjectsFailedToInitiateChunkedUpload(&'static str),

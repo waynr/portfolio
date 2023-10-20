@@ -5,4 +5,5 @@ members = [
     "portfoliod",
     "portfolio",
     "portfolio_postgres-s3",
+    "objectstore",
 ]

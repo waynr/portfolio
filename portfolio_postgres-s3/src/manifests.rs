@@ -8,12 +8,13 @@ use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
 use portfolio::OciDigest;
 use portfolio::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
+use portfolio_objectstore::ObjectStore;
 
 use super::blobs::PgS3BlobStore;
 use super::errors::{Error, Result};
 use super::metadata::Manifest;
 use super::metadata::Repository;
-use super::objects::ObjectStore;
+
 pub struct PgS3ManifestStore {
     blobstore: PgS3BlobStore,
     repository: Repository,

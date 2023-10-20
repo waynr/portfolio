@@ -1,7 +1,15 @@
 use async_trait::async_trait;
-use aws_sdk_s3::primitives::ByteStream;
+use bytes::Bytes;
 use hyper::body::Body;
 use uuid::Uuid;
+
+mod config;
+pub use config::Config;
+mod errors;
+pub use errors::Error;
+pub(crate) mod s3;
+pub use s3::S3;
+pub use s3::S3Config;
 
 pub struct Chunk {
     pub e_tag: Option<String>,
@@ -10,9 +18,14 @@ pub struct Chunk {
 
 #[async_trait]
 pub trait ObjectStore: Clone + Send + Sync + 'static {
-    type Error: std::error::Error;
+    type Error: std::error::Error + Send + Sync + 'static;
+    type ObjectStreamError: std::error::Error + Send + Sync + 'static;
+    type Object: futures_core::stream::Stream<Item = std::result::Result<Bytes, Self::ObjectStreamError>>
+        + Send
+        + Sync
+        + 'static;
 
-    async fn get_blob(&self, key: &Uuid) -> std::result::Result<ByteStream, Self::Error>;
+    async fn get_blob(&self, key: &Uuid) -> std::result::Result<Self::Object, Self::Error>;
 
     async fn blob_exists(&self, key: &Uuid) -> std::result::Result<bool, Self::Error>;
 

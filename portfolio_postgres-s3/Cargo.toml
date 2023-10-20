@@ -12,6 +12,7 @@ path = "src/lib.rs"
 [dependencies]
 
 portfolio = { path = "../portfolio" }
+portfolio-objectstore = { path = "../objectstore" }
 
 hyper = { version = "0.14", features = [ "full" ] }
 tokio = { version = "1.17", features = [ "full" ] }
