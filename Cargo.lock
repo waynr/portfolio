@@ -1897,7 +1897,7 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-s3",
  "bytes",
- "futures-core",
+ "futures",
  "http",
  "hyper",
  "serde",
@@ -1911,11 +1911,9 @@ name = "portfolio_postgres-s3"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "aws-config",
- "aws-credential-types",
- "aws-sdk-s3",
  "bytes",
  "chrono",
+ "futures",
  "http",
  "hyper",
  "oci-spec",
@@ -1929,7 +1927,6 @@ dependencies = [
  "sqlx-postgres",
  "thiserror",
  "tokio",
- "tokio-stream",
  "tracing",
  "uuid",
 ]
