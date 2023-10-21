@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use axum::Json;
+use bytes::Bytes;
+use futures_core::Stream;
 use hyper::body::Body;
 use oci_spec::image::{Descriptor, ImageIndex, ImageManifest, MediaType};
 use once_cell::sync::Lazy;
@@ -55,13 +56,10 @@ pub trait RepositoryStore: Clone + Send + Sync + 'static {
 #[async_trait]
 pub trait ManifestStore: Send + Sync + 'static {
     type Manifest: Manifest;
-    type ManifestBodyStreamError: std::error::Error + Send + Sync + 'static;
-    type ManifestBody: futures_core::stream::Stream<
-            Item = std::result::Result<Bytes, Self::ManifestBodyStreamError>,
-        > + Send
-        + Sync
-        + 'static;
     type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
+    type ManifestBody: Stream<
+        Item = std::result::Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>,
+    > + Send;
 
     async fn head(
         &self,
@@ -92,14 +90,12 @@ pub trait ManifestStore: Send + Sync + 'static {
 #[async_trait]
 pub trait BlobStore: Send + Sync + 'static {
     type BlobWriter: BlobWriter;
-    type Blob: Blob;
-    type BlobBodyStreamError: std::error::Error + Send + Sync + 'static;
-    type BlobBody: futures_core::stream::Stream<Item = std::result::Result<Bytes, Self::BlobBodyStreamError>>
-        + Send
-        + Sync
-        + 'static;
     type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
     type UploadSession: UploadSession + Send + Sync + 'static;
+    type Blob: Blob;
+    type BlobBody: Stream<
+        Item = std::result::Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>,
+    > + Send;
 
     async fn head(&self, key: &OciDigest) -> std::result::Result<Option<Self::Blob>, Self::Error>;
 
