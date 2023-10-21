@@ -20,8 +20,7 @@ pub struct Chunk {
 #[async_trait]
 pub trait ObjectStore: Clone + Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
-    type ObjectBody: Stream<Item = std::result::Result<Bytes, Error>>
-        + Send;
+    type ObjectBody: Stream<Item = std::result::Result<Bytes, Error>> + Send;
 
     async fn get_blob(&self, key: &Uuid) -> std::result::Result<Self::ObjectBody, Self::Error>;
 
