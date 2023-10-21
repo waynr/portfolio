@@ -1,5 +1,5 @@
 [package]
-name = "portfoliod"
+name = "portfolio"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,8 +11,8 @@ path = "src/main.rs"
 
 [dependencies]
 
-portfolio_postgres-s3 = { path = "../portfolio_postgres-s3" }
-portfolio = { path = "../portfolio" }
+portfolio_backend_postgres = { path = "../portfolio_backend_postgres" }
+portfolio-core = { path = "../portfolio_core" }
 
 tokio = { version = "1.17", features = [ "full" ] }
 

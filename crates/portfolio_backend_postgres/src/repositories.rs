@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use portfolio::registry::{RepositoryStore, TagsList};
+use portfolio_core::registry::{RepositoryStore, TagsList};
 use portfolio_objectstore::S3;
 
 use super::blobs::PgS3BlobStore;

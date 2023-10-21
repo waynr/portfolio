@@ -6,8 +6,8 @@ use sqlx::postgres::{PgPoolOptions, Postgres};
 use sqlx::types::Uuid;
 use sqlx::{PgConnection, Pool, Row, Transaction};
 
-use portfolio::registry::ManifestRef;
-use portfolio::{DigestState, OciDigest};
+use portfolio_core::registry::ManifestRef;
+use portfolio_core::{DigestState, OciDigest};
 
 use super::{Chunk, Chunks, UploadSession, UploadSessions};
 use super::super::errors::{Error, Result};
@@ -158,7 +158,7 @@ impl Queries {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
                     Err(Error::DistributionSpecError(
-                        portfolio::DistributionErrorCode::ContentReferenced,
+                        portfolio_core::DistributionErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),
@@ -284,7 +284,7 @@ impl Queries {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
                     Err(Error::DistributionSpecError(
-                        portfolio::DistributionErrorCode::ContentReferenced,
+                        portfolio_core::DistributionErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),
@@ -328,7 +328,7 @@ impl Queries {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
                     Err(Error::DistributionSpecError(
-                        portfolio::DistributionErrorCode::ContentReferenced,
+                        portfolio_core::DistributionErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),
@@ -372,7 +372,7 @@ impl Queries {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
                     Err(Error::DistributionSpecError(
-                        portfolio::DistributionErrorCode::ContentReferenced,
+                        portfolio_core::DistributionErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),

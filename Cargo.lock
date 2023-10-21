@@ -1864,6 +1864,20 @@ checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 
 [[package]]
 name = "portfolio"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "portfolio-core",
+ "portfolio_backend_postgres",
+ "serde",
+ "serde_yaml",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "portfolio-core"
 version = "0.0.0"
 dependencies = [
  "async-trait",
@@ -1907,7 +1921,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "portfolio_postgres-s3"
+name = "portfolio_backend_postgres"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -1917,7 +1931,7 @@ dependencies = [
  "http",
  "hyper",
  "oci-spec",
- "portfolio",
+ "portfolio-core",
  "portfolio-objectstore",
  "sea-query",
  "sea-query-binder",
@@ -1929,20 +1943,6 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "portfoliod"
-version = "0.1.0"
-dependencies = [
- "clap",
- "portfolio",
- "portfolio_postgres-s3",
- "serde",
- "serde_yaml",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

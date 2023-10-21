@@ -1,18 +1,18 @@
 [package]
-name = "portfolio_postgres-s3"
+name = "portfolio_backend_postgres"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "portfolio_postgres_s3"
+name = "portfolio_backend_postgres"
 path = "src/lib.rs"
 
 [dependencies]
 
-portfolio = { path = "../portfolio" }
-portfolio-objectstore = { path = "../objectstore" }
+portfolio-core = { path = "../portfolio_core" }
+portfolio-objectstore = { path = "../portfolio_objectstore" }
 
 hyper = { version = "0.14", features = [ "full" ] }
 

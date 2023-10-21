@@ -3,8 +3,8 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use clap::Parser;
-use portfolio::{http, Result};
-use portfolio_postgres_s3::{PgS3Repository, PgS3RepositoryFactory};
+use portfolio_core::{http, Result};
+use portfolio_backend_postgres::{PgS3Repository, PgS3RepositoryFactory};
 
 mod config;
 use crate::config::{Config, RepositoryBackend};
@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
     match config.backend {
         RepositoryBackend::PostgresS3(cfg) => {
             let manager = cfg.get_manager().await?;
-            let portfolio = portfolio::Portfolio::new(manager);
+            let portfolio = portfolio_core::Portfolio::new(manager);
 
             if let Some(repositories) = config.static_repositories {
                 portfolio

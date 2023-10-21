@@ -2,8 +2,5 @@
 resolver = "2"
 
 members = [
-    "portfoliod",
-    "portfolio",
-    "portfolio_postgres-s3",
-    "objectstore",
+    "crates/*",
 ]

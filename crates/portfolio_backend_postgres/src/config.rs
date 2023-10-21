@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use portfolio::registry::RepositoryStoreManager;
+use portfolio_core::registry::RepositoryStoreManager;
 use portfolio_objectstore::{S3Config, S3};
 
 use super::errors::{Error, Result};

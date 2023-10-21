@@ -78,14 +78,14 @@ watchexec target:
     -e toml,rs \
     -w justfile \
     -w Cargo.toml \
-    -w objectstore/src \
-    -w objectstore/Cargo.toml \
-    -w portfolio_postgres-s3/src \
-    -w portfolio_postgres-s3/Cargo.toml \
-    -w portfolio/src \
-    -w portfolio/Cargo.toml \
-    -w portfoliod/src \
-    -w portfoliod/Cargo.toml \
+    -w crates/portfolio_objectstore/src \
+    -w crates/portfolio_objectstore/Cargo.toml \
+    -w crates/portfolio_backend_postgres/src \
+    -w crates/portfolio_backend_postgres/Cargo.toml \
+    -w crates/portfolio_core/src \
+    -w crates/portfolio_core/Cargo.toml \
+    -w crates/portfolio/src \
+    -w crates/portfolio/Cargo.toml \
     --restart \
     just {{target}}
 

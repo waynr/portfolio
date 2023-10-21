@@ -8,8 +8,8 @@ use futures::stream::StreamExt;
 use futures::stream::TryStreamExt;
 use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
-use portfolio::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
-use portfolio::OciDigest;
+use portfolio_core::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
+use portfolio_core::OciDigest;
 use portfolio_objectstore::ObjectStore;
 
 use super::blobs::PgS3BlobStore;
@@ -109,7 +109,7 @@ impl ManifestStore for PgS3ManifestStore {
                     if !hs.contains(*digest) {
                         tracing::warn!("blob for layer {digest} not found in repository");
                         return Err(Error::DistributionSpecError(
-                            portfolio::DistributionErrorCode::BlobUnknown,
+                            portfolio_core::DistributionErrorCode::BlobUnknown,
                         ));
                     }
                 }
@@ -137,7 +137,7 @@ impl ManifestStore for PgS3ManifestStore {
                     if !hs.contains(*digest) {
                         tracing::warn!("blob for manifest {digest} not found in repository");
                         return Err(Error::DistributionSpecError(
-                            portfolio::DistributionErrorCode::ManifestUnknown,
+                            portfolio_core::DistributionErrorCode::ManifestUnknown,
                         ));
                     }
                 }
@@ -166,7 +166,7 @@ impl ManifestStore for PgS3ManifestStore {
         let mut tx = self.blobstore.metadata.get_tx().await?;
 
         let manifest = tx.get_manifest(&self.repository.id, key).await?.ok_or(
-            Error::DistributionSpecError(portfolio::DistributionErrorCode::ManifestUnknown),
+            Error::DistributionSpecError(portfolio_core::DistributionErrorCode::ManifestUnknown),
         )?;
 
         // NOTE: it's possible (but how likely?) for a manifest to include both layers and

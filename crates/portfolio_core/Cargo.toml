@@ -1,5 +1,5 @@
 [package]
-name = "portfolio"
+name = "portfolio-core"
 version = "0.0.0"
 authors = ["Wayne Warren <wayne.warren.s@gmail.com>"]
 description = "placeholder for Registry API implementation in rust"
@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 edition = "2021"
 
 [lib]
-name = "portfolio"
+name = "portfolio_core"
 path = "src/lib.rs"
 
 [dependencies]

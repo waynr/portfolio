@@ -8,9 +8,9 @@ use futures::stream::TryStreamExt;
 use hyper::body::Body;
 use uuid::Uuid;
 
-use portfolio::registry::{BlobStore, BlobWriter};
-use portfolio::DistributionErrorCode;
-use portfolio::{ChunkedBody, Digester, OciDigest, StreamObjectBody};
+use portfolio_core::registry::{BlobStore, BlobWriter};
+use portfolio_core::DistributionErrorCode;
+use portfolio_core::{ChunkedBody, Digester, OciDigest, StreamObjectBody};
 use portfolio_objectstore::{Chunk, ObjectStore, S3};
 
 use super::errors::{Error, Result};
@@ -120,7 +120,7 @@ impl BlobStore for PgS3BlobStore {
             .get_blob(digest)
             .await?
             .ok_or(Error::DistributionSpecError(
-                portfolio::DistributionErrorCode::BlobUnknown,
+                portfolio_core::DistributionErrorCode::BlobUnknown,
             ))?;
 
         // TODO: handle the case where the blob is referenced

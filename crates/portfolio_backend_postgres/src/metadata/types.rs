@@ -5,10 +5,10 @@ use sqlx::types::Json;
 use sqlx::Row;
 use uuid::Uuid;
 
-use portfolio::registry;
-use portfolio::registry::ManifestSpec;
-use portfolio::DigestState;
-use portfolio::OciDigest;
+use portfolio_core::registry;
+use portfolio_core::registry::ManifestSpec;
+use portfolio_core::DigestState;
+use portfolio_core::OciDigest;
 use portfolio_objectstore::Chunk as ObjectStoreChunk;
 
 #[derive(sqlx::FromRow, Clone)]

@@ -41,20 +41,20 @@ pub enum Error {
     // distribution error codes
     // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
     #[error("distribution spec error")]
-    DistributionSpecError(portfolio::errors::DistributionErrorCode),
+    DistributionSpecError(portfolio_core::errors::DistributionErrorCode),
 }
 
-impl From<portfolio::errors::Error> for Error {
-    fn from(e: portfolio::errors::Error) -> Error {
+impl From<portfolio_core::errors::Error> for Error {
+    fn from(e: portfolio_core::errors::Error) -> Error {
         Error::PortfolioError(format!("{}", e))
     }
 }
 
-impl From<Error> for portfolio::errors::Error {
+impl From<Error> for portfolio_core::errors::Error {
     fn from(e: Error) -> Self {
         match e {
-            Error::DistributionSpecError(c) => portfolio::errors::Error::DistributionSpecError(c),
-            _ => portfolio::errors::Error::BackendError(Box::new(e)),
+            Error::DistributionSpecError(c) => portfolio_core::errors::Error::DistributionSpecError(c),
+            _ => portfolio_core::errors::Error::BackendError(Box::new(e)),
         }
     }
 }

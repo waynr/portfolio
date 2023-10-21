@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
-use portfolio_postgres_s3::PgS3RepositoryConfig;
-use portfolio::RepositoryDefinition;
+use portfolio_backend_postgres::PgS3RepositoryConfig;
+use portfolio_core::RepositoryDefinition;
 
 #[derive(Clone, Deserialize)]
 pub struct Config {
