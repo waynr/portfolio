@@ -14,6 +14,9 @@ use serde::{de, Deserialize, Deserializer};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::{self, TraceLayer};
 
+mod errors;
+pub use errors::Error;
+pub use errors::Result;
 pub mod headers;
 
 pub(crate) mod blobs;
@@ -21,9 +24,9 @@ mod manifests;
 mod referrers;
 mod tags;
 
-use crate::errors::{DistributionErrorCode, Error, Result};
-use crate::registry::{RepositoryStore, RepositoryStoreManager};
-use crate::Portfolio;
+use portfolio_core::registry::{RepositoryStore, RepositoryStoreManager};
+use portfolio_core::Portfolio;
+use portfolio_core::DistributionErrorCode;
 
 async fn auth<B, R: RepositoryStoreManager>(
     State(portfolio): State<Portfolio<R>>,

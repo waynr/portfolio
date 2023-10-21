@@ -4,8 +4,6 @@ pub use config::RepositoryDefinition;
 pub mod errors;
 pub use errors::{DistributionErrorCode, Error, Result};
 
-pub mod http;
-
 mod oci_digest;
 pub use oci_digest::{DigestState, Digester, OciDigest};
 

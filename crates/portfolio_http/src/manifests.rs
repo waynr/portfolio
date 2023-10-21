@@ -10,8 +10,8 @@ use axum::{Router, TypedHeader};
 use headers::{ContentLength, ContentType};
 use http::StatusCode;
 
-use crate::registry::{Manifest, ManifestRef, ManifestSpec, ManifestStore, RepositoryStore};
-use crate::{DistributionErrorCode, Error, Result};
+use portfolio_core::registry::{Manifest, ManifestRef, ManifestSpec, ManifestStore, RepositoryStore};
+use portfolio_core::{DistributionErrorCode, Error, Result};
 
 pub fn router<R: RepositoryStore>() -> Router {
     Router::new()

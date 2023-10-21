@@ -2,9 +2,11 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 
+use anyhow::Result;
 use clap::Parser;
-use portfolio_core::{http, Result};
+
 use portfolio_backend_postgres::{PgS3Repository, PgS3RepositoryFactory};
+use portfolio_http::serve;
 
 mod config;
 use crate::config::{Config, RepositoryBackend};
@@ -49,7 +51,11 @@ async fn main() -> Result<()> {
             }
 
             // run HTTP server
-            http::serve::<PgS3RepositoryFactory, PgS3Repository>(portfolio).await
+            match serve::<PgS3RepositoryFactory, PgS3Repository>(portfolio).await {
+                Err(e) => return Err(e.into()),
+                Ok(_) => (),
+            }
         }
     }
+    Ok(())
 }

@@ -5,7 +5,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("portfolio error: {0}")]
-    PortfolioError(String),
+    PortfolioCoreError(#[from] portfolio_core::Error),
 
     #[error("objectstore error: {0}")]
     ObjectStoreError(#[from] portfolio_objectstore::Error),
@@ -44,17 +44,13 @@ pub enum Error {
     DistributionSpecError(portfolio_core::errors::DistributionErrorCode),
 }
 
-impl From<portfolio_core::errors::Error> for Error {
-    fn from(e: portfolio_core::errors::Error) -> Error {
-        Error::PortfolioError(format!("{}", e))
-    }
-}
-
 impl From<Error> for portfolio_core::errors::Error {
     fn from(e: Error) -> Self {
         match e {
-            Error::DistributionSpecError(c) => portfolio_core::errors::Error::DistributionSpecError(c),
-            _ => portfolio_core::errors::Error::BackendError(Box::new(e)),
+            Error::DistributionSpecError(c) => {
+                portfolio_core::errors::Error::DistributionSpecError(c)
+            }
+            _ => portfolio_core::errors::Error::BackendError(format!("{}", e)),
         }
     }
 }

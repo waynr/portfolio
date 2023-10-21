@@ -82,6 +82,8 @@ watchexec target:
     -w crates/portfolio_objectstore/Cargo.toml \
     -w crates/portfolio_backend_postgres/src \
     -w crates/portfolio_backend_postgres/Cargo.toml \
+    -w crates/portfolio_http/src \
+    -w crates/portfolio_http/Cargo.toml \
     -w crates/portfolio_core/src \
     -w crates/portfolio_core/Cargo.toml \
     -w crates/portfolio/src \

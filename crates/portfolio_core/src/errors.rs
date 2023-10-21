@@ -1,4 +1,4 @@
-use axum::http::StatusCode;
+use http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use thiserror;
 
@@ -40,7 +40,7 @@ pub enum Error {
     InvalidHeaderValue(&'static str),
 
     #[error("backend error: {0}")]
-    BackendError(Box<dyn std::error::Error>),
+    BackendError(String),
 
     // distribution error codes
     // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
@@ -69,7 +69,7 @@ pub enum DistributionErrorCode {
 }
 
 impl DistributionErrorCode {
-    fn status_code(&self) -> StatusCode {
+    pub fn status_code(&self) -> StatusCode {
         match self {
             DistributionErrorCode::BlobUnknown => StatusCode::NOT_FOUND,
             DistributionErrorCode::BlobUploadInvalid => StatusCode::RANGE_NOT_SATISFIABLE,

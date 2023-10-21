@@ -11,12 +11,14 @@ path = "src/main.rs"
 
 [dependencies]
 
-portfolio_backend_postgres = { path = "../portfolio_backend_postgres" }
+portfolio-backend-postgres = { path = "../portfolio_backend_postgres" }
 portfolio-core = { path = "../portfolio_core" }
+portfolio-http = { path = "../portfolio_http" }
 
 tokio = { version = "1.17", features = [ "full" ] }
 
 clap = { version = "4.4.4", features = [ "derive" ] }
+anyhow = "1"
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"]}
