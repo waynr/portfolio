@@ -3,10 +3,12 @@ use aws_credential_types::provider::{ProvideCredentials, SharedCredentialsProvid
 use aws_credential_types::Credentials;
 use aws_sdk_s3::config::Region;
 use aws_sdk_s3::error::SdkError;
-use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::primitives::ByteStreamError;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::Client;
+use bytes::Bytes;
+use futures::stream::BoxStream;
+use futures::stream::StreamExt;
+use futures::stream::TryStreamExt;
 use http::{StatusCode, Uri};
 use hyper::body::Body;
 use serde::Deserialize;
@@ -75,10 +77,10 @@ pub struct S3 {
 #[async_trait]
 impl ObjectStore for S3 {
     type Error = Error;
-    type ObjectStreamError = ByteStreamError;
-    type Object = ByteStream;
+    type ObjectBody =
+        BoxStream<'static, std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync>>>;
 
-    async fn get_blob(&self, key: &Uuid) -> Result<Self::Object> {
+    async fn get_blob(&self, key: &Uuid) -> Result<Self::ObjectBody> {
         let get_object_output = self
             .client
             .get_object()
@@ -87,7 +89,7 @@ impl ObjectStore for S3 {
             .send()
             .await?;
 
-        Ok(get_object_output.body)
+        Ok(get_object_output.body.map_err(|e| e.into()).boxed())
     }
 
     async fn blob_exists(&self, key: &Uuid) -> Result<bool> {
