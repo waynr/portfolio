@@ -1,13 +1,15 @@
 use std::collections::HashSet;
 
 use async_trait::async_trait;
-use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::primitives::ByteStreamError;
 use bytes::Bytes;
+use bytes::BytesMut;
+use futures::stream::BoxStream;
+use futures::stream::StreamExt;
+use futures::stream::TryStreamExt;
 use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
-use portfolio::OciDigest;
 use portfolio::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
+use portfolio::OciDigest;
 use portfolio_objectstore::ObjectStore;
 
 use super::blobs::PgS3BlobStore;
@@ -29,12 +31,13 @@ impl PgS3ManifestStore {
     }
 }
 
+type TryBytes = std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync>>;
+
 #[async_trait]
 impl ManifestStore for PgS3ManifestStore {
     type Manifest = Manifest;
-    type ManifestBody = ByteStream;
-    type ManifestBodyStreamError = ByteStreamError;
     type Error = Error;
+    type ManifestBody = BoxStream<'static, TryBytes>;
 
     async fn head(&self, key: &ManifestRef) -> Result<Option<Self::Manifest>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
@@ -45,11 +48,11 @@ impl ManifestStore for PgS3ManifestStore {
         }
     }
 
-    async fn get(&self, key: &ManifestRef) -> Result<Option<(Self::Manifest, ByteStream)>> {
+    async fn get(&self, key: &ManifestRef) -> Result<Option<(Self::Manifest, Self::ManifestBody)>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn.get_manifest(&self.repository.id, key).await? {
             let body = self.blobstore.objects.get_blob(&manifest.blob_id).await?;
-            Ok(Some((manifest, body)))
+            Ok(Some((manifest, body.map_err(|e| e.into()).boxed())))
         } else {
             Ok(None)
         }
@@ -224,7 +227,15 @@ impl ManifestStore for PgS3ManifestStore {
             let db_media_type = m.media_type.unwrap();
             set.spawn(async move {
                 let stream = objects.get_blob(&m.blob_id).await?;
-                let bs = stream.collect().await.map(|d| d.into_bytes())?;
+                let bs: Bytes = stream
+                    .try_collect::<Vec<Bytes>>()
+                    .await?
+                    .into_iter()
+                    .fold(BytesMut::new(), |mut acc, bs| {
+                        acc.extend_from_slice(&bs);
+                        acc
+                    })
+                    .into();
                 let spec = ManifestSpec::try_from(&bs)?;
                 let media_type = spec.media_type().unwrap_or(db_media_type);
                 let mut d = Descriptor::new(media_type, bs.len() as i64, &m.digest);

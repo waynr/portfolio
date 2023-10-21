@@ -1,11 +1,11 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::primitives::ByteStreamError;
 use bytes::Bytes;
+use futures::stream::BoxStream;
+use futures::stream::StreamExt;
+use futures::stream::TryStreamExt;
 use hyper::body::Body;
-use tokio_stream::StreamExt;
 use uuid::Uuid;
 
 use portfolio::registry::{BlobStore, BlobWriter};
@@ -32,11 +32,11 @@ impl PgS3BlobStore {
 #[async_trait]
 impl BlobStore for PgS3BlobStore {
     type BlobWriter = PgS3BlobWriter;
-    type Blob = Blob;
-    type BlobBody = ByteStream;
-    type BlobBodyStreamError = ByteStreamError;
     type Error = Error;
     type UploadSession = UploadSession;
+    type Blob = Blob;
+    type BlobBody =
+        BoxStream<'static, std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync>>>;
 
     async fn resume(
         &self,
@@ -100,10 +100,10 @@ impl BlobStore for PgS3BlobStore {
         Ok(uuid)
     }
 
-    async fn get(&self, key: &OciDigest) -> Result<Option<(Blob, ByteStream)>> {
+    async fn get(&self, key: &OciDigest) -> Result<Option<(Self::Blob, Self::BlobBody)>> {
         if let Some(blob) = self.metadata.get_conn().await?.get_blob(key).await? {
             let body = self.objects.get_blob(&blob.id).await?;
-            Ok(Some((blob, body)))
+            Ok(Some((blob, body.map_err(|e| e.into()).boxed())))
         } else {
             Ok(None)
         }

@@ -21,8 +21,6 @@ pub enum Error {
     HTTPError(#[from] http::Error),
 
     #[error("{0}")]
-    ByteStreamError(#[from] aws_sdk_s3::primitives::ByteStreamError),
-    #[error("{0}")]
     TokioJoinError(#[from] tokio::task::JoinError),
 
     #[error("failed to initiate chunked upload: {0}")]
