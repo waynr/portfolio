@@ -77,8 +77,7 @@ pub struct S3 {
 #[async_trait]
 impl ObjectStore for S3 {
     type Error = Error;
-    type ObjectBody =
-        BoxStream<'static, std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync>>>;
+    type ObjectBody = BoxStream<'static, std::result::Result<Bytes, Error>>;
 
     async fn get_blob(&self, key: &Uuid) -> Result<Self::ObjectBody> {
         let get_object_output = self
