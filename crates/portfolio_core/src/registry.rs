@@ -14,42 +14,70 @@ use uuid::Uuid;
 use crate::errors::{DistributionErrorCode, Error, Result};
 use crate::oci_digest::OciDigest;
 
+/// Create & get `Self::RepositoryStore` instances. Backend implementations may impose their own
+/// access control and repository limit policies.
+///
 #[async_trait]
 pub trait RepositoryStoreManager: Clone + Send + Sync + 'static {
+    /// The `RepositoryStore` implementation an implementing type provides.
     type RepositoryStore: RepositoryStore;
+
     type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
 
+    /// Get `RepositoryStore` corresponding to the given name, if it already exists. This name
+    /// corresponds to the `<name>` in distribution-spec API endpoints like
+    /// `/v2/<name>/blobs/<digest>`.
     async fn get(
         &self,
         name: &str,
     ) -> std::result::Result<Option<Self::RepositoryStore>, Self::Error>;
+
+    /// Create new `RepositoryStore` with the given name. This name corresponds to the
+    /// `<name>` in distribution-spec API endpoints like `/v2/<name>/blobs/<digest>`.
     async fn create(&self, name: &str) -> std::result::Result<Self::RepositoryStore, Self::Error>;
 }
 
+/// Provides access to a `Self::ManifestStore` and `Self::BlobStore` instances for the sake of
+/// repository content management, handles session management (create, get, delete), and provides a
+/// tag listing method.
+///
 #[async_trait]
 pub trait RepositoryStore: Clone + Send + Sync + 'static {
+    /// The type of the `ManifestStore` implementation provided by this `RepositoryStore`.
     type ManifestStore: ManifestStore;
+    /// The type of the `BlobStore` implementation provided by this `RepositoryStore`.
     type BlobStore: BlobStore;
-    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
+    /// The type of the `UploadSession` implementation provided by this `RepositoryStore`.
     type UploadSession: UploadSession + Send + Sync + 'static;
 
+    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
+
+    /// The name of the repository accessed by this `RepositoryStore`
     fn name(&self) -> &str;
+
+    /// Return a `Self::ManifestStore` to provide access to manifests in this repository.
     fn get_manifest_store(&self) -> Self::ManifestStore;
+
+    /// Return a `Self::BlobStore` to provide access to blobs in this repository.
     fn get_blob_store(&self) -> Self::BlobStore;
 
+    /// Return a list of tags in this repository.
     async fn get_tags(
         &self,
         n: Option<i64>,
         last: Option<String>,
     ) -> std::result::Result<TagsList, Self::Error>;
 
+    /// Initiate a new blob upload session.
     async fn new_upload_session(&self) -> std::result::Result<Self::UploadSession, Self::Error>;
 
+    /// Get an existing blob upload session.
     async fn get_upload_session(
         &self,
         session_uuid: &Uuid,
     ) -> std::result::Result<Self::UploadSession, Self::Error>;
 
+    /// Delete an existing blob upload session.
     async fn delete_session(&self, session_uuid: &Uuid) -> std::result::Result<(), Self::Error>;
 }
 
@@ -57,9 +85,8 @@ pub trait RepositoryStore: Clone + Send + Sync + 'static {
 pub trait ManifestStore: Send + Sync + 'static {
     type Manifest: Manifest;
     type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
-    type ManifestBody: Stream<
-        Item = std::result::Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>,
-    > + Send;
+    type ManifestBody: Stream<Item = std::result::Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>
+        + Send;
 
     async fn head(
         &self,
@@ -93,9 +120,8 @@ pub trait BlobStore: Send + Sync + 'static {
     type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
     type UploadSession: UploadSession + Send + Sync + 'static;
     type Blob: Blob;
-    type BlobBody: Stream<
-        Item = std::result::Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>,
-    > + Send;
+    type BlobBody: Stream<Item = std::result::Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>
+        + Send;
 
     async fn head(&self, key: &OciDigest) -> std::result::Result<Option<Self::Blob>, Self::Error>;
 
