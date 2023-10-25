@@ -14,9 +14,9 @@ type StreamableBody = Box<
     > + Send),
 >;
 
-impl StreamObjectBody {
+impl DigestBody {
     pub fn from_body(body: Body, digester: Arc<Mutex<Digester>>) -> StreamableBody {
-        Box::new(StreamObjectBody {
+        Box::new(DigestBody {
             body: ObjectBody { body, digester },
         })
     }
@@ -27,11 +27,11 @@ pub struct ObjectBody {
     digester: Arc<Mutex<Digester>>,
 }
 
-pub struct StreamObjectBody {
+pub struct DigestBody {
     body: ObjectBody,
 }
 
-impl StreamObjectBody {
+impl DigestBody {
     fn pin_get_body(self: Pin<&mut Self>) -> &mut ObjectBody {
         // this is "safe" because body is never considered pin, see
         // https://doc.rust-lang.org/std/pin/#pinning-is-not-structural-for-field
@@ -39,7 +39,7 @@ impl StreamObjectBody {
     }
 }
 
-impl Stream for StreamObjectBody {
+impl Stream for DigestBody {
     type Item = std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {

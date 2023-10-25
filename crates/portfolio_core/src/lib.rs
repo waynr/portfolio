@@ -6,7 +6,7 @@ pub use oci_digest::{DigestState, Digester, OciDigest};
 
 pub mod registry;
 
-mod object_body;
-pub use object_body::ChunkedBody;
-pub use object_body::StreamObjectBody;
+mod stream;
+pub use stream::ChunkedBody;
+pub use stream::DigestBody;
 

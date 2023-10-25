@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use portfolio_core::registry::{BlobStore, BlobWriter};
 use portfolio_core::DistributionErrorCode;
-use portfolio_core::{ChunkedBody, Digester, OciDigest, StreamObjectBody};
+use portfolio_core::{ChunkedBody, Digester, OciDigest, DigestBody};
 use portfolio_objectstore::{Chunk, ObjectStore, S3};
 
 use super::errors::{Error, Result};
@@ -87,7 +87,7 @@ impl BlobStore for PgS3BlobStore {
 
         // upload blob
         let digester = Arc::new(Mutex::new(digest.digester()));
-        let stream_body = StreamObjectBody::from_body(body, digester);
+        let stream_body = DigestBody::from_body(body, digester);
         self.objects
             .upload_blob(&uuid, stream_body.into(), content_length)
             .await?;
@@ -169,7 +169,7 @@ impl BlobWriter for PgS3BlobWriter {
     async fn write(mut self, content_length: u64, body: Body) -> Result<Self::UploadSession> {
         tracing::debug!("before chunk upload: {:?}", self.session);
         let digester = Arc::new(Mutex::new(Digester::default()));
-        let stream_body = StreamObjectBody::from_body(body, digester.clone());
+        let stream_body = DigestBody::from_body(body, digester.clone());
         let chunk = self
             .objects
             .upload_chunk(
