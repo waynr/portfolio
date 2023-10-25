@@ -1,8 +1,8 @@
 use digest::{Digest, DynDigest};
 use serde::{Deserialize, Serialize};
 
-use crate::sha256::Sha256;
-use crate::sha512::Sha512;
+use sha2::Sha256;
+use sha2::Sha512;
 use crate::{Error, Result};
 
 // https://github.com/opencontainers/image-spec/blob/main/descriptor.md#digests
