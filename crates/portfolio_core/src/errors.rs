@@ -1,5 +1,5 @@
-use http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use http::StatusCode;
 use thiserror;
 
 pub type Result<T> = std::result::Result<T, Error>;

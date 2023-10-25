@@ -289,14 +289,30 @@ pub struct Chunk {
 }
 
 impl From<ObjectStoreChunk> for Chunk {
-    fn from(ObjectStoreChunk{ e_tag, chunk_number }: ObjectStoreChunk) -> Self {
-        Self { e_tag, chunk_number }
+    fn from(
+        ObjectStoreChunk {
+            e_tag,
+            chunk_number,
+        }: ObjectStoreChunk,
+    ) -> Self {
+        Self {
+            e_tag,
+            chunk_number,
+        }
     }
 }
 
 impl From<Chunk> for ObjectStoreChunk {
-    fn from(Chunk{ e_tag, chunk_number }: Chunk) -> Self {
-        Self { e_tag, chunk_number }
+    fn from(
+        Chunk {
+            e_tag,
+            chunk_number,
+        }: Chunk,
+    ) -> Self {
+        Self {
+            e_tag,
+            chunk_number,
+        }
     }
 }
 

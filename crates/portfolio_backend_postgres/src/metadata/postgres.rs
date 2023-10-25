@@ -9,11 +9,11 @@ use sqlx::{PgConnection, Pool, Row, Transaction};
 use portfolio_core::registry::ManifestRef;
 use portfolio_core::{DigestState, OciDigest};
 
-use super::{Chunk, Chunks, UploadSession, UploadSessions};
 use super::super::errors::{Error, Result};
 use super::types::{
     Blob, Blobs, IndexManifests, Layers, Manifest, Manifests, Repositories, Repository, Tag, Tags,
 };
+use super::{Chunk, Chunks, UploadSession, UploadSessions};
 
 #[derive(Clone, Deserialize)]
 pub struct PostgresConfig {
@@ -573,10 +573,7 @@ impl Queries {
         Ok(())
     }
 
-    pub async fn delete_session(
-        executor: &mut PgConnection,
-        session_uuid: &Uuid,
-    ) -> Result<()> {
+    pub async fn delete_session(executor: &mut PgConnection, session_uuid: &Uuid) -> Result<()> {
         let (sql, values) = Query::delete()
             .from_table(UploadSessions::Table)
             .and_where(Expr::col(UploadSessions::Uuid).eq(*session_uuid))

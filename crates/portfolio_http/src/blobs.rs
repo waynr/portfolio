@@ -275,7 +275,10 @@ async fn uploads_put<R: RepositoryStore>(
                 // TODO: update incremental digest state on session
                 session
             } else {
-                let writer = store.resume(&session_uuid, start).await.map_err(|e| e.into())?;
+                let writer = store
+                    .resume(&session_uuid, start)
+                    .await
+                    .map_err(|e| e.into())?;
                 writer.finalize(&oci_digest).await.map_err(|e| e.into())?
             };
 

@@ -25,8 +25,8 @@ mod referrers;
 mod tags;
 
 use portfolio_core::registry::{RepositoryStore, RepositoryStoreManager};
-use portfolio_core::Portfolio;
 use portfolio_core::DistributionErrorCode;
+use portfolio_core::Portfolio;
 
 async fn auth<B, R: RepositoryStoreManager>(
     State(portfolio): State<Portfolio<R>>,
