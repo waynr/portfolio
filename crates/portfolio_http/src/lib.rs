@@ -23,10 +23,11 @@ pub(crate) mod blobs;
 mod manifests;
 mod referrers;
 mod tags;
+mod portfolio;
+pub use portfolio::{Portfolio, RepositoryDefinition};
 
 use portfolio_core::registry::{RepositoryStore, RepositoryStoreManager};
 use portfolio_core::DistributionErrorCode;
-use portfolio_core::Portfolio;
 
 async fn auth<B, R: RepositoryStoreManager>(
     State(portfolio): State<Portfolio<R>>,

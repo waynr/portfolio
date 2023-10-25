@@ -1,5 +1,11 @@
-use crate::config::RepositoryDefinition;
-use crate::registry::RepositoryStoreManager;
+use serde::Deserialize;
+
+use portfolio_core::registry::RepositoryStoreManager;
+
+#[derive(Clone, Deserialize)]
+pub struct RepositoryDefinition {
+    pub name: String,
+}
 
 #[derive(Clone)]
 pub struct Portfolio<R>

@@ -7,6 +7,7 @@ use clap::Parser;
 
 use portfolio_backend_postgres::{PgS3Repository, PgS3RepositoryFactory};
 use portfolio_http::serve;
+use portfolio_http::Portfolio;
 
 mod config;
 use crate::config::{Config, RepositoryBackend};
@@ -42,7 +43,7 @@ async fn main() -> Result<()> {
     match config.backend {
         RepositoryBackend::PostgresS3(cfg) => {
             let manager = cfg.get_manager().await?;
-            let portfolio = portfolio_core::Portfolio::new(manager);
+            let portfolio = Portfolio::new(manager);
 
             if let Some(repositories) = config.static_repositories {
                 portfolio
