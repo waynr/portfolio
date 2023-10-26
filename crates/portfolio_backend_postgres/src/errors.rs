@@ -28,6 +28,9 @@ pub enum Error {
     #[error("missing upload id for session: {0}")]
     ObjectsMissingUploadID(uuid::Uuid),
 
+    #[error("OCI spec error: {0}")]
+    OciSpecError(#[from] oci_spec::OciSpecError),
+
     #[error("error serializing to value")]
     SerdeJsonToValueError(#[from] serde_json::Error),
 

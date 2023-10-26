@@ -6,9 +6,9 @@ use bytes::Bytes;
 use futures_core::Stream;
 use hyper::body::Body;
 use oci_spec::image::{Descriptor, ImageIndex, ImageManifest, MediaType};
+use oci_spec::distribution::TagList;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use serde::Serialize;
 use uuid::Uuid;
 
 use crate::errors::{DistributionErrorCode, Error, Result};
@@ -66,7 +66,7 @@ pub trait RepositoryStore: Clone + Send + Sync + 'static {
         &self,
         n: Option<i64>,
         last: Option<String>,
-    ) -> std::result::Result<TagsList, Self::Error>;
+    ) -> std::result::Result<TagList, Self::Error>;
 
     /// Initiate a new blob upload session.
     async fn new_upload_session(&self) -> std::result::Result<Self::UploadSession, Self::Error>;
@@ -287,12 +287,6 @@ impl ManifestSpec {
             }
         }
     }
-}
-
-#[derive(Serialize)]
-pub struct TagsList {
-    pub name: String,
-    pub tags: Vec<String>,
 }
 
 #[derive(Debug)]

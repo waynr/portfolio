@@ -9,4 +9,3 @@ pub mod registry;
 mod stream;
 pub use stream::ChunkedBody;
 pub use stream::DigestBody;
-

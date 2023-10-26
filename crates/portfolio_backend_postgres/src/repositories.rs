@@ -1,7 +1,8 @@
 use async_trait::async_trait;
+use oci_spec::distribution::{TagList, TagListBuilder};
 use uuid::Uuid;
 
-use portfolio_core::registry::{RepositoryStore, TagsList};
+use portfolio_core::registry::RepositoryStore;
 use portfolio_objectstore::S3;
 
 use super::blobs::PgS3BlobStore;
@@ -76,18 +77,20 @@ impl RepositoryStore for PgS3Repository {
         PgS3BlobStore::new(self.metadata.clone(), self.objects.clone())
     }
 
-    async fn get_tags(&self, n: Option<i64>, last: Option<String>) -> Result<TagsList> {
+    async fn get_tags(&self, n: Option<i64>, last: Option<String>) -> Result<TagList> {
         let mut conn = self.metadata.get_conn().await?;
+        let taglist = TagListBuilder::default()
+            .name(self.repository.name.as_str())
+            .tags(
+                conn.get_tags(&self.repository.id, n, last)
+                    .await?
+                    .into_iter()
+                    .map(|t| t.name)
+                    .collect::<Vec<_>>(),
+            )
+            .build()?;
 
-        Ok(TagsList {
-            name: self.repository.name.clone(),
-            tags: conn
-                .get_tags(&self.repository.id, n, last)
-                .await?
-                .into_iter()
-                .map(|t| t.name)
-                .collect(),
-        })
+        Ok(taglist)
     }
 
     async fn new_upload_session(&self) -> Result<Self::UploadSession> {
