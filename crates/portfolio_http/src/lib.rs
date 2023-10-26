@@ -1,11 +1,91 @@
+//! # Portfolio HTTP
+//!
+//! `portfolio_http` provides an implementation of the [Distribution
+//! Spec](https://github.com/opencontainers/distribution-spec) that is generic over traits defined
+//! in [`portfolio_core`] and therefore compatible with any number of possible implementations.
+//!
+//! ## Example `main.rs`
+//!
+//! Below is an example taken from the [`portfolio`] crate that demonstrates how one might
+//! initialize an Axum HTTP server using a suitable backend implementation -- in this case, the
+//! Postgres + S3 implementation found in [`portfolio_backend_postgres`].
+//!
+//! ```rust
+//! use std::fs::File;
+//! use std::io::Read;
+//! use std::path::PathBuf;
+//!
+//! use anyhow::Result;
+//! use axum::middleware;
+//! use clap::Parser;
+//!
+//! use portfolio_backend_postgres::{PgS3Repository, PgS3RepositoryFactory};
+//! use portfolio_http::{add_basic_repository_extensions, Portfolio};
+//!
+//! mod config;
+//! use crate::config::{Config, RepositoryBackend};
+//!
+//! #[derive(Parser)]
+//! struct Cli {
+//!     #[arg(short, long)]
+//!     config_file: Option<PathBuf>,
+//! }
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<()> {
+//!     let cli = Cli::parse();
+//!
+//!     // load configuration
+//!     let mut dev_config = File::open(cli.config_file.unwrap_or("./dev-config.yml".into()))?;
+//!     let mut s = String::new();
+//!     dev_config.read_to_string(&mut s)?;
+//!     let config: Config = serde_yaml::from_str(&s)?;
+//!
+//!     // initialize persistence layer
+//!     let portfolio = match config.backend {
+//!         RepositoryBackend::PostgresS3(cfg) => {
+//!             let manager = cfg.get_manager().await?;
+//!             Portfolio::<PgS3RepositoryFactory, PgS3Repository>::new(manager)
+//!         }
+//!     };
+//!
+//!     // configure static repositories
+//!     if let Some(repositories) = config.static_repositories {
+//!         portfolio
+//!             .initialize_static_repositories(repositories)
+//!             .await?;
+//!     }
+//!
+//!     // retrieve axum router from Portfolio instance
+//!     let router = match portfolio.router() {
+//!         Err(e) => return Err(e.into()),
+//!         Ok(r) => r,
+//!     };
+//!
+//!     // add necessary Tower layer to inject RepositoryStore instances to all routes in the
+//!     // router.
+//!     let router = router.route_layer(middleware::from_fn_with_state(
+//!         portfolio.clone(),
+//!         add_basic_repository_extensions,
+//!     ));
+//!
+//!     // run axum HTTP server
+//!     axum::Server::bind(&"0.0.0.0:13030".parse()?)
+//!         .serve(router.into_make_service())
+//!         .await?;
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
 use axum::extract::{Path, State};
-use axum::middleware::Next;
 use axum::http::header::{self, HeaderMap, HeaderName, HeaderValue};
 use axum::http::{Request, StatusCode};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -29,11 +109,17 @@ use portfolio_core::registry::RepositoryStore;
 use portfolio_core::registry::RepositoryStoreManager;
 use portfolio_core::DistributionErrorCode;
 
+/// Configuration struct defining parameters for statically-defined repositories initialized at
+/// program startup if they don't already exist.
 #[derive(Clone, Deserialize)]
 pub struct RepositoryDefinition {
+    /// Name of repository to initialize.
     pub name: String,
 }
 
+/// Adds a [`axum::Extension`] containing a [`RepositoryStore`] for use in HTTP handlers. This is
+/// not included in the default [`axum::Router`] returned by [`self::Portfolio`] to enable users
+/// to add their own logic to determin how repositories are created or accessed.
 pub async fn add_basic_repository_extensions<B, M, R>(
     State(portfolio): State<Portfolio<M, R>>,
     Path(path_params): Path<HashMap<String, String>>,
@@ -49,8 +135,6 @@ where
         None => return Err(Error::MissingPathParameter("repository")),
     };
 
-    // NOTE/TODO: for now we automatically insert a repository if it's not already there but in the
-    // future we need to implement some kind of limit
     let repository = match portfolio.get_repository(repo_name).await {
         Err(e) => {
             tracing::warn!("error retrieving repository: {e:?}");
@@ -104,6 +188,8 @@ async fn version() -> Result<Response> {
     Ok((StatusCode::OK, headers, "{}").into_response())
 }
 
+/// Centralizes management of Portfolio registries and provides an [`axum::Router`] that implements
+/// the [Distribution Spec](https://github.com/opencontainers/distribution-spec).
 #[derive(Clone)]
 pub struct Portfolio<M, R>
 where
@@ -156,6 +242,7 @@ impl<M: RepositoryStoreManager, R: RepositoryStore> Portfolio<M, R> {
         Ok(self.manager.create(name).await?)
     }
 
+    /// Return an [`axum::Router`] that implements the Distribution Specification.
     pub fn router(&self) -> Result<axum::Router> {
         let blobs = blobs::router::<R>();
         let manifests = manifests::router::<R>();

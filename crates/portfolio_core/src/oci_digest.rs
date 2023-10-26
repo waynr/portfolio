@@ -5,8 +5,12 @@ use sha2::Sha256;
 use sha2::Sha512;
 use crate::{Error, Result};
 
-// https://github.com/opencontainers/image-spec/blob/main/descriptor.md#digests
-#[derive(Clone, Debug)]
+/// A type safe representation of an [OCI
+/// Digest](https://github.com/opencontainers/image-spec/blob/main/descriptor.md#digests).
+///
+/// Used throughout [`portfolio_core`] and related crates to address various types of manifest and
+/// blob.
+#[derive(Clone, Debug, PartialEq)]
 pub struct OciDigest {
     algorithm: RegisteredImageSpecAlgorithm,
     encoded: String,
@@ -78,7 +82,7 @@ impl OciDigest {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 enum RegisteredImageSpecAlgorithm {
     Sha256,
     Sha512,
@@ -105,6 +109,11 @@ impl From<&RegisteredImageSpecAlgorithm> for String {
     }
 }
 
+/// Wrapper type around resumable digest algorithms.
+///
+/// Provides access to the underlying [`DigestState`] and number of bytes consumed so far.
+/// Primarily used by [`super::DigestBody`] to incrementally calculate blob digests across multiple
+/// upload chunks.
 pub struct Digester {
     // TODO: once https://github.com/RustCrypto/traits/pull/1078 is merged we should be able to
     // finish implementing chunked digest calculation
@@ -140,6 +149,7 @@ impl From<Digester> for DigestState {
     }
 }
 
+/// Serializable state of the underlying cryptographic digest algorithms managed by [`Digester`].
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DigestState {
     bytes: u64,

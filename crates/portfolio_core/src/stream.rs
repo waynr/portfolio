@@ -15,6 +15,11 @@ type StreamableBody = Box<
     > + Send),
 >;
 
+/// Wrapper around [`hyper::body::Body`] that calculates the digest of the contents as they are
+/// read.
+///
+/// Makes use of [`super::Digester`] to incrementally calculate the digest of the stream bytes as
+/// they are read and forwarded on to the next consumer.
 #[pin_project]
 pub struct DigestBody {
     body: Body,
@@ -52,6 +57,10 @@ impl Stream for DigestBody {
 
 const CHUNK_SIZE: usize = 6 * 1024 * 1024; // 6 MB
 
+/// Turn a [`hyper::body::Body`] into a stream of fixed-size [`bytes::Bytes`].
+///
+/// Wrapper around [`hyper::body::Body`] that buffers and re-streams the underlying stream bytes
+/// into fixed size chunks of bytes.
 #[pin_project]
 pub struct ChunkedBody {
     body: Body,
