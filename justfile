@@ -56,10 +56,21 @@ postgresql-migrate $DATABASE_URL="postgresql://postgres:password@localhost:5432/
 build:
   cargo build
 
+doc targetdir:
+  reset
+  cargo doc
+  rsync -av ./target/doc/ {{targetdir}}
+
 build-refactor:
   # requires cargo-limit to be installed
   reset
   (cargo lbuild --color=always 2>&1) | less -R
+
+doc-refactor targetdir:
+  # requires cargo-limit to be installed
+  reset
+  (cargo ldoc --color=always 2>&1) | less -R
+  rsync -av ./target/doc/ {{targetdir}}
 
 run config $RUST_LOG="info,portfolio=debug,tower_http=debug,sqlx::query=off":
   ./target/debug/portfolio --config-file {{config}}
@@ -72,7 +83,7 @@ build-and-run config:
     just build
     just run {{config}}
 
-watchexec target:
+watchexec +args:
   watchexec \
     -c \
     -e toml,rs \
@@ -89,10 +100,16 @@ watchexec target:
     -w crates/portfolio/src \
     -w crates/portfolio/Cargo.toml \
     --restart \
-    just {{target}}
+    just {{args}}
 
 we-build-refactor:
   just watchexec build-refactor
+
+we-doc-refactor targetdir:
+  just watchexec doc-refactor {{targetdir}}
+
+we-doc targetdir:
+  just watchexec doc {{targetdir}}
 
 we-build:
   just watchexec build
