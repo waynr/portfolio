@@ -16,11 +16,11 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::{self, TraceLayer};
 
 mod errors;
-pub use errors::Error;
-pub use errors::Result;
-pub mod headers;
+pub(crate) use errors::Error;
+pub(crate) use errors::Result;
 
 pub(crate) mod blobs;
+pub(crate) mod headers;
 mod manifests;
 mod referrers;
 mod tags;
@@ -142,14 +142,14 @@ impl<M: RepositoryStoreManager, R: RepositoryStore> Portfolio<M, R> {
         Ok(())
     }
 
-    pub async fn get_repository(
+    async fn get_repository(
         &self,
         name: &str,
     ) -> std::result::Result<Option<M::RepositoryStore>, M::Error> {
         Ok(self.manager.get(name).await?)
     }
 
-    pub async fn insert_repository(
+    async fn insert_repository(
         &self,
         name: &str,
     ) -> std::result::Result<M::RepositoryStore, M::Error> {
