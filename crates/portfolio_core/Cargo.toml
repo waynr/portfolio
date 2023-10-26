@@ -24,6 +24,7 @@ bytes = "1.5"
 
 async-trait = "0.1.56"
 futures-core = "0.3"
+pin-project = "1"
 
 sha2 = { version = "0.10", features = [ "compress" ] }
 digest = { version = "0.10" }

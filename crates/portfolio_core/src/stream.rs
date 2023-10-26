@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use bytes::{Bytes, BytesMut};
 use futures_core::stream::Stream;
 use hyper::body::Body;
+use pin_project::pin_project;
 
 use crate::Digester;
 
@@ -14,28 +15,15 @@ type StreamableBody = Box<
     > + Send),
 >;
 
-impl DigestBody {
-    pub fn from_body(body: Body, digester: Arc<Mutex<Digester>>) -> StreamableBody {
-        Box::new(DigestBody {
-            body: ObjectBody { body, digester },
-        })
-    }
-}
-
-pub struct ObjectBody {
+#[pin_project]
+pub struct DigestBody {
     body: Body,
     digester: Arc<Mutex<Digester>>,
 }
 
-pub struct DigestBody {
-    body: ObjectBody,
-}
-
 impl DigestBody {
-    fn pin_get_body(self: Pin<&mut Self>) -> &mut ObjectBody {
-        // this is "safe" because body is never considered pin, see
-        // https://doc.rust-lang.org/std/pin/#pinning-is-not-structural-for-field
-        unsafe { &mut self.get_unchecked_mut().body }
+    pub fn from_body(body: Body, digester: Arc<Mutex<Digester>>) -> StreamableBody {
+        Box::new(Self { body, digester })
     }
 }
 
@@ -43,12 +31,12 @@ impl Stream for DigestBody {
     type Item = std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let object_body = self.pin_get_body();
-        match Pin::new(&mut object_body.body).poll_next(cx) {
+        let mut this = self.project();
+        match Pin::new(&mut this.body).poll_next(cx) {
             Poll::Ready(Some(Ok(bytes))) => {
                 // and this is where we calculate incremental digest
                 {
-                    let mut g = object_body.digester.lock().expect(
+                    let mut g = this.digester.lock().expect(
                         "only one instance of the digester should ever be active at a time",
                     );
                     g.update(bytes.as_ref());
@@ -64,17 +52,10 @@ impl Stream for DigestBody {
 
 const CHUNK_SIZE: usize = 6 * 1024 * 1024; // 6 MB
 
+#[pin_project]
 pub struct ChunkedBody {
     body: Body,
     buffer: BytesMut,
-}
-
-impl ChunkedBody {
-    fn pin_get_body(self: Pin<&mut Self>) -> &mut Body {
-        // this is "safe" because body is never considered pin, see
-        // https://doc.rust-lang.org/std/pin/#pinning-is-not-structural-for-field
-        unsafe { &mut self.get_unchecked_mut().body }
-    }
 }
 
 impl ChunkedBody {
@@ -89,31 +70,31 @@ impl ChunkedBody {
 impl Stream for ChunkedBody {
     type Item = std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let body = self.as_mut().pin_get_body();
-        match Pin::new(body).poll_next(cx) {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+        match Pin::new(this.body).poll_next(cx) {
             Poll::Ready(Some(Ok(mut bytes))) => {
-                let remaining = CHUNK_SIZE - self.buffer.len();
+                let remaining = CHUNK_SIZE - this.buffer.len();
                 if bytes.len() < remaining {
-                    self.buffer.extend_from_slice(&bytes);
+                    this.buffer.extend_from_slice(&bytes);
                     return Poll::Pending;
                 }
                 if bytes.len() == remaining {
-                    self.buffer.extend_from_slice(&bytes);
-                    let buf = self.buffer.split();
+                    this.buffer.extend_from_slice(&bytes);
+                    let buf = this.buffer.split();
                     return Poll::Ready(Some(Ok(buf.freeze())));
                 } else {
                     let exact = bytes.split_to(remaining);
-                    self.buffer.extend_from_slice(&exact);
-                    let buf = self.buffer.split();
-                    self.buffer.extend_from_slice(&bytes);
+                    this.buffer.extend_from_slice(&exact);
+                    let buf = this.buffer.split();
+                    this.buffer.extend_from_slice(&bytes);
                     return Poll::Ready(Some(Ok(buf.freeze())));
                 }
             }
             Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(Box::new(e)))),
             Poll::Ready(None) => {
-                if self.buffer.len() > 0 {
-                    let buf = self.buffer.split();
+                if this.buffer.len() > 0 {
+                    let buf = this.buffer.split();
                     return Poll::Ready(Some(Ok(buf.freeze())));
                 }
                 Poll::Ready(None)
