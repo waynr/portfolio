@@ -6,7 +6,7 @@ use anyhow::Result;
 use clap::Parser;
 
 use portfolio_backend_postgres::{PgS3Repository, PgS3RepositoryFactory};
-use portfolio_http::serve;
+use portfolio_http::router;
 use portfolio_http::Portfolio;
 
 mod config;
@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
     let config: Config = serde_yaml::from_str(&s)?;
 
     // initialize persistence layer
-    match config.backend {
+    let router = match config.backend {
         RepositoryBackend::PostgresS3(cfg) => {
             let manager = cfg.get_manager().await?;
             let portfolio = Portfolio::new(manager);
@@ -51,12 +51,17 @@ async fn main() -> Result<()> {
                     .await?;
             }
 
-            // run HTTP server
-            match serve::<PgS3RepositoryFactory, PgS3Repository>(portfolio).await {
+            match router::<PgS3RepositoryFactory, PgS3Repository>(portfolio) {
                 Err(e) => return Err(e.into()),
-                Ok(_) => (),
+                Ok(r) => r,
             }
         }
-    }
+    };
+
+    // run HTTP server
+    axum::Server::bind(&"0.0.0.0:13030".parse()?)
+        .serve(router.into_make_service())
+        .await?;
+
     Ok(())
 }

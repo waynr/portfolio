@@ -86,9 +86,9 @@ fn maybe_get_content_length(response: &HttpResponse<impl Body>) -> Option<Header
     }
 }
 
-pub async fn serve<M: RepositoryStoreManager, R: RepositoryStore>(
+pub fn router<M: RepositoryStoreManager, R: RepositoryStore>(
     portfolio: Portfolio<M>,
-) -> Result<()> {
+) -> Result<axum::Router> {
     let blobs = blobs::router::<R>();
     let manifests = manifests::router::<R>();
     let referrers = referrers::router::<R>();
@@ -123,10 +123,7 @@ pub async fn serve<M: RepositoryStoreManager, R: RepositoryStore>(
             maybe_get_content_length,
         ));
 
-    axum::Server::bind(&"0.0.0.0:13030".parse()?)
-        .serve(app.into_make_service())
-        .await?;
-    Ok(())
+    Ok(app)
 }
 
 async fn version() -> Result<Response> {
