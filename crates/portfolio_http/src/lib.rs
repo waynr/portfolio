@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::str::FromStr;
 
 use axum::extract::{Path, State};
+use axum::middleware::Next;
 use axum::http::header::{self, HeaderMap, HeaderName, HeaderValue};
 use axum::http::{Request, StatusCode};
-use axum::middleware::{self as axum_middleware, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -24,7 +25,8 @@ mod manifests;
 mod referrers;
 mod tags;
 
-use portfolio_core::registry::{RepositoryStore, RepositoryStoreManager};
+use portfolio_core::registry::RepositoryStore;
+use portfolio_core::registry::RepositoryStoreManager;
 use portfolio_core::DistributionErrorCode;
 
 #[derive(Clone, Deserialize)]
@@ -32,12 +34,16 @@ pub struct RepositoryDefinition {
     pub name: String,
 }
 
-async fn auth<B, R: RepositoryStoreManager>(
-    State(portfolio): State<Portfolio<R>>,
+pub async fn add_basic_repository_extensions<B, M, R>(
+    State(portfolio): State<Portfolio<M, R>>,
     Path(path_params): Path<HashMap<String, String>>,
     mut req: Request<B>,
     next: Next<B>,
-) -> Result<Response> {
+) -> Result<Response>
+where
+    M: RepositoryStoreManager,
+    R: RepositoryStore,
+{
     let repo_name = match path_params.get("repository") {
         Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
@@ -89,46 +95,6 @@ fn maybe_get_content_length(response: &HttpResponse<impl Body>) -> Option<Header
     }
 }
 
-pub fn router<M: RepositoryStoreManager, R: RepositoryStore>(
-    portfolio: Portfolio<M>,
-) -> Result<axum::Router> {
-    let blobs = blobs::router::<R>();
-    let manifests = manifests::router::<R>();
-    let referrers = referrers::router::<R>();
-    let tags = tags::router::<R>();
-
-    let repository = Router::new()
-        .nest("/blobs", blobs)
-        .nest("/manifests", manifests)
-        .nest("/referrers", referrers)
-        .nest("/tags", tags)
-        .route_layer(axum_middleware::from_fn_with_state(portfolio.clone(), auth));
-
-    let app = Router::new()
-        .route("/v2/", get(version))
-        .nest("/v2/:repository", repository)
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(trace::DefaultMakeSpan::new().include_headers(true))
-                .on_response(trace::DefaultOnResponse::new())
-                .on_request(trace::DefaultOnRequest::new()),
-        )
-        .layer(SetResponseHeaderLayer::if_not_present(
-            HeaderName::from_str("docker-distribution-api-version")?,
-            HeaderValue::from_str("registry/2.0")?,
-        ))
-        .layer(SetResponseHeaderLayer::if_not_present(
-            HeaderName::from_str("content-type")?,
-            HeaderValue::from_str("application/json")?,
-        ))
-        .layer(SetResponseHeaderLayer::if_not_present(
-            header::CONTENT_LENGTH,
-            maybe_get_content_length,
-        ));
-
-    Ok(app)
-}
-
 async fn version() -> Result<Response> {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -138,24 +104,28 @@ async fn version() -> Result<Response> {
     Ok((StatusCode::OK, headers, "{}").into_response())
 }
 
-
 #[derive(Clone)]
-pub struct Portfolio<R>
+pub struct Portfolio<M, R>
 where
-    R: RepositoryStoreManager,
+    M: RepositoryStoreManager,
+    R: RepositoryStore,
 {
-    manager: R,
+    manager: M,
+    phantom: PhantomData<R>,
 }
 
-impl<R: RepositoryStoreManager> Portfolio<R> {
-    pub fn new(manager: R) -> Self {
-        Self { manager }
+impl<M: RepositoryStoreManager, R: RepositoryStore> Portfolio<M, R> {
+    pub fn new(manager: M) -> Self {
+        Self {
+            manager,
+            phantom: PhantomData,
+        }
     }
 
     pub async fn initialize_static_repositories(
         &self,
         repositories: Vec<RepositoryDefinition>,
-    ) -> std::result::Result<(), R::Error> {
+    ) -> std::result::Result<(), M::Error> {
         for repository_config in repositories {
             match self.get_repository(&repository_config.name).await {
                 Ok(Some(r)) => r,
@@ -175,14 +145,51 @@ impl<R: RepositoryStoreManager> Portfolio<R> {
     pub async fn get_repository(
         &self,
         name: &str,
-    ) -> std::result::Result<Option<R::RepositoryStore>, R::Error> {
+    ) -> std::result::Result<Option<M::RepositoryStore>, M::Error> {
         Ok(self.manager.get(name).await?)
     }
 
     pub async fn insert_repository(
         &self,
         name: &str,
-    ) -> std::result::Result<R::RepositoryStore, R::Error> {
+    ) -> std::result::Result<M::RepositoryStore, M::Error> {
         Ok(self.manager.create(name).await?)
+    }
+
+    pub fn router(&self) -> Result<axum::Router> {
+        let blobs = blobs::router::<R>();
+        let manifests = manifests::router::<R>();
+        let referrers = referrers::router::<R>();
+        let tags = tags::router::<R>();
+
+        let repository = Router::new()
+            .nest("/blobs", blobs)
+            .nest("/manifests", manifests)
+            .nest("/referrers", referrers)
+            .nest("/tags", tags);
+
+        let app = Router::new()
+            .route("/v2/", get(version))
+            .nest("/v2/:repository", repository)
+            .layer(
+                TraceLayer::new_for_http()
+                    .make_span_with(trace::DefaultMakeSpan::new().include_headers(true))
+                    .on_response(trace::DefaultOnResponse::new())
+                    .on_request(trace::DefaultOnRequest::new()),
+            )
+            .layer(SetResponseHeaderLayer::if_not_present(
+                HeaderName::from_str("docker-distribution-api-version")?,
+                HeaderValue::from_str("registry/2.0")?,
+            ))
+            .layer(SetResponseHeaderLayer::if_not_present(
+                HeaderName::from_str("content-type")?,
+                HeaderValue::from_str("application/json")?,
+            ))
+            .layer(SetResponseHeaderLayer::if_not_present(
+                header::CONTENT_LENGTH,
+                maybe_get_content_length,
+            ));
+
+        Ok(app)
     }
 }

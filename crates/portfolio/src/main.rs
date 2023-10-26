@@ -3,11 +3,11 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use anyhow::Result;
+use axum::middleware;
 use clap::Parser;
 
 use portfolio_backend_postgres::{PgS3Repository, PgS3RepositoryFactory};
-use portfolio_http::router;
-use portfolio_http::Portfolio;
+use portfolio_http::{add_basic_repository_extensions, Portfolio};
 
 mod config;
 use crate::config::{Config, RepositoryBackend};
@@ -40,23 +40,28 @@ async fn main() -> Result<()> {
     let config: Config = serde_yaml::from_str(&s)?;
 
     // initialize persistence layer
-    let router = match config.backend {
+    let portfolio = match config.backend {
         RepositoryBackend::PostgresS3(cfg) => {
             let manager = cfg.get_manager().await?;
-            let portfolio = Portfolio::new(manager);
-
-            if let Some(repositories) = config.static_repositories {
-                portfolio
-                    .initialize_static_repositories(repositories)
-                    .await?;
-            }
-
-            match router::<PgS3RepositoryFactory, PgS3Repository>(portfolio) {
-                Err(e) => return Err(e.into()),
-                Ok(r) => r,
-            }
+            Portfolio::<PgS3RepositoryFactory, PgS3Repository>::new(manager)
         }
     };
+
+    if let Some(repositories) = config.static_repositories {
+        portfolio
+            .initialize_static_repositories(repositories)
+            .await?;
+    }
+
+    let router = match portfolio.router() {
+        Err(e) => return Err(e.into()),
+        Ok(r) => r,
+    };
+
+    let router = router.route_layer(middleware::from_fn_with_state(
+        portfolio.clone(),
+        add_basic_repository_extensions,
+    ));
 
     // run HTTP server
     axum::Server::bind(&"0.0.0.0:13030".parse()?)
