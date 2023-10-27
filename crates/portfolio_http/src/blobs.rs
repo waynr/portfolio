@@ -15,8 +15,9 @@ use hyper::body::Body;
 use uuid::Uuid;
 
 use portfolio_core::registry::{Blob, BlobStore, BlobWriter, RepositoryStore, UploadSession};
-use portfolio_core::{DistributionErrorCode, Error, OciDigest, Result};
+use portfolio_core::{DistributionErrorCode, OciDigest};
 
+use super::errors::{Error, Result};
 use super::headers::{ContentRange, Range};
 
 pub fn router<R: RepositoryStore>() -> Router {

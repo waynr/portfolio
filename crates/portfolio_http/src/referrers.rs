@@ -10,8 +10,9 @@ use oci_spec::image::MediaType;
 use serde::Deserialize;
 
 use portfolio_core::registry::{ManifestStore, RepositoryStore};
-use portfolio_core::{Error, OciDigest, Result};
+use portfolio_core::OciDigest;
 
+use super::errors::{Error, Result};
 use super::empty_string_as_none;
 
 pub fn router<R: RepositoryStore>() -> Router {

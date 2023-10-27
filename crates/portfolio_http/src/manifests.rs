@@ -13,7 +13,9 @@ use http::StatusCode;
 use portfolio_core::registry::{
     Manifest, ManifestRef, ManifestSpec, ManifestStore, RepositoryStore,
 };
-use portfolio_core::{DistributionErrorCode, PortfolioErrorCode, Error, Result};
+use portfolio_core::DistributionErrorCode;
+
+use super::errors::{Error, Result};
 
 pub fn router<R: RepositoryStore>() -> Router {
     Router::new()
@@ -197,11 +199,10 @@ async fn delete_manifest<R: RepositoryStore>(
     let manifest_ref = ManifestRef::from_str(mref)?;
 
     let mut mstore = repository.get_manifest_store();
-    match mstore.delete(&manifest_ref).await.map_err(|e| e.into()) {
-        Ok(_) => Ok((StatusCode::ACCEPTED, "").into_response()),
-        Err(e @ Error::PortfolioSpecError(PortfolioErrorCode::ContentReferenced)) => {
-            Ok(e.into_response())
-        }
-        Err(_) => Ok((StatusCode::NOT_FOUND, "").into_response()),
-    }
+    mstore
+        .delete(&manifest_ref)
+        .await
+        .map_err(|e| e.into())?;
+
+    Ok((StatusCode::ACCEPTED, "").into_response())
 }

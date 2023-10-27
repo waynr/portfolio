@@ -6,8 +6,8 @@ use http::StatusCode;
 use serde::Deserialize;
 
 use portfolio_core::registry::RepositoryStore;
-use portfolio_core::Result;
 
+use super::errors::Result;
 use super::empty_string_as_none;
 
 pub fn router<R: RepositoryStore>() -> Router {

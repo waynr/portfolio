@@ -12,7 +12,6 @@ path = "src/main.rs"
 [dependencies]
 
 portfolio-backend-postgres = { path = "../portfolio_backend_postgres" }
-portfolio-core = { path = "../portfolio_core" }
 portfolio-http = { path = "../portfolio_http" }
 
 axum = { path = "/home/wayne/projects/tokio-rs/axum/axum", features = [ "headers" ] }

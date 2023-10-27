@@ -3,7 +3,6 @@ use http::StatusCode;
 use thiserror;
 
 use portfolio_core::DistributionErrorCode;
-use portfolio_core::status_code;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -78,5 +77,24 @@ impl IntoResponse for Error {
             }
         }
         .into_response()
+    }
+}
+
+pub fn status_code(c: &DistributionErrorCode) -> StatusCode {
+    match c {
+        DistributionErrorCode::BlobUnknown => StatusCode::NOT_FOUND,
+        DistributionErrorCode::BlobUploadInvalid => StatusCode::RANGE_NOT_SATISFIABLE,
+        DistributionErrorCode::BlobUploadUnknown => StatusCode::BAD_REQUEST,
+        DistributionErrorCode::DigestInvalid => StatusCode::BAD_REQUEST,
+        DistributionErrorCode::ManifestBlobUnknown => StatusCode::NOT_FOUND,
+        DistributionErrorCode::ManifestInvalid => StatusCode::BAD_REQUEST,
+        DistributionErrorCode::ManifestUnknown => StatusCode::NOT_FOUND,
+        DistributionErrorCode::NameInvalid => StatusCode::BAD_REQUEST,
+        DistributionErrorCode::NameUnknown => StatusCode::NOT_FOUND,
+        DistributionErrorCode::SizeInvalid => StatusCode::BAD_REQUEST,
+        DistributionErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
+        DistributionErrorCode::Denied => StatusCode::FORBIDDEN,
+        DistributionErrorCode::Unsupported => StatusCode::NOT_IMPLEMENTED,
+        DistributionErrorCode::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
     }
 }
