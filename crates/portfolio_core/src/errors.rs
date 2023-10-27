@@ -1,5 +1,6 @@
 use axum::response::{IntoResponse, Response};
 use http::StatusCode;
+pub use oci_spec::distribution::ErrorCode as DistributionErrorCode;
 use thiserror;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -46,54 +47,39 @@ pub enum Error {
     // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
     #[error("distribution spec error")]
     DistributionSpecError(DistributionErrorCode),
+
+    #[error("distribution spec error")]
+    PortfolioSpecError(PortfolioErrorCode),
 }
 
-// TODO: need to generate JSON error body format as described in https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
 #[derive(Debug)]
-pub enum DistributionErrorCode {
-    BlobUnknown = 1,         // blob unknown to registry
-    BlobUploadInvalid = 2,   // blob upload invalid
-    BlobUploadUnknown = 3,   // blob upload unknown to registry
-    DigestInvalid = 4,       // provided digest did not match uploaded content
-    ManifestBlobUnknown = 5, // manifest references a manifest or blob unknown to registry
-    ManifestInvalid = 6,     // manifest invalid
-    ManifestUnknown = 7,     // manifest unknown to registry
-    NameInvalid = 8,         // invalid repository name
-    NameUnknown = 9,         // repository name not known to registry
-    SizeInvalid = 10,        // provided length did not match content length
-    Unauthorized = 12,       // authentication required
-    Denied = 13,             // request access to the resource is denied
-    Unsupported = 14,        // the operation is unsupported
-    TooManyRequests = 15,    // too many requests
-    ContentReferenced = 99,  // content referenced elsewhere
+pub enum PortfolioErrorCode {
+    ContentReferenced = 99, // content referenced elsewhere
 }
 
-impl DistributionErrorCode {
-    pub fn status_code(&self) -> StatusCode {
-        match self {
-            DistributionErrorCode::BlobUnknown => StatusCode::NOT_FOUND,
-            DistributionErrorCode::BlobUploadInvalid => StatusCode::RANGE_NOT_SATISFIABLE,
-            DistributionErrorCode::BlobUploadUnknown => StatusCode::BAD_REQUEST,
-            DistributionErrorCode::DigestInvalid => StatusCode::BAD_REQUEST,
-            DistributionErrorCode::ManifestBlobUnknown => StatusCode::NOT_FOUND,
-            DistributionErrorCode::ManifestInvalid => StatusCode::BAD_REQUEST,
-            DistributionErrorCode::ManifestUnknown => StatusCode::NOT_FOUND,
-            DistributionErrorCode::NameInvalid => StatusCode::BAD_REQUEST,
-            DistributionErrorCode::NameUnknown => StatusCode::NOT_FOUND,
-            DistributionErrorCode::SizeInvalid => StatusCode::BAD_REQUEST,
-            DistributionErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
-            DistributionErrorCode::Denied => StatusCode::FORBIDDEN,
-            DistributionErrorCode::Unsupported => StatusCode::NOT_IMPLEMENTED,
-            DistributionErrorCode::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
-            DistributionErrorCode::ContentReferenced => StatusCode::CONFLICT,
-        }
+pub fn status_code(c: &DistributionErrorCode) -> StatusCode {
+    match c {
+        DistributionErrorCode::BlobUnknown => StatusCode::NOT_FOUND,
+        DistributionErrorCode::BlobUploadInvalid => StatusCode::RANGE_NOT_SATISFIABLE,
+        DistributionErrorCode::BlobUploadUnknown => StatusCode::BAD_REQUEST,
+        DistributionErrorCode::DigestInvalid => StatusCode::BAD_REQUEST,
+        DistributionErrorCode::ManifestBlobUnknown => StatusCode::NOT_FOUND,
+        DistributionErrorCode::ManifestInvalid => StatusCode::BAD_REQUEST,
+        DistributionErrorCode::ManifestUnknown => StatusCode::NOT_FOUND,
+        DistributionErrorCode::NameInvalid => StatusCode::BAD_REQUEST,
+        DistributionErrorCode::NameUnknown => StatusCode::NOT_FOUND,
+        DistributionErrorCode::SizeInvalid => StatusCode::BAD_REQUEST,
+        DistributionErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
+        DistributionErrorCode::Denied => StatusCode::FORBIDDEN,
+        DistributionErrorCode::Unsupported => StatusCode::NOT_IMPLEMENTED,
+        DistributionErrorCode::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
     }
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         match self {
-            Error::DistributionSpecError(dec) => (dec.status_code(), format!("{:?}", dec)),
+            Error::DistributionSpecError(dec) => (status_code(&dec), format!("{:?}", dec)),
             Error::InvalidUuid(_) => (StatusCode::BAD_REQUEST, format!("{}", self)),
             Error::InvalidDigest(_) => (StatusCode::BAD_REQUEST, format!("{}", self)),
             Error::MissingHeader(_) => (StatusCode::BAD_REQUEST, format!("{}", self)),

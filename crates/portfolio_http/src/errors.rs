@@ -3,6 +3,7 @@ use http::StatusCode;
 use thiserror;
 
 use portfolio_core::DistributionErrorCode;
+use portfolio_core::status_code;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -62,7 +63,7 @@ impl From<portfolio_core::Error> for Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         match self {
-            Error::DistributionSpecError(dec) => (dec.status_code(), format!("{:?}", dec)),
+            Error::DistributionSpecError(dec) => (status_code(&dec), format!("{:?}", dec)),
             Error::InvalidUuid(_) => (StatusCode::BAD_REQUEST, format!("{}", self)),
             Error::InvalidDigest(_) => (StatusCode::BAD_REQUEST, format!("{}", self)),
             Error::MissingHeader(_) => (StatusCode::BAD_REQUEST, format!("{}", self)),

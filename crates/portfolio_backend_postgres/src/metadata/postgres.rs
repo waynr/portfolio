@@ -157,8 +157,8 @@ impl Queries {
             Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
-                    Err(Error::DistributionSpecError(
-                        portfolio_core::DistributionErrorCode::ContentReferenced,
+                    Err(Error::PortfolioSpecError(
+                        portfolio_core::PortfolioErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),
@@ -283,8 +283,8 @@ impl Queries {
             Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
-                    Err(Error::DistributionSpecError(
-                        portfolio_core::DistributionErrorCode::ContentReferenced,
+                    Err(Error::PortfolioSpecError(
+                        portfolio_core::PortfolioErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),
@@ -327,8 +327,8 @@ impl Queries {
             Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
-                    Err(Error::DistributionSpecError(
-                        portfolio_core::DistributionErrorCode::ContentReferenced,
+                    Err(Error::PortfolioSpecError(
+                        portfolio_core::PortfolioErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),
@@ -371,8 +371,8 @@ impl Queries {
             Err(sqlx::Error::Database(dberr)) => match dberr.kind() {
                 sqlx::error::ErrorKind::ForeignKeyViolation => {
                     tracing::warn!("foreign key violation error: {dberr}");
-                    Err(Error::DistributionSpecError(
-                        portfolio_core::DistributionErrorCode::ContentReferenced,
+                    Err(Error::PortfolioSpecError(
+                        portfolio_core::PortfolioErrorCode::ContentReferenced,
                     ))
                 }
                 _ => Err(sqlx::Error::Database(dberr).into()),

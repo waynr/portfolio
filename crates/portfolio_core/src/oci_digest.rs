@@ -1,8 +1,8 @@
 use digest::{Digest, DynDigest};
 use serde::{Deserialize, Serialize};
-
 use sha2::Sha256;
 use sha2::Sha512;
+
 use crate::{Error, Result};
 
 /// A type safe representation of an [OCI

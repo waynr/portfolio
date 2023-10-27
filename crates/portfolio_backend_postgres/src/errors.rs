@@ -45,6 +45,9 @@ pub enum Error {
     // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
     #[error("distribution spec error")]
     DistributionSpecError(portfolio_core::errors::DistributionErrorCode),
+
+    #[error("portfolio spec error")]
+    PortfolioSpecError(portfolio_core::errors::PortfolioErrorCode),
 }
 
 impl From<Error> for portfolio_core::errors::Error {
@@ -52,6 +55,9 @@ impl From<Error> for portfolio_core::errors::Error {
         match e {
             Error::DistributionSpecError(c) => {
                 portfolio_core::errors::Error::DistributionSpecError(c)
+            }
+            Error::PortfolioSpecError(c) => {
+                portfolio_core::errors::Error::PortfolioSpecError(c)
             }
             _ => portfolio_core::errors::Error::BackendError(format!("{}", e)),
         }
