@@ -6,10 +6,11 @@ use bytes::BytesMut;
 use futures::stream::BoxStream;
 use futures::stream::StreamExt;
 use futures::stream::TryStreamExt;
-use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 use oci_spec::distribution::{TagList, TagListBuilder};
+use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
 use portfolio_core::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
+use portfolio_core::ManifestError;
 use portfolio_core::OciDigest;
 use portfolio_objectstore::ObjectStore;
 
@@ -108,10 +109,9 @@ impl ManifestStore for PgS3ManifestStore {
                 }
                 for digest in &digests {
                     if !hs.contains(*digest) {
-                        tracing::warn!("blob for layer {digest} not found in repository");
-                        return Err(Error::DistributionSpecError(
-                            portfolio_core::DistributionErrorCode::BlobUnknown,
-                        ));
+                        let msg = format!("blob for layer {digest} not found in repository");
+                        tracing::warn!("{msg}");
+                        return Err(ManifestError::LayerUnknown(msg).into());
                     }
                 }
 
@@ -136,10 +136,9 @@ impl ManifestStore for PgS3ManifestStore {
                 }
                 for digest in &digests {
                     if !hs.contains(*digest) {
-                        tracing::warn!("blob for manifest {digest} not found in repository");
-                        return Err(Error::DistributionSpecError(
-                            portfolio_core::DistributionErrorCode::ManifestUnknown,
-                        ));
+                        let msg = format!("blob for manifest {digest} not found in repository");
+                        tracing::warn!("{msg}");
+                        return Err(ManifestError::ReferencedManifestUnknown(msg).into());
                     }
                 }
 
@@ -166,9 +165,10 @@ impl ManifestStore for PgS3ManifestStore {
     async fn delete(&mut self, key: &ManifestRef) -> Result<()> {
         let mut tx = self.blobstore.metadata.get_tx().await?;
 
-        let manifest = tx.get_manifest(&self.repository.id, key).await?.ok_or(
-            Error::DistributionSpecError(portfolio_core::DistributionErrorCode::ManifestUnknown),
-        )?;
+        let manifest = tx
+            .get_manifest(&self.repository.id, key)
+            .await?
+            .ok_or(ManifestError::Unknown)?;
 
         // NOTE: it's possible (but how likely?) for a manifest to include both layers and
         // manifests; we don't support creating both types of association for now, but we should
@@ -285,5 +285,4 @@ impl ManifestStore for PgS3ManifestStore {
 
         Ok(taglist)
     }
-
 }

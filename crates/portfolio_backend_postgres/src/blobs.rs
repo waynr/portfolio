@@ -9,8 +9,8 @@ use hyper::body::Body;
 use uuid::Uuid;
 
 use portfolio_core::registry::{BlobStore, BlobWriter};
-use portfolio_core::DistributionErrorCode;
-use portfolio_core::{ChunkedBody, Digester, OciDigest, DigestBody};
+use portfolio_core::BlobError;
+use portfolio_core::{ChunkedBody, DigestBody, Digester, OciDigest};
 use portfolio_objectstore::{Chunk, ObjectStore, S3};
 
 use super::errors::{Error, Result};
@@ -50,14 +50,15 @@ impl BlobStore for PgS3BlobStore {
             .await?
             .get_session(session_uuid)
             .await
-            .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
+            .map_err(|_| BlobError::BlobUploadInvalid)?;
 
         if let Some(start) = start_of_range {
             if !session.validate_range(start) {
                 tracing::debug!("content range start {start} is invalid");
-                return Err(Error::DistributionSpecError(
-                    DistributionErrorCode::BlobUploadInvalid,
-                ));
+                return Err(BlobError::BlobUploadInvalidS(
+                    "content range start is invalid".to_string(),
+                )
+                .into());
             }
         }
 
@@ -116,12 +117,7 @@ impl BlobStore for PgS3BlobStore {
     async fn delete(&mut self, digest: &OciDigest) -> Result<()> {
         let mut tx = self.metadata.get_tx().await?;
 
-        let blob = tx
-            .get_blob(digest)
-            .await?
-            .ok_or(Error::DistributionSpecError(
-                portfolio_core::DistributionErrorCode::BlobUnknown,
-            ))?;
+        let blob = tx.get_blob(digest).await?.ok_or(BlobError::BlobUnknown)?;
 
         // TODO: handle the case where the blob is referenced
         tx.delete_blob(&blob.id).await?;

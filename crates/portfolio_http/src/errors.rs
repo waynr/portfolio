@@ -144,15 +144,16 @@ fn blob_error_to_response(e: BlobError) -> Response {
             DistributionErrorCode::BlobUploadInvalid,
             Some(format!("{}", e)),
         ),
-        BlobError::BlobUploadInvalid(s) => {
+        BlobError::BlobUploadInvalid => {
+            into_error_response(DistributionErrorCode::BlobUploadInvalid, None)
+        }
+        BlobError::BlobUploadInvalidS(s) => {
             into_error_response(DistributionErrorCode::BlobUploadInvalid, Some(s))
         }
         BlobError::BlobUploadUnknown(s) => {
             into_error_response(DistributionErrorCode::BlobUploadUnknown, Some(s))
         }
-        BlobError::BlobUnknown(s) => {
-            into_error_response(DistributionErrorCode::BlobUnknown, Some(s))
-        }
+        BlobError::BlobUnknown => into_error_response(DistributionErrorCode::BlobUnknown, None),
         BlobError::GenericSpecError(err) => core_error_to_response(err),
     }
 }
@@ -160,10 +161,18 @@ fn blob_error_to_response(e: BlobError) -> Response {
 #[inline]
 fn manifest_error_to_response(e: ManifestError) -> Response {
     match e {
-        ManifestError::Invalid(s) => {
+        ManifestError::Invalid => into_error_response(DistributionErrorCode::ManifestInvalid, None),
+        ManifestError::Unknown => into_error_response(DistributionErrorCode::ManifestUnknown, None),
+        ManifestError::InvalidS(s) => {
             into_error_response(DistributionErrorCode::ManifestInvalid, Some(s))
         }
-        ManifestError::Unknown(s) => {
+        ManifestError::UnknownS(s) => {
+            into_error_response(DistributionErrorCode::ManifestUnknown, Some(s))
+        }
+        ManifestError::LayerUnknown(s) => {
+            into_error_response(DistributionErrorCode::BlobUnknown, Some(s))
+        }
+        ManifestError::ReferencedManifestUnknown(s) => {
             into_error_response(DistributionErrorCode::ManifestUnknown, Some(s))
         }
         ManifestError::GenericSpecError(err) => core_error_to_response(err),
@@ -211,20 +220,20 @@ fn into_nonstandard_error_response(code: PortfolioErrorCode, msg: Option<String>
     (status_code, axum::Json(response)).into_response()
 }
 
-pub fn nonstandard_default_message(c: &PortfolioErrorCode) -> &str {
+fn nonstandard_default_message(c: &PortfolioErrorCode) -> &str {
     match c {
         PortfolioErrorCode::ContentReferenced => "content referenced",
     }
 }
 
-pub fn nonstandard_status_code(c: &PortfolioErrorCode) -> StatusCode {
+fn nonstandard_status_code(c: &PortfolioErrorCode) -> StatusCode {
     match c {
         PortfolioErrorCode::ContentReferenced => StatusCode::CONFLICT,
     }
 }
 
 #[inline]
-pub fn status_code(c: &DistributionErrorCode) -> StatusCode {
+fn status_code(c: &DistributionErrorCode) -> StatusCode {
     match c {
         DistributionErrorCode::BlobUnknown => StatusCode::NOT_FOUND,
         DistributionErrorCode::BlobUploadInvalid => StatusCode::RANGE_NOT_SATISFIABLE,
@@ -244,7 +253,7 @@ pub fn status_code(c: &DistributionErrorCode) -> StatusCode {
 }
 
 #[inline]
-pub fn default_message(c: &DistributionErrorCode) -> &str {
+fn default_message(c: &DistributionErrorCode) -> &str {
     match c {
         DistributionErrorCode::BlobUnknown => "blob unknown to registry",
         DistributionErrorCode::BlobUploadInvalid => "blob upload invalid",

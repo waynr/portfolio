@@ -41,11 +41,6 @@ pub enum Error {
     #[error("PostgresMetadataTx already rolled back or committed")]
     PostgresMetadataTxInactive,
 
-    // distribution error codes
-    // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
-    #[error("distribution spec error")]
-    DistributionSpecError(portfolio_core::errors::DistributionErrorCode),
-
     #[error("portfolio spec error")]
     PortfolioSpecError(portfolio_core::errors::PortfolioErrorCode),
 
@@ -57,14 +52,19 @@ pub enum Error {
 
     #[error(transparent)]
     RepositoryError(#[from] portfolio_core::RepositoryError),
+}
 
+impl From<Error> for portfolio_core::errors::Error {
+    fn from(e: Error) -> Self {
+        portfolio_core::errors::Error::BackendError(format!("{}", e))
+    }
 }
 
 impl From<Error> for portfolio_core::errors::BlobError {
     fn from(e: Error) -> Self {
         match e {
             Error::BlobError(e) => e,
-            _ => portfolio_core::errors::BlobError::BlobUnknown(format!("{}", e)),
+            _ => portfolio_core::errors::BlobError::GenericSpecError(e.into()),
         }
     }
 }
@@ -73,7 +73,7 @@ impl From<Error> for portfolio_core::errors::ManifestError {
     fn from(e: Error) -> Self {
         match e {
             Error::ManifestError(e) => e,
-            _ => portfolio_core::errors::ManifestError::Unknown(format!("{}", e)),
+            _ => portfolio_core::errors::ManifestError::GenericSpecError(e.into()),
         }
     }
 }
@@ -82,7 +82,7 @@ impl From<Error> for portfolio_core::errors::RepositoryError {
     fn from(e: Error) -> Self {
         match e {
             Error::RepositoryError(e) => e,
-            _ => portfolio_core::errors::RepositoryError::Unknown,
+            _ => portfolio_core::errors::RepositoryError::GenericSpecError(e.into()),
         }
     }
 }

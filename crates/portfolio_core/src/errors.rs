@@ -42,11 +42,14 @@ pub enum BlobError {
     #[error("digest invalid: {0}")]
     UuidError(#[from] uuid::Error),
 
-    #[error("blob unknown: {0}")]
-    BlobUnknown(String),
+    #[error("blob unknown")]
+    BlobUnknown,
 
-    #[error("blob upload invalid: {0}")]
-    BlobUploadInvalid(String),
+    #[error("blob upload invalid")]
+    BlobUploadInvalid,
+
+    #[error("{0}")]
+    BlobUploadInvalidS(String),
 
     #[error("blob upload unknown: {0}")]
     BlobUploadUnknown(String),
@@ -68,21 +71,33 @@ impl From<Error> for BlobError {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ManifestError {
-    #[error("reference invalid: {0}")]
-    Invalid(String),
+    #[error("invalid")]
+    Invalid,
 
-    #[error("digest invalid: {0}")]
-    Unknown(String),
+    #[error("unknown")]
+    Unknown,
 
-    #[error(transparent)]
+    #[error("{0}")]
+    InvalidS(String),
+
+    #[error("{0}")]
+    UnknownS(String),
+
+    #[error("{0}")]
+    LayerUnknown(String),
+
+    #[error("{0}")]
+    ReferencedManifestUnknown(String),
+
+    #[error("{0}")]
     GenericSpecError(Error),
 }
 
 impl From<Error> for ManifestError {
     fn from(e: Error) -> ManifestError {
         match e {
-            Error::InvalidDigest(s) => ManifestError::Invalid(s),
-            Error::UnsupportedDigestAlgorithm(s) => ManifestError::Invalid(s),
+            Error::InvalidDigest(s) => ManifestError::InvalidS(s),
+            Error::UnsupportedDigestAlgorithm(s) => ManifestError::InvalidS(s),
             _ => unreachable!(),
         }
     }
