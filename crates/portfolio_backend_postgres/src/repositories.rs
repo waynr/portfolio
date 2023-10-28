@@ -1,15 +1,23 @@
 use async_trait::async_trait;
+use serde::Deserialize;
 
 use portfolio_core::registry::RepositoryStore;
-use portfolio_objectstore::S3;
+use portfolio_core::registry::RepositoryStoreManager;
+use portfolio_objectstore::{S3Config, S3};
 
 use super::blobs::PgBlobStore;
 use super::errors::{Error, Result};
 use super::manifests::PgManifestStore;
-use super::upload_sessions::PgSessionStore;
-use super::metadata::PostgresMetadataPool;
 use super::metadata::Repository;
+use super::metadata::{PostgresConfig, PostgresMetadataPool};
+use super::upload_sessions::PgSessionStore;
 
+/// [`RepositoryStore`](portfolio_core::registry::RepositoryStore) implementation.
+///
+/// PgRepository is an implementation of
+/// [`RepositoryStore`](portfolio_core::registry::RepositoryStore) that makes use of a Postgres
+/// database for managing metadata and is generic over
+/// [`ObjectStore`](portfolio_objectstore::ObjectStore).
 #[derive(Clone)]
 pub struct PgRepository {
     objects: S3,
@@ -77,5 +85,44 @@ impl RepositoryStore for PgRepository {
 
     fn get_upload_session_store(&self) -> Self::UploadSessionStore {
         PgSessionStore::new(self.metadata.clone())
+    }
+}
+
+/// [`RepositoryStoreManager`](portfolio_core::registry::RepositoryStoreManager) implementation.
+///
+/// Manages initialization and retrieval of [`PgRepository`] instances.
+#[derive(Clone)]
+pub struct PgRepositoryFactory {
+    metadata: PostgresMetadataPool,
+    objects: S3,
+}
+
+#[async_trait]
+impl RepositoryStoreManager for PgRepositoryFactory {
+    type RepositoryStore = PgRepository;
+    type Error = Error;
+
+    async fn get(&self, name: &str) -> Result<Option<Self::RepositoryStore>> {
+        PgRepository::get(name, self.metadata.clone(), self.objects.clone()).await
+    }
+
+    async fn create(&self, name: &str) -> Result<Self::RepositoryStore> {
+        Ok(PgRepository::get_or_insert(name, self.metadata.clone(), self.objects.clone()).await?)
+    }
+}
+
+/// Holds configuration necessary to initialize an instance of [`PgRepositoryFactory`].
+#[derive(Clone, Deserialize)]
+pub struct PgRepositoryConfig {
+    postgres: PostgresConfig,
+    s3: S3Config,
+}
+
+impl PgRepositoryConfig {
+    pub async fn get_manager(&self) -> Result<PgRepositoryFactory> {
+        Ok(PgRepositoryFactory {
+            metadata: self.postgres.new_metadata().await?,
+            objects: self.s3.new_objects().await?,
+        })
     }
 }
