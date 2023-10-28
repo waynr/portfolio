@@ -14,18 +14,18 @@ use portfolio_core::ManifestError;
 use portfolio_core::OciDigest;
 use portfolio_objectstore::ObjectStore;
 
-use super::blobs::PgS3BlobStore;
+use super::blobs::PgBlobStore;
 use super::errors::{Error, Result};
 use super::metadata::Manifest;
 use super::metadata::Repository;
 
-pub struct PgS3ManifestStore {
-    blobstore: PgS3BlobStore,
+pub struct PgManifestStore {
+    blobstore: PgBlobStore,
     repository: Repository,
 }
 
-impl PgS3ManifestStore {
-    pub fn new(blobstore: PgS3BlobStore, repository: Repository) -> Self {
+impl PgManifestStore {
+    pub fn new(blobstore: PgBlobStore, repository: Repository) -> Self {
         Self {
             blobstore,
             repository,
@@ -36,7 +36,7 @@ impl PgS3ManifestStore {
 type TryBytes = std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync>>;
 
 #[async_trait]
-impl ManifestStore for PgS3ManifestStore {
+impl ManifestStore for PgManifestStore {
     type Manifest = Manifest;
     type Error = Error;
     type ManifestBody = BoxStream<'static, TryBytes>;

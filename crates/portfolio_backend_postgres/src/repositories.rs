@@ -3,22 +3,22 @@ use async_trait::async_trait;
 use portfolio_core::registry::RepositoryStore;
 use portfolio_objectstore::S3;
 
-use super::blobs::PgS3BlobStore;
+use super::blobs::PgBlobStore;
 use super::errors::{Error, Result};
-use super::manifests::PgS3ManifestStore;
+use super::manifests::PgManifestStore;
 use super::upload_sessions::PgSessionStore;
 use super::metadata::PostgresMetadataPool;
 use super::metadata::Repository;
 
 #[derive(Clone)]
-pub struct PgS3Repository {
+pub struct PgRepository {
     objects: S3,
     metadata: PostgresMetadataPool,
 
     repository: Repository,
 }
 
-impl PgS3Repository {
+impl PgRepository {
     pub async fn get(
         name: &str,
         metadata: PostgresMetadataPool,
@@ -56,9 +56,9 @@ impl PgS3Repository {
 }
 
 #[async_trait]
-impl RepositoryStore for PgS3Repository {
-    type ManifestStore = PgS3ManifestStore;
-    type BlobStore = PgS3BlobStore;
+impl RepositoryStore for PgRepository {
+    type ManifestStore = PgManifestStore;
+    type BlobStore = PgBlobStore;
     type UploadSessionStore = PgSessionStore;
     type Error = Error;
 
@@ -67,12 +67,12 @@ impl RepositoryStore for PgS3Repository {
     }
 
     fn get_manifest_store(&self) -> Self::ManifestStore {
-        let blobstore = PgS3BlobStore::new(self.metadata.clone(), self.objects.clone());
-        PgS3ManifestStore::new(blobstore, self.repository.clone())
+        let blobstore = PgBlobStore::new(self.metadata.clone(), self.objects.clone());
+        PgManifestStore::new(blobstore, self.repository.clone())
     }
 
     fn get_blob_store(&self) -> Self::BlobStore {
-        PgS3BlobStore::new(self.metadata.clone(), self.objects.clone())
+        PgBlobStore::new(self.metadata.clone(), self.objects.clone())
     }
 
     fn get_upload_session_store(&self) -> Self::UploadSessionStore {

@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use portfolio_backend_postgres::PgS3RepositoryConfig;
+use portfolio_backend_postgres::PgRepositoryConfig;
 use portfolio_http::RepositoryDefinition;
 
 #[derive(Clone, Deserialize)]
@@ -12,5 +12,5 @@ pub struct Config {
 #[derive(Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum RepositoryBackend {
-    PostgresS3(PgS3RepositoryConfig),
+    Postgres(PgRepositoryConfig),
 }

@@ -18,20 +18,20 @@ use super::metadata::{
     Blob, Chunk as MetadataChunk, PostgresMetadataPool, PostgresMetadataTx, UploadSession,
 };
 
-pub struct PgS3BlobStore {
+pub struct PgBlobStore {
     pub(crate) metadata: PostgresMetadataPool,
     pub(crate) objects: S3,
 }
 
-impl PgS3BlobStore {
+impl PgBlobStore {
     pub fn new(metadata: PostgresMetadataPool, objects: S3) -> Self {
         Self { metadata, objects }
     }
 }
 
 #[async_trait]
-impl BlobStore for PgS3BlobStore {
-    type BlobWriter = PgS3BlobWriter;
+impl BlobStore for PgBlobStore {
+    type BlobWriter = PgBlobWriter;
     type Error = Error;
     type UploadSession = UploadSession;
     type Blob = Blob;
@@ -42,7 +42,7 @@ impl BlobStore for PgS3BlobStore {
         &self,
         session_uuid: &Uuid,
         start_of_range: Option<u64>,
-    ) -> Result<PgS3BlobWriter> {
+    ) -> Result<PgBlobWriter> {
         // retrieve the session or fail if it doesn't exist
         let mut session = self
             .metadata
@@ -66,7 +66,7 @@ impl BlobStore for PgS3BlobStore {
             session.upload_id = Some(self.objects.initiate_chunked_upload(&session.uuid).await?);
         }
 
-        Ok(PgS3BlobWriter {
+        Ok(PgBlobWriter {
             metadata: self.metadata.clone(),
             objects: self.objects.clone(),
             session,
@@ -126,14 +126,14 @@ impl BlobStore for PgS3BlobStore {
     }
 }
 
-pub struct PgS3BlobWriter {
+pub struct PgBlobWriter {
     metadata: PostgresMetadataPool,
     objects: S3,
 
     session: UploadSession,
 }
 
-impl PgS3BlobWriter {
+impl PgBlobWriter {
     async fn write_chunk(&mut self, tx: &mut PostgresMetadataTx<'_>, bytes: Bytes) -> Result<()> {
         let chunk = self
             .objects
@@ -158,7 +158,7 @@ impl PgS3BlobWriter {
 }
 
 #[async_trait]
-impl BlobWriter for PgS3BlobWriter {
+impl BlobWriter for PgBlobWriter {
     type Error = Error;
     type UploadSession = UploadSession;
 

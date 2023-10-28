@@ -19,7 +19,7 @@
 //! use axum::middleware;
 //! use clap::Parser;
 //!
-//! use portfolio_backend_postgres::{PgS3Repository, PgS3RepositoryFactory};
+//! use portfolio_backend_postgres::{PgRepository, PgRepositoryFactory};
 //! use portfolio_http::{add_basic_repository_extensions, Portfolio};
 //!
 //! mod config;
@@ -45,7 +45,7 @@
 //!     let portfolio = match config.backend {
 //!         RepositoryBackend::PostgresS3(cfg) => {
 //!             let manager = cfg.get_manager().await?;
-//!             Portfolio::<PgS3RepositoryFactory, PgS3Repository>::new(manager)
+//!             Portfolio::<PgRepositoryFactory, PgRepository>::new(manager)
 //!         }
 //!     };
 //!
