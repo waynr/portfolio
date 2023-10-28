@@ -5,10 +5,10 @@ use axum::{Json, Router};
 use http::StatusCode;
 use serde::Deserialize;
 
-use portfolio_core::registry::RepositoryStore;
+use portfolio_core::registry::{RepositoryStore, ManifestStore};
 
-use super::errors::Result;
 use super::empty_string_as_none;
+use super::errors::Result;
 
 pub fn router<R: RepositoryStore>() -> Router {
     Router::new().route("/list", get(get_tags::<R>))
@@ -26,7 +26,8 @@ async fn get_tags<R: RepositoryStore>(
     Extension(repository): Extension<R>,
     Query(params): Query<GetListParams>,
 ) -> Result<Response> {
-    let tags_list = repository
+    let mstore = repository.get_manifest_store();
+    let tags_list = mstore
         .get_tags(params.n, params.last)
         .await
         .map_err(|e| e.into())?;

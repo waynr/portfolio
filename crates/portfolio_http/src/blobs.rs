@@ -14,8 +14,8 @@ use headers::Header;
 use hyper::body::Body;
 use uuid::Uuid;
 
-use portfolio_core::registry::{Blob, BlobStore, BlobWriter, RepositoryStore, UploadSession};
-use portfolio_core::{DistributionErrorCode, OciDigest};
+use portfolio_core::registry::{Blob, BlobStore, BlobWriter, RepositoryStore, UploadSessionStore, UploadSession};
+use portfolio_core::{BlobError, DistributionErrorCode, OciDigest};
 
 use super::errors::{Error, Result};
 use super::headers::{ContentRange, Range};
@@ -44,7 +44,7 @@ async fn get_blob<R: RepositoryStore>(
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
-    let oci_digest: OciDigest = digest.try_into()?;
+    let oci_digest: OciDigest = digest.try_into().map_err(BlobError::from)?;
 
     let blob_store = repository.get_blob_store();
 
@@ -73,7 +73,7 @@ async fn head_blob<R: RepositoryStore>(
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
-    let oci_digest: OciDigest = digest.try_into()?;
+    let oci_digest: OciDigest = digest.try_into().map_err(BlobError::from)?;
 
     let blob_store = repository.get_blob_store();
 
@@ -108,12 +108,14 @@ async fn uploads_post<R: RepositoryStore>(
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
 ) -> Result<Response> {
+    let session_store = repository.get_upload_session_store();
+
     let mount = query_params.get("mount");
     let from = query_params.get("from");
     match (mount, from) {
         (Some(digest), Some(_dontcare)) => {
             let mut headers = HeaderMap::new();
-            let oci_digest: OciDigest = digest.as_str().try_into()?;
+            let oci_digest: OciDigest = digest.as_str().try_into().map_err(BlobError::from)?;
 
             let store = repository.get_blob_store();
             if !store
@@ -122,7 +124,7 @@ async fn uploads_post<R: RepositoryStore>(
                 .map_err(|e| e.into())?
                 .is_some()
             {
-                let session = repository
+                let session = session_store
                     .new_upload_session()
                     .await
                     .map_err(|e| e.into())?;
@@ -170,7 +172,7 @@ async fn uploads_post<R: RepositoryStore>(
                     }
                 }
             }
-            let session = repository
+            let session = session_store
                 .new_upload_session()
                 .await
                 .map_err(|e| e.into())?;
@@ -186,7 +188,7 @@ async fn uploads_post<R: RepositoryStore>(
         }
         Some(dgst) => {
             if let Some(TypedHeader(length)) = content_length {
-                let oci_digest: OciDigest = dgst.as_str().try_into()?;
+                let oci_digest: OciDigest = dgst.as_str().try_into().map_err(BlobError::from)?;
                 let mut store = repository.get_blob_store();
                 store
                     .put(&oci_digest, length.0, request.into_body())
@@ -230,19 +232,20 @@ async fn uploads_put<R: RepositoryStore>(
     let digest: &str = query_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
-    let oci_digest: OciDigest = digest.try_into()?;
+    let oci_digest: OciDigest = digest.try_into().map_err(BlobError::from)?;
 
     let session_uuid_str = path_params
         .get("session_uuid")
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
-    let session_uuid = Uuid::parse_str(session_uuid_str)?;
+    let session_uuid = Uuid::parse_str(session_uuid_str).map_err(BlobError::from)?;
 
     let start = content_range.map(|TypedHeader(content_range)| content_range.start);
 
     // retrieve the session or fail if it doesn't exist
     // TODO: refactor this method to avoid retrieving the upload session twice (once here, once in
     // the resume method)
-    let session = repository
+    let session_store = repository.get_upload_session_store();
+    let session = session_store
         .get_upload_session(&session_uuid)
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
@@ -283,7 +286,8 @@ async fn uploads_put<R: RepositoryStore>(
                 writer.finalize(&oci_digest).await.map_err(|e| e.into())?
             };
 
-            match repository.delete_session(&session.uuid()).await {
+            let session_store = repository.get_upload_session_store();
+            match session_store.delete_session(&session.uuid()).await {
                 Ok(_) => (),
                 Err(e) => {
                     tracing::warn!("failed to delete session: {e:?}");
@@ -338,7 +342,7 @@ async fn uploads_patch<R: RepositoryStore>(
     let session_uuid_str = path_params
         .get("session_uuid")
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
-    let session_uuid = Uuid::parse_str(session_uuid_str)?;
+    let session_uuid = Uuid::parse_str(session_uuid_str).map_err(BlobError::from)?;
 
     let start = content_range.map(|TypedHeader(content_range)| content_range.start);
 
@@ -388,10 +392,11 @@ async fn uploads_get<R: RepositoryStore>(
     let session_uuid_str = path_params
         .get("session_uuid")
         .ok_or_else(|| Error::MissingPathParameter("session_uuid"))?;
-    let session_uuid = Uuid::parse_str(session_uuid_str)?;
+    let session_uuid = Uuid::parse_str(session_uuid_str).map_err(BlobError::from)?;
 
     // retrieve the session or fail if it doesn't exist
-    let session = repository
+    let session_store = repository.get_upload_session_store();
+    let session = session_store
         .get_upload_session(&session_uuid)
         .await
         .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
@@ -422,7 +427,7 @@ async fn delete_blob<R: RepositoryStore>(
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingPathParameter("digest"))?;
-    let oci_digest: OciDigest = digest.try_into()?;
+    let oci_digest: OciDigest = digest.try_into().map_err(BlobError::from)?;
 
     let mut store = repository.get_blob_store();
 
