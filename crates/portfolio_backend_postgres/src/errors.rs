@@ -48,18 +48,41 @@ pub enum Error {
 
     #[error("portfolio spec error")]
     PortfolioSpecError(portfolio_core::errors::PortfolioErrorCode),
+
+    #[error(transparent)]
+    BlobError(#[from] portfolio_core::BlobError),
+
+    #[error(transparent)]
+    ManifestError(#[from] portfolio_core::ManifestError),
+
+    #[error(transparent)]
+    RepositoryError(#[from] portfolio_core::RepositoryError),
+
 }
 
-impl From<Error> for portfolio_core::errors::Error {
+impl From<Error> for portfolio_core::errors::BlobError {
     fn from(e: Error) -> Self {
         match e {
-            Error::DistributionSpecError(c) => {
-                portfolio_core::errors::Error::DistributionSpecError(c)
-            }
-            Error::PortfolioSpecError(c) => {
-                portfolio_core::errors::Error::PortfolioSpecError(c)
-            }
-            _ => portfolio_core::errors::Error::BackendError(format!("{}", e)),
+            Error::BlobError(e) => e,
+            _ => portfolio_core::errors::BlobError::BlobUnknown(format!("{}", e)),
+        }
+    }
+}
+
+impl From<Error> for portfolio_core::errors::ManifestError {
+    fn from(e: Error) -> Self {
+        match e {
+            Error::ManifestError(e) => e,
+            _ => portfolio_core::errors::ManifestError::Unknown(format!("{}", e)),
+        }
+    }
+}
+
+impl From<Error> for portfolio_core::errors::RepositoryError {
+    fn from(e: Error) -> Self {
+        match e {
+            Error::RepositoryError(e) => e,
+            _ => portfolio_core::errors::RepositoryError::Unknown,
         }
     }
 }

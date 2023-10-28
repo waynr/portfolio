@@ -7,6 +7,7 @@ use futures::stream::BoxStream;
 use futures::stream::StreamExt;
 use futures::stream::TryStreamExt;
 use oci_spec::image::{Descriptor, ImageIndex, MediaType};
+use oci_spec::distribution::{TagList, TagListBuilder};
 
 use portfolio_core::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
 use portfolio_core::OciDigest;
@@ -268,4 +269,21 @@ impl ManifestStore for PgS3ManifestStore {
 
         Ok(index)
     }
+
+    async fn get_tags(&self, n: Option<i64>, last: Option<String>) -> Result<TagList> {
+        let mut conn = self.blobstore.metadata.get_conn().await?;
+        let taglist = TagListBuilder::default()
+            .name(self.repository.name.as_str())
+            .tags(
+                conn.get_tags(&self.repository.id, n, last)
+                    .await?
+                    .into_iter()
+                    .map(|t| t.name)
+                    .collect::<Vec<_>>(),
+            )
+            .build()?;
+
+        Ok(taglist)
+    }
+
 }

@@ -1,6 +1,4 @@
 use async_trait::async_trait;
-use oci_spec::distribution::{TagList, TagListBuilder};
-use uuid::Uuid;
 
 use portfolio_core::registry::RepositoryStore;
 use portfolio_objectstore::S3;
@@ -8,9 +6,9 @@ use portfolio_objectstore::S3;
 use super::blobs::PgS3BlobStore;
 use super::errors::{Error, Result};
 use super::manifests::PgS3ManifestStore;
+use super::upload_sessions::PgSessionStore;
 use super::metadata::PostgresMetadataPool;
 use super::metadata::Repository;
-use super::metadata::UploadSession;
 
 #[derive(Clone)]
 pub struct PgS3Repository {
@@ -61,8 +59,8 @@ impl PgS3Repository {
 impl RepositoryStore for PgS3Repository {
     type ManifestStore = PgS3ManifestStore;
     type BlobStore = PgS3BlobStore;
+    type UploadSessionStore = PgSessionStore;
     type Error = Error;
-    type UploadSession = UploadSession;
 
     fn name(&self) -> &str {
         self.repository.name.as_str()
@@ -77,42 +75,7 @@ impl RepositoryStore for PgS3Repository {
         PgS3BlobStore::new(self.metadata.clone(), self.objects.clone())
     }
 
-    async fn get_tags(&self, n: Option<i64>, last: Option<String>) -> Result<TagList> {
-        let mut conn = self.metadata.get_conn().await?;
-        let taglist = TagListBuilder::default()
-            .name(self.repository.name.as_str())
-            .tags(
-                conn.get_tags(&self.repository.id, n, last)
-                    .await?
-                    .into_iter()
-                    .map(|t| t.name)
-                    .collect::<Vec<_>>(),
-            )
-            .build()?;
-
-        Ok(taglist)
-    }
-
-    async fn new_upload_session(&self) -> Result<Self::UploadSession> {
-        self.metadata.get_conn().await?.new_upload_session().await
-    }
-
-    async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<Self::UploadSession> {
-        self.metadata
-            .get_conn()
-            .await?
-            .get_session(session_uuid)
-            .await
-    }
-
-    async fn delete_session(&self, session_uuid: &Uuid) -> Result<()> {
-        let mut tx = self.metadata.get_tx().await?;
-
-        tx.delete_chunks(session_uuid).await?;
-        tx.delete_session(session_uuid).await?;
-
-        tx.commit().await?;
-
-        Ok(())
+    fn get_upload_session_store(&self) -> Self::UploadSessionStore {
+        PgSessionStore::new(self.metadata.clone())
     }
 }
