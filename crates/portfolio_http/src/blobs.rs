@@ -14,8 +14,10 @@ use headers::Header;
 use hyper::body::Body;
 use uuid::Uuid;
 
-use portfolio_core::registry::{Blob, BlobStore, BlobWriter, RepositoryStore, UploadSessionStore, UploadSession};
-use portfolio_core::{BlobError, DistributionErrorCode, OciDigest};
+use portfolio_core::registry::{
+    Blob, BlobStore, BlobWriter, RepositoryStore, UploadSession, UploadSessionStore,
+};
+use portfolio_core::{BlobError, OciDigest};
 
 use super::errors::{Error, Result};
 use super::headers::{ContentRange, Range};
@@ -60,9 +62,7 @@ async fn get_blob<R: RepositoryStore>(
         );
         Ok((StatusCode::OK, headers, StreamBody::new(body)).into_response())
     } else {
-        Err(Error::DistributionSpecError(
-            DistributionErrorCode::BlobUnknown,
-        ))
+        Err(BlobError::BlobUnknown.into())
     }
 }
 
@@ -89,9 +89,7 @@ async fn head_blob<R: RepositoryStore>(
         );
         Ok((StatusCode::OK, headers, "").into_response())
     } else {
-        Err(Error::DistributionSpecError(
-            DistributionErrorCode::BlobUnknown,
-        ))
+        Err(BlobError::BlobUnknown.into())
     }
 }
 
@@ -248,7 +246,7 @@ async fn uploads_put<R: RepositoryStore>(
     let session = session_store
         .get_upload_session(&session_uuid)
         .await
-        .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
+        .map_err(|_| BlobError::BlobUploadUnknown)?;
 
     // determine if this is a monolithic POST-PUT or the final request in a chunked POST-PATCH-PUT
     // sequence
@@ -321,11 +319,7 @@ async fn uploads_put<R: RepositoryStore>(
                 );
                 (StatusCode::CREATED, headers, "").into_response()
             }
-            _ => {
-                return Err(Error::DistributionSpecError(
-                    DistributionErrorCode::SizeInvalid,
-                ))
-            }
+            _ => return Err(BlobError::SizeInvalid.into()),
         },
     };
 
@@ -399,7 +393,7 @@ async fn uploads_get<R: RepositoryStore>(
     let session = session_store
         .get_upload_session(&session_uuid)
         .await
-        .map_err(|_| Error::DistributionSpecError(DistributionErrorCode::BlobUploadUnknown))?;
+        .map_err(|_| BlobError::BlobUploadUnknown)?;
 
     let mut headers = HeaderMap::new();
 

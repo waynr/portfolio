@@ -13,7 +13,7 @@ use http::StatusCode;
 use portfolio_core::registry::{
     Manifest, ManifestRef, ManifestSpec, ManifestStore, RepositoryStore,
 };
-use portfolio_core::DistributionErrorCode;
+use portfolio_core::ManifestError;
 
 use super::errors::{Error, Result};
 
@@ -56,9 +56,7 @@ async fn head_manifest<R: RepositoryStore>(
         return Ok((StatusCode::OK, headers, "").into_response());
     }
 
-    Err(Error::DistributionSpecError(
-        DistributionErrorCode::ManifestBlobUnknown,
-    ))
+    Err(ManifestError::ManifestBlobUnknown.into())
 }
 
 async fn get_manifest<R: RepositoryStore>(
@@ -76,9 +74,7 @@ async fn get_manifest<R: RepositoryStore>(
         if let Some((m, b)) = mstore.get(&manifest_ref).await.map_err(|e| e.into())? {
             (m, b)
         } else {
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::ManifestUnknown,
-            ));
+            return Err(ManifestError::Unknown.into());
         };
 
     let mut headers = HeaderMap::new();
@@ -122,7 +118,7 @@ async fn put_manifest<R: RepositoryStore>(
     // pass the &Bytes on to the storage backend unmodified.
     let mut manifest = ManifestSpec::try_from(&bytes).map_err(|e| {
         tracing::warn!("error deserializing manifest: {e:?}");
-        Error::DistributionSpecError(DistributionErrorCode::ManifestInvalid)
+        ManifestError::Invalid
     })?;
 
     match (manifest.media_type(), content_type) {
@@ -136,9 +132,7 @@ async fn put_manifest<R: RepositoryStore>(
         }
         (Some(mt), Some(TypedHeader(ct))) => {
             if mt != ct.to_string().as_str().into() {
-                return Err(Error::DistributionSpecError(
-                    DistributionErrorCode::ManifestInvalid,
-                ));
+                return Err(ManifestError::Invalid.into());
             }
         }
         (None, Some(TypedHeader(ct))) => {
@@ -159,9 +153,7 @@ async fn put_manifest<R: RepositoryStore>(
 
     if let Some(TypedHeader(content_length)) = content_length {
         if content_length.0 > 4 * 1024 * 1024 {
-            return Err(Error::DistributionSpecError(
-                DistributionErrorCode::SizeInvalid,
-            ));
+            return Err(ManifestError::TooBig.into());
         }
     }
 
@@ -199,10 +191,7 @@ async fn delete_manifest<R: RepositoryStore>(
     let manifest_ref = ManifestRef::from_str(mref)?;
 
     let mut mstore = repository.get_manifest_store();
-    mstore
-        .delete(&manifest_ref)
-        .await
-        .map_err(|e| e.into())?;
+    mstore.delete(&manifest_ref).await.map_err(|e| e.into())?;
 
     Ok((StatusCode::ACCEPTED, "").into_response())
 }

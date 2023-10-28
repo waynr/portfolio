@@ -14,11 +14,6 @@ pub enum Error {
     #[error("backend error: {0}")]
     BackendError(String),
 
-    // distribution error codes
-    // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
-    #[error("distribution spec error")]
-    DistributionSpecError(DistributionErrorCode),
-
     #[error("operation unsupported")]
     OperationUnsupported,
 
@@ -42,6 +37,9 @@ pub enum BlobError {
     #[error("digest invalid: {0}")]
     UuidError(#[from] uuid::Error),
 
+    #[error("size invalid")]
+    SizeInvalid,
+
     #[error("blob unknown")]
     BlobUnknown,
 
@@ -51,8 +49,8 @@ pub enum BlobError {
     #[error("{0}")]
     BlobUploadInvalidS(String),
 
-    #[error("blob upload unknown: {0}")]
-    BlobUploadUnknown(String),
+    #[error("blob upload unknown")]
+    BlobUploadUnknown,
 
     #[error(transparent)]
     GenericSpecError(Error),
@@ -76,6 +74,12 @@ pub enum ManifestError {
 
     #[error("unknown")]
     Unknown,
+
+    #[error("unknown")]
+    ManifestBlobUnknown,
+
+    #[error("manifest too big")]
+    TooBig,
 
     #[error("{0}")]
     InvalidS(String),

@@ -28,11 +28,6 @@ pub enum Error {
     #[error("missing path parameter: {0}")]
     MissingPathParameter(&'static str),
 
-    // distribution error codes
-    // https://github.com/opencontainers/distribution-spec/blob/main/spec.md#error-codes
-    #[error("distribution spec error")]
-    DistributionSpecError(DistributionErrorCode),
-
     #[error("portfolio spec error")]
     PortfolioSpecError(PortfolioErrorCode),
 
@@ -59,7 +54,6 @@ impl IntoResponse for Error {
             Error::ManifestError(e) => manifest_error_to_response(e),
             Error::RepositoryError(e) => repository_error_to_response(e),
             Error::PortfolioCoreError(e) => core_error_to_response(e),
-            Error::DistributionSpecError(c) => into_error_response(c, None),
             Error::PortfolioSpecError(c) => into_nonstandard_error_response(c, None),
             Error::MissingHeader(_) => {
                 (StatusCode::BAD_REQUEST, format!("{}", self)).into_response()
@@ -123,7 +117,6 @@ fn core_error_to_response(e: CoreError) -> Response {
             )
                 .into_response()
         }
-        CoreError::DistributionSpecError(c) => into_error_response(c, None),
         CoreError::TooManyRequests => {
             into_error_response(DistributionErrorCode::TooManyRequests, None)
         }
@@ -144,14 +137,17 @@ fn blob_error_to_response(e: BlobError) -> Response {
             DistributionErrorCode::BlobUploadInvalid,
             Some(format!("{}", e)),
         ),
+        BlobError::SizeInvalid => {
+            into_error_response(DistributionErrorCode::SizeInvalid, None)
+        }
         BlobError::BlobUploadInvalid => {
             into_error_response(DistributionErrorCode::BlobUploadInvalid, None)
         }
         BlobError::BlobUploadInvalidS(s) => {
             into_error_response(DistributionErrorCode::BlobUploadInvalid, Some(s))
         }
-        BlobError::BlobUploadUnknown(s) => {
-            into_error_response(DistributionErrorCode::BlobUploadUnknown, Some(s))
+        BlobError::BlobUploadUnknown => {
+            into_error_response(DistributionErrorCode::BlobUploadUnknown, None)
         }
         BlobError::BlobUnknown => into_error_response(DistributionErrorCode::BlobUnknown, None),
         BlobError::GenericSpecError(err) => core_error_to_response(err),
@@ -163,6 +159,10 @@ fn manifest_error_to_response(e: ManifestError) -> Response {
     match e {
         ManifestError::Invalid => into_error_response(DistributionErrorCode::ManifestInvalid, None),
         ManifestError::Unknown => into_error_response(DistributionErrorCode::ManifestUnknown, None),
+        ManifestError::TooBig => into_error_response(DistributionErrorCode::SizeInvalid, None),
+        ManifestError::ManifestBlobUnknown => {
+            into_error_response(DistributionErrorCode::ManifestBlobUnknown, None)
+        }
         ManifestError::InvalidS(s) => {
             into_error_response(DistributionErrorCode::ManifestInvalid, Some(s))
         }
