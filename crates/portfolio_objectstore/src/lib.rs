@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::stream::Stream;
+use futures::stream::BoxStream;
 use hyper::body::Body;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -55,7 +55,7 @@ impl Key {
 impl From<&uuid::Uuid> for Key {
     fn from(uuid: &uuid::Uuid) -> Key {
         Key {
-            key: PathBuf::from(uuid.to_string())
+            key: PathBuf::from(uuid.to_string()),
         }
     }
 }
@@ -106,6 +106,8 @@ fn validate_component(mut pb: PathBuf, c: Component<'_>) -> std::result::Result<
     Ok(pb)
 }
 
+pub type ObjectBody = BoxStream<'static, Result<Bytes>>;
+
 /// Provides a common interface for interacting with different kinds of backend object stores.
 ///
 /// Object retrieval methods return [`futures::stream::Stream`] over [`bytes::Bytes`] and object
@@ -114,27 +116,16 @@ fn validate_component(mut pb: PathBuf, c: Component<'_>) -> std::result::Result<
 /// This is definitely an unstable API and may change as more backends are implemented and
 /// different use cases come to light.
 #[async_trait]
-pub trait ObjectStore: Clone + Send + Sync + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
-    type ObjectBody: Stream<Item = std::result::Result<Bytes, Error>> + Send;
+pub trait ObjectStore: Send + Sync + 'static {
+    async fn get(&self, key: &Key) -> Result<ObjectBody>;
 
-    async fn get(&self, key: &Key) -> std::result::Result<Self::ObjectBody, Self::Error>;
+    async fn exists(&self, key: &Key) -> Result<bool>;
 
-    async fn exists(&self, key: &Key) -> std::result::Result<bool, Self::Error>;
+    async fn put(&self, key: &Key, body: Body, content_length: u64) -> Result<()>;
 
-    async fn put(
-        &self,
-        key: &Key,
-        body: Body,
-        content_length: u64,
-    ) -> std::result::Result<(), Self::Error>;
+    async fn delete(&self, key: &Key) -> Result<()>;
 
-    async fn delete(&self, key: &Key) -> std::result::Result<(), Self::Error>;
-
-    async fn initiate_chunked_upload(
-        &self,
-        session_key: &Key,
-    ) -> std::result::Result<String, Self::Error>;
+    async fn initiate_chunked_upload(&self, session_key: &Key) -> Result<String>;
 
     async fn upload_chunk(
         &self,
@@ -143,7 +134,7 @@ pub trait ObjectStore: Clone + Send + Sync + 'static {
         chunk_number: i32,
         content_length: u64,
         body: Body,
-    ) -> std::result::Result<Chunk, Self::Error>;
+    ) -> Result<Chunk>;
 
     async fn finalize_chunked_upload(
         &self,
@@ -151,11 +142,17 @@ pub trait ObjectStore: Clone + Send + Sync + 'static {
         session_key: &Key,
         chunks: Vec<Chunk>,
         key: &Key,
-    ) -> std::result::Result<(), Self::Error>;
+    ) -> Result<()>;
 
-    async fn abort_chunked_upload(
-        &self,
-        upload_id: &str,
-        session_key: &Key,
-    ) -> std::result::Result<(), Self::Error>;
+    async fn abort_chunked_upload(&self, upload_id: &str, session_key: &Key) -> Result<()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // validate object safety
+    struct Whatever {
+        objectstore: Box<dyn ObjectStore>,
+    }
 }

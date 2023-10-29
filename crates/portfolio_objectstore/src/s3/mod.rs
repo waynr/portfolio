@@ -5,8 +5,6 @@ use aws_sdk_s3::config::Region;
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::Client;
-use bytes::Bytes;
-use futures::stream::BoxStream;
 use futures::stream::StreamExt;
 use futures::stream::TryStreamExt;
 use http::{StatusCode, Uri};
@@ -76,10 +74,7 @@ pub struct S3 {
 
 #[async_trait]
 impl ObjectStore for S3 {
-    type Error = Error;
-    type ObjectBody = BoxStream<'static, std::result::Result<Bytes, Error>>;
-
-    async fn get(&self, key: &Key) -> Result<Self::ObjectBody> {
+    async fn get(&self, key: &Key) -> Result<super::ObjectBody> {
         let get_object_output = self
             .client
             .get_object()
