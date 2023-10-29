@@ -10,7 +10,7 @@ use oci_spec::distribution::{TagList, TagListBuilder};
 use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
 use portfolio_core::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
-use portfolio_core::ManifestError;
+use portfolio_core::Error as CoreError;
 use portfolio_core::OciDigest;
 use portfolio_objectstore::ObjectStore;
 
@@ -111,7 +111,7 @@ impl ManifestStore for PgManifestStore {
                     if !hs.contains(*digest) {
                         let msg = format!("blob for layer {digest} not found in repository");
                         tracing::warn!("{msg}");
-                        return Err(ManifestError::LayerUnknown(msg).into());
+                        return Err(CoreError::ManifestBlobUnknown(Some(msg)).into());
                     }
                 }
 
@@ -138,7 +138,7 @@ impl ManifestStore for PgManifestStore {
                     if !hs.contains(*digest) {
                         let msg = format!("blob for manifest {digest} not found in repository");
                         tracing::warn!("{msg}");
-                        return Err(ManifestError::ReferencedManifestUnknown(msg).into());
+                        return Err(CoreError::ManifestUnknown(Some(msg)).into());
                     }
                 }
 
@@ -168,7 +168,7 @@ impl ManifestStore for PgManifestStore {
         let manifest = tx
             .get_manifest(&self.repository.id, key)
             .await?
-            .ok_or(ManifestError::Unknown)?;
+            .ok_or(CoreError::ManifestUnknown(None))?;
 
         // NOTE: it's possible (but how likely?) for a manifest to include both layers and
         // manifests; we don't support creating both types of association for now, but we should
