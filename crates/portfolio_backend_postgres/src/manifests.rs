@@ -12,7 +12,7 @@ use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 use portfolio_core::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
 use portfolio_core::Error as CoreError;
 use portfolio_core::OciDigest;
-use portfolio_objectstore::{Key, ObjectStore};
+use portfolio_objectstore::Key;
 
 use super::blobs::PgBlobStore;
 use super::errors::{Error, Result};

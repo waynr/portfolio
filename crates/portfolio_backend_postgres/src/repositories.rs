@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::Deserialize;
 
 use portfolio_core::registry::RepositoryStore;
 use portfolio_core::registry::RepositoryStoreManager;
-use portfolio_objectstore::{S3Config, S3};
+use portfolio_objectstore::{S3Config, ObjectStore};
 
 use super::blobs::PgBlobStore;
 use super::errors::{Error, Result};
@@ -20,7 +22,7 @@ use super::upload_sessions::PgSessionStore;
 /// [`ObjectStore`](portfolio_objectstore::ObjectStore).
 #[derive(Clone)]
 pub struct PgRepository {
-    objects: S3,
+    objects: Arc<dyn ObjectStore>,
     metadata: PostgresMetadataPool,
 
     repository: Repository,
@@ -30,7 +32,7 @@ impl PgRepository {
     pub async fn get(
         name: &str,
         metadata: PostgresMetadataPool,
-        objects: S3,
+        objects: Arc<dyn ObjectStore>,
     ) -> Result<Option<Self>> {
         if let Some(repository) = metadata.get_conn().await?.get_repository(name).await? {
             Ok(Some(Self {
@@ -46,7 +48,7 @@ impl PgRepository {
     pub async fn get_or_insert(
         name: &str,
         metadata: PostgresMetadataPool,
-        objects: S3,
+        objects: Arc<dyn ObjectStore>,
     ) -> Result<Self> {
         let mut conn = metadata.get_conn().await?;
 
@@ -94,7 +96,7 @@ impl RepositoryStore for PgRepository {
 #[derive(Clone)]
 pub struct PgRepositoryFactory {
     metadata: PostgresMetadataPool,
-    objects: S3,
+    objects: Arc<dyn ObjectStore>,
 }
 
 #[async_trait]
@@ -122,7 +124,7 @@ impl PgRepositoryConfig {
     pub async fn get_manager(&self) -> Result<PgRepositoryFactory> {
         Ok(PgRepositoryFactory {
             metadata: self.postgres.new_metadata().await?,
-            objects: self.s3.new_objects().await?,
+            objects: Arc::new(self.s3.new_objects().await?),
         })
     }
 }

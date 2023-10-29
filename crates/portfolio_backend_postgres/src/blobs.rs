@@ -11,7 +11,7 @@ use uuid::Uuid;
 use portfolio_core::registry::{BlobStore, BlobWriter};
 use portfolio_core::Error as CoreError;
 use portfolio_core::{ChunkedBody, DigestBody, Digester, OciDigest};
-use portfolio_objectstore::{Chunk, Key, ObjectStore, S3};
+use portfolio_objectstore::{Chunk, Key, ObjectStore};
 
 use super::errors::{Error, Result};
 use super::metadata::{
@@ -20,12 +20,12 @@ use super::metadata::{
 
 pub struct PgBlobStore {
     pub(crate) metadata: PostgresMetadataPool,
-    pub(crate) objects: S3,
+    pub(crate) objects: Arc<dyn ObjectStore>,
 }
 
 impl PgBlobStore {
-    pub fn new(metadata: PostgresMetadataPool, objects: S3) -> Self {
-        Self { metadata, objects }
+    pub fn new(metadata: PostgresMetadataPool, objects: Arc<dyn ObjectStore>) -> Self {
+        Self { metadata, objects: objects }
     }
 }
 
@@ -135,7 +135,7 @@ impl BlobStore for PgBlobStore {
 
 pub struct PgBlobWriter {
     metadata: PostgresMetadataPool,
-    objects: S3,
+    objects: Arc<dyn ObjectStore>,
 
     session: UploadSession,
 }
