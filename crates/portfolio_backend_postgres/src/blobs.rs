@@ -11,7 +11,7 @@ use uuid::Uuid;
 use portfolio_core::registry::{BlobStore, BlobWriter};
 use portfolio_core::Error as CoreError;
 use portfolio_core::{ChunkedBody, DigestBody, Digester, OciDigest};
-use portfolio_objectstore::{Chunk, ObjectStore, S3};
+use portfolio_objectstore::{Chunk, Key, ObjectStore, S3};
 
 use super::errors::{Error, Result};
 use super::metadata::{
@@ -63,7 +63,11 @@ impl BlobStore for PgBlobStore {
         }
 
         if session.upload_id.is_none() {
-            session.upload_id = Some(self.objects.initiate_chunked_upload(&session.uuid).await?);
+            session.upload_id = Some(
+                self.objects
+                    .initiate_chunked_upload(&Key::from(&session.uuid))
+                    .await?,
+            );
         }
 
         Ok(PgBlobWriter {
@@ -78,7 +82,7 @@ impl BlobStore for PgBlobStore {
         let uuid = match tx.get_blob(digest).await? {
             Some(b) => {
                 // verify blob actually exists before returning a potentially bogus uuid
-                if self.objects.blob_exists(&b.id).await? {
+                if self.objects.exists(&Key::from(&b.id)).await? {
                     return Ok(b.id);
                 }
                 b.id
@@ -90,7 +94,7 @@ impl BlobStore for PgBlobStore {
         let digester = Arc::new(Mutex::new(digest.digester()));
         let stream_body = DigestBody::from_body(body, digester);
         self.objects
-            .upload_blob(&uuid, stream_body.into(), content_length)
+            .put(&Key::from(&uuid), stream_body.into(), content_length)
             .await?;
 
         // TODO: validate digest
@@ -103,7 +107,7 @@ impl BlobStore for PgBlobStore {
 
     async fn get(&self, key: &OciDigest) -> Result<Option<(Self::Blob, Self::BlobBody)>> {
         if let Some(blob) = self.metadata.get_conn().await?.get_blob(key).await? {
-            let body = self.objects.get_blob(&blob.id).await?;
+            let body = self.objects.get(&Key::from(&blob.id)).await?;
             Ok(Some((blob, body.map_err(|e| e.into()).boxed())))
         } else {
             Ok(None)
@@ -117,7 +121,10 @@ impl BlobStore for PgBlobStore {
     async fn delete(&mut self, digest: &OciDigest) -> Result<()> {
         let mut tx = self.metadata.get_tx().await?;
 
-        let blob = tx.get_blob(digest).await?.ok_or(CoreError::BlobUnknown(None))?;
+        let blob = tx
+            .get_blob(digest)
+            .await?
+            .ok_or(CoreError::BlobUnknown(None))?;
 
         // TODO: handle the case where the blob is referenced
         tx.delete_blob(&blob.id).await?;
@@ -144,7 +151,7 @@ impl PgBlobWriter {
                     .as_ref()
                     .expect("UploadSession.upload_id should always be Some here")
                     .as_str(),
-                &self.session.uuid,
+                &Key::from(&self.session.uuid),
                 self.session.chunk_number,
                 bytes.len() as u64,
                 bytes.into(),
@@ -175,7 +182,7 @@ impl BlobWriter for PgBlobWriter {
                     .as_ref()
                     .expect("UploadSession.upload_id should always be Some here")
                     .as_str(),
-                &self.session.uuid,
+                &Key::from(&self.session.uuid),
                 self.session.chunk_number,
                 content_length,
                 stream_body.into(),
@@ -234,7 +241,10 @@ impl BlobWriter for PgBlobWriter {
             }
         };
 
-        if !self.objects.blob_exists(&uuid).await? {
+        let blob_key = Key::from(&uuid);
+        let session_key = Key::from(&self.session.uuid);
+
+        if !self.objects.exists(&blob_key).await? {
             let chunks = tx
                 .get_chunks(&self.session)
                 .await?
@@ -248,9 +258,9 @@ impl BlobWriter for PgBlobWriter {
                         .as_ref()
                         .expect("UploadSession.upload_id should always be Some here")
                         .as_str(),
-                    &self.session.uuid,
+                    &session_key,
                     chunks,
-                    &uuid,
+                    &blob_key,
                 )
                 .await?;
         } else {
@@ -261,7 +271,7 @@ impl BlobWriter for PgBlobWriter {
                         .as_ref()
                         .expect("UploadSession.upload_id should always be Some here")
                         .as_str(),
-                    &self.session.uuid,
+                    &session_key,
                 )
                 .await?;
         }

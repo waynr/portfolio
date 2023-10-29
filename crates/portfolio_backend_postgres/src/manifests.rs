@@ -12,7 +12,7 @@ use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 use portfolio_core::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
 use portfolio_core::Error as CoreError;
 use portfolio_core::OciDigest;
-use portfolio_objectstore::ObjectStore;
+use portfolio_objectstore::{Key, ObjectStore};
 
 use super::blobs::PgBlobStore;
 use super::errors::{Error, Result};
@@ -53,7 +53,11 @@ impl ManifestStore for PgManifestStore {
     async fn get(&self, key: &ManifestRef) -> Result<Option<(Self::Manifest, Self::ManifestBody)>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn.get_manifest(&self.repository.id, key).await? {
-            let body = self.blobstore.objects.get_blob(&manifest.blob_id).await?;
+            let body = self
+                .blobstore
+                .objects
+                .get(&Key::from(&manifest.blob_id))
+                .await?;
             Ok(Some((manifest, body.map_err(|e| e.into()).boxed())))
         } else {
             Ok(None)
@@ -179,18 +183,11 @@ impl ManifestStore for PgManifestStore {
         tx.delete_manifest(&manifest.id).await?;
         tx.delete_blob(&manifest.blob_id).await?;
 
+        let manifest_blob_key = Key::from(&manifest.blob_id);
+
         let mut count = 0;
-        while self
-            .blobstore
-            .objects
-            .blob_exists(&manifest.blob_id)
-            .await?
-            && count < 10
-        {
-            self.blobstore
-                .objects
-                .delete_blob(&manifest.blob_id)
-                .await?;
+        while self.blobstore.objects.exists(&manifest_blob_key).await? && count < 10 {
+            self.blobstore.objects.delete(&manifest_blob_key).await?;
             count += 1;
         }
 
@@ -227,7 +224,7 @@ impl ManifestStore for PgManifestStore {
             }
             let db_media_type = m.media_type.unwrap();
             set.spawn(async move {
-                let stream = objects.get_blob(&m.blob_id).await?;
+                let stream = objects.get(&Key::from(&m.blob_id)).await?;
                 let bs: Bytes = stream
                     .try_collect::<Vec<Bytes>>()
                     .await?
