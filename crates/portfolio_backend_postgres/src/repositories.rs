@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use portfolio_core::registry::RepositoryStore;
 use portfolio_core::registry::RepositoryStoreManager;
-use portfolio_objectstore::{S3Config, ObjectStore};
+use portfolio_objectstore::{Config as ObjectStoreConfig, ObjectStore};
 
 use super::blobs::PgBlobStore;
 use super::errors::{Error, Result};
@@ -117,14 +117,14 @@ impl RepositoryStoreManager for PgRepositoryFactory {
 #[derive(Clone, Deserialize)]
 pub struct PgRepositoryConfig {
     postgres: PostgresConfig,
-    s3: S3Config,
+    objects: ObjectStoreConfig,
 }
 
 impl PgRepositoryConfig {
     pub async fn get_manager(&self) -> Result<PgRepositoryFactory> {
         Ok(PgRepositoryFactory {
             metadata: self.postgres.new_metadata().await?,
-            objects: Arc::new(self.s3.new_objects().await?),
+            objects: self.objects.new_objects().await?,
         })
     }
 }
