@@ -47,6 +47,9 @@ pub enum Error {
 
 impl From<Error> for portfolio_core::errors::Error {
     fn from(e: Error) -> Self {
-        portfolio_core::errors::Error::BackendError(format!("{}", e))
+        match e {
+            Error::PortfolioCoreError(err) => err,
+            _ => portfolio_core::errors::Error::BackendError(format!("{}", e)),
+        }
     }
 }
