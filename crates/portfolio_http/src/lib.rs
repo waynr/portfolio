@@ -43,7 +43,7 @@
 //!
 //!     // initialize persistence layer
 //!     let portfolio = match config.backend {
-//!         RepositoryBackend::PostgresS3(cfg) => {
+//!         RepositoryBackend::Postgres(cfg) => {
 //!             let manager = cfg.get_manager().await?;
 //!             Portfolio::<PgRepositoryFactory, PgRepository>::new(manager)
 //!         }
