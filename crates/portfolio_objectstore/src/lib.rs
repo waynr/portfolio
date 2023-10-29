@@ -13,8 +13,6 @@ pub use config::Config;
 mod errors;
 pub use errors::{Error, KeyError, Result};
 pub(crate) mod s3;
-pub use s3::S3Config;
-pub use s3::S3;
 
 pub struct Chunk {
     pub e_tag: Option<String>,
