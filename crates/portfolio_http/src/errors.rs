@@ -6,11 +6,8 @@ use thiserror;
 use oci_spec::distribution::ErrorCode as DistributionErrorCode;
 use oci_spec::distribution::ErrorInfoBuilder;
 use oci_spec::distribution::ErrorResponseBuilder;
-use portfolio_core::BlobError;
 use portfolio_core::Error as CoreError;
-use portfolio_core::ManifestError;
 use portfolio_core::PortfolioErrorCode;
-use portfolio_core::RepositoryError;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -34,15 +31,6 @@ pub enum Error {
     #[error("portfolio error: {0}")]
     PortfolioCoreError(#[from] CoreError),
 
-    #[error(transparent)]
-    BlobError(#[from] BlobError),
-
-    #[error(transparent)]
-    ManifestError(#[from] ManifestError),
-
-    #[error(transparent)]
-    RepositoryError(#[from] RepositoryError),
-
     #[error("internal server error")]
     InternalServerError(String),
 }
@@ -50,9 +38,6 @@ pub enum Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         match self {
-            Error::BlobError(e) => blob_error_to_response(e),
-            Error::ManifestError(e) => manifest_error_to_response(e),
-            Error::RepositoryError(e) => repository_error_to_response(e),
             Error::PortfolioCoreError(e) => core_error_to_response(e),
             Error::PortfolioSpecError(c) => into_nonstandard_error_response(c, None),
             Error::MissingHeader(_) => {
@@ -117,78 +102,36 @@ fn core_error_to_response(e: CoreError) -> Response {
             )
                 .into_response()
         }
-        CoreError::TooManyRequests => {
-            into_error_response(DistributionErrorCode::TooManyRequests, None)
-        }
-        CoreError::OperationUnsupported => {
-            into_error_response(DistributionErrorCode::Unsupported, None)
+        CoreError::UuidError(e) => {
+            into_error_response(DistributionErrorCode::DigestInvalid, Some(format!("{}", e)))
         }
         CoreError::PortfolioSpecError(c) => into_nonstandard_error_response(c, None),
-    }
-}
-
-#[inline]
-fn blob_error_to_response(e: BlobError) -> Response {
-    match e {
-        BlobError::DigestInvalid(s) => {
-            into_error_response(DistributionErrorCode::DigestInvalid, Some(s))
+        CoreError::BlobUnknown(s) => into_error_response(DistributionErrorCode::BlobUnknown, s),
+        CoreError::BlobUploadInvalid(s) => {
+            into_error_response(DistributionErrorCode::BlobUploadInvalid, s)
         }
-        BlobError::UuidError(e) => into_error_response(
-            DistributionErrorCode::BlobUploadInvalid,
-            Some(format!("{}", e)),
-        ),
-        BlobError::SizeInvalid => {
-            into_error_response(DistributionErrorCode::SizeInvalid, None)
+        CoreError::BlobUploadUnknown(s) => {
+            into_error_response(DistributionErrorCode::BlobUploadUnknown, s)
         }
-        BlobError::BlobUploadInvalid => {
-            into_error_response(DistributionErrorCode::BlobUploadInvalid, None)
+        CoreError::DigestInvalid(s) => into_error_response(DistributionErrorCode::DigestInvalid, s),
+        CoreError::ManifestBlobUnknown(s) => {
+            into_error_response(DistributionErrorCode::ManifestBlobUnknown, s)
         }
-        BlobError::BlobUploadInvalidS(s) => {
-            into_error_response(DistributionErrorCode::BlobUploadInvalid, Some(s))
+        CoreError::ManifestInvalid(s) => {
+            into_error_response(DistributionErrorCode::ManifestInvalid, s)
         }
-        BlobError::BlobUploadUnknown => {
-            into_error_response(DistributionErrorCode::BlobUploadUnknown, None)
+        CoreError::ManifestUnknown(s) => {
+            into_error_response(DistributionErrorCode::ManifestUnknown, s)
         }
-        BlobError::BlobUnknown => into_error_response(DistributionErrorCode::BlobUnknown, None),
-        BlobError::GenericSpecError(err) => core_error_to_response(err),
-    }
-}
-
-#[inline]
-fn manifest_error_to_response(e: ManifestError) -> Response {
-    match e {
-        ManifestError::Invalid => into_error_response(DistributionErrorCode::ManifestInvalid, None),
-        ManifestError::Unknown => into_error_response(DistributionErrorCode::ManifestUnknown, None),
-        ManifestError::TooBig => into_error_response(DistributionErrorCode::SizeInvalid, None),
-        ManifestError::ManifestBlobUnknown => {
-            into_error_response(DistributionErrorCode::ManifestBlobUnknown, None)
+        CoreError::NameInvalid(s) => into_error_response(DistributionErrorCode::NameInvalid, s),
+        CoreError::NameUnknown(s) => into_error_response(DistributionErrorCode::NameUnknown, s),
+        CoreError::SizeInvalid(s) => into_error_response(DistributionErrorCode::SizeInvalid, s),
+        CoreError::Unauthorized(s) => into_error_response(DistributionErrorCode::Unauthorized, s),
+        CoreError::Denied(s) => into_error_response(DistributionErrorCode::Denied, s),
+        CoreError::Unsupported(s) => into_error_response(DistributionErrorCode::Unsupported, s),
+        CoreError::TooManyRequests(s) => {
+            into_error_response(DistributionErrorCode::TooManyRequests, s)
         }
-        ManifestError::InvalidS(s) => {
-            into_error_response(DistributionErrorCode::ManifestInvalid, Some(s))
-        }
-        ManifestError::UnknownS(s) => {
-            into_error_response(DistributionErrorCode::ManifestUnknown, Some(s))
-        }
-        ManifestError::LayerUnknown(s) => {
-            into_error_response(DistributionErrorCode::BlobUnknown, Some(s))
-        }
-        ManifestError::ReferencedManifestUnknown(s) => {
-            into_error_response(DistributionErrorCode::ManifestUnknown, Some(s))
-        }
-        ManifestError::GenericSpecError(err) => core_error_to_response(err),
-    }
-}
-
-#[inline]
-fn repository_error_to_response(e: RepositoryError) -> Response {
-    match e {
-        RepositoryError::Unknown => into_error_response(DistributionErrorCode::NameUnknown, None),
-        RepositoryError::Invalid => into_error_response(DistributionErrorCode::NameInvalid, None),
-        RepositoryError::Unauthorized => {
-            into_error_response(DistributionErrorCode::Unauthorized, None)
-        }
-        RepositoryError::Denied => into_error_response(DistributionErrorCode::Denied, None),
-        RepositoryError::GenericSpecError(err) => core_error_to_response(err),
     }
 }
 

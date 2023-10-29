@@ -41,7 +41,7 @@ use regex::Regex;
 use uuid::Uuid;
 
 use crate::oci_digest::OciDigest;
-use crate::ManifestError;
+use crate::errors::{Error, Result};
 
 /// Provide access to [`RepositoryStore`] instances.
 ///
@@ -53,7 +53,7 @@ pub trait RepositoryStoreManager: Clone + Send + Sync + 'static {
     /// The `RepositoryStore` implementation an implementing type provides.
     type RepositoryStore: RepositoryStore;
 
-    type Error: std::error::Error + Into<crate::errors::RepositoryError> + Send + Sync;
+    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
 
     /// Get [`RepositoryStore`] corresponding to the given name, if it already exists. This name
     /// corresponds to the `<name>` in distribution-spec API endpoints like
@@ -81,7 +81,7 @@ pub trait RepositoryStore: Clone + Send + Sync + 'static {
     /// The type of the [`BlobStore`] implementation provided by this [`RepositoryStore`].
     type UploadSessionStore: UploadSessionStore;
 
-    type Error: std::error::Error + Into<crate::errors::RepositoryError> + Send + Sync;
+    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
 
     /// The name of the repository accessed by this [`RepositoryStore`].
     fn name(&self) -> &str;
@@ -102,7 +102,7 @@ pub trait UploadSessionStore: Clone + Send + Sync + 'static {
     /// The type of the [`UploadSession`] implementation provided by this [`RepositoryStore`].
     type UploadSession: UploadSession + Send + Sync + 'static;
 
-    type Error: std::error::Error + Into<crate::errors::BlobError> + Send + Sync;
+    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
 
     /// Initiate a new blob upload session.
     async fn new_upload_session(&self) -> std::result::Result<Self::UploadSession, Self::Error>;
@@ -121,7 +121,7 @@ pub trait UploadSessionStore: Clone + Send + Sync + 'static {
 #[async_trait]
 pub trait ManifestStore: Send + Sync + 'static {
     type Manifest: Manifest;
-    type Error: std::error::Error + Into<crate::errors::ManifestError> + Send + Sync;
+    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
     type ManifestBody: Stream<Item = std::result::Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>
         + Send;
 
@@ -163,7 +163,7 @@ pub trait ManifestStore: Send + Sync + 'static {
 #[async_trait]
 pub trait BlobStore: Send + Sync + 'static {
     type BlobWriter: BlobWriter;
-    type Error: std::error::Error + Into<crate::errors::BlobError> + Send + Sync;
+    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
     type UploadSession: UploadSession + Send + Sync + 'static;
     type Blob: Blob;
     type BlobBody: Stream<Item = std::result::Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>
@@ -195,7 +195,7 @@ pub trait BlobStore: Send + Sync + 'static {
 /// Implements chunked blob uploads.
 #[async_trait]
 pub trait BlobWriter: Send + Sync + 'static {
-    type Error: std::error::Error + Into<crate::errors::BlobError> + Send + Sync;
+    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
     type UploadSession: UploadSession + Send + Sync + 'static;
 
     async fn write(
@@ -244,7 +244,7 @@ pub enum ManifestSpec {
 }
 
 impl TryFrom<&Bytes> for ManifestSpec {
-    type Error = ManifestError;
+    type Error = Error;
 
     fn try_from(bs: &Bytes) -> std::result::Result<Self, Self::Error> {
         let img_rej_err = match axum::Json::from_bytes(bs) {
@@ -256,7 +256,7 @@ impl TryFrom<&Bytes> for ManifestSpec {
             Err(ind_rej_err) => {
                 tracing::warn!("unable to deserialize manifest as image: {img_rej_err:?}");
                 tracing::warn!("unable to deserialize manifest as index: {ind_rej_err:?}");
-                Err(ManifestError::Invalid)
+                Err(Error::ManifestInvalid(None))
             }
         }
     }
@@ -311,7 +311,7 @@ impl ManifestSpec {
     /// Attempt to infer the media type of the Manifest if not present. Based on the rules outlined
     /// in the [OCI Image Manifest
     /// specification](https://github.com/opencontainers/image-spec/blob/main/manifest.md).
-    pub fn infer_media_type(&mut self) -> std::result::Result<(), ManifestError> {
+    pub fn infer_media_type(&mut self) -> Result<()> {
         tracing::info!("attempting to infer media type for manifest");
         match self {
             ManifestSpec::Image(im) => {
@@ -322,7 +322,7 @@ impl ManifestSpec {
                 if let Some(_artifact_type) = im.artifact_type() {
                     im.set_media_type(Some(MediaType::ImageManifest));
                 } else if im.config().media_type() == &MediaType::EmptyJSON {
-                    return Err(ManifestError::Invalid);
+                    return Err(Error::ManifestInvalid(None));
                 }
 
                 if im.config().media_type() == &MediaType::ImageConfig {
@@ -330,7 +330,7 @@ impl ManifestSpec {
                     return Ok(());
                 }
 
-                Err(ManifestError::Invalid)
+                Err(Error::ManifestInvalid(None))
             }
             ManifestSpec::Index(ii) => {
                 ii.set_media_type(Some(MediaType::ImageIndex));
@@ -363,7 +363,7 @@ pub enum ManifestRef {
 }
 
 impl std::str::FromStr for ManifestRef {
-    type Err = ManifestError;
+    type Err = Error;
 
     /// Convert [`&str`] to a [`ManifestRef`] first by attempting to convert into
     /// [`super::OciDigest`] then if that doesn't work, checking that the string is a valid
@@ -379,6 +379,6 @@ impl std::str::FromStr for ManifestRef {
             return Ok(Self::Tag(String::from(s)));
         }
 
-        Err(ManifestError::Invalid)
+        Err(Error::ManifestInvalid(None))
     }
 }

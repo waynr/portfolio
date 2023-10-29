@@ -13,7 +13,7 @@ use http::StatusCode;
 use portfolio_core::registry::{
     Manifest, ManifestRef, ManifestSpec, ManifestStore, RepositoryStore,
 };
-use portfolio_core::ManifestError;
+use portfolio_core::Error as CoreError;
 
 use super::errors::{Error, Result};
 
@@ -56,7 +56,7 @@ async fn head_manifest<R: RepositoryStore>(
         return Ok((StatusCode::OK, headers, "").into_response());
     }
 
-    Err(ManifestError::ManifestBlobUnknown.into())
+    Err(CoreError::ManifestBlobUnknown(None).into())
 }
 
 async fn get_manifest<R: RepositoryStore>(
@@ -74,7 +74,7 @@ async fn get_manifest<R: RepositoryStore>(
         if let Some((m, b)) = mstore.get(&manifest_ref).await.map_err(|e| e.into())? {
             (m, b)
         } else {
-            return Err(ManifestError::Unknown.into());
+            return Err(CoreError::ManifestUnknown(None).into());
         };
 
     let mut headers = HeaderMap::new();
@@ -118,7 +118,7 @@ async fn put_manifest<R: RepositoryStore>(
     // pass the &Bytes on to the storage backend unmodified.
     let mut manifest = ManifestSpec::try_from(&bytes).map_err(|e| {
         tracing::warn!("error deserializing manifest: {e:?}");
-        ManifestError::Invalid
+        CoreError::ManifestInvalid(None)
     })?;
 
     match (manifest.media_type(), content_type) {
@@ -132,7 +132,7 @@ async fn put_manifest<R: RepositoryStore>(
         }
         (Some(mt), Some(TypedHeader(ct))) => {
             if mt != ct.to_string().as_str().into() {
-                return Err(ManifestError::Invalid.into());
+                return Err(CoreError::ManifestInvalid(None).into());
             }
         }
         (None, Some(TypedHeader(ct))) => {
@@ -153,7 +153,7 @@ async fn put_manifest<R: RepositoryStore>(
 
     if let Some(TypedHeader(content_length)) = content_length {
         if content_length.0 > 4 * 1024 * 1024 {
-            return Err(ManifestError::TooBig.into());
+            return Err(CoreError::SizeInvalid(None).into());
         }
     }
 

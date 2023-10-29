@@ -8,7 +8,6 @@
 //! The primary set of interoperability types can be found in the [`crate::registry`] module.
 pub mod errors;
 pub use errors::{DistributionErrorCode, PortfolioErrorCode, Error, Result};
-pub use errors::{ManifestError, BlobError, RepositoryError};
 
 mod oci_digest;
 pub use oci_digest::{DigestState, Digester, OciDigest};

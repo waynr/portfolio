@@ -107,7 +107,7 @@ mod tags;
 
 use portfolio_core::registry::RepositoryStore;
 use portfolio_core::registry::RepositoryStoreManager;
-use portfolio_core::RepositoryError;
+use portfolio_core::Error as CoreError;
 
 /// Configuration struct defining parameters for statically-defined repositories initialized at
 /// program startup if they don't already exist.
@@ -138,7 +138,7 @@ where
     let repository = match portfolio.get_repository(repo_name).await {
         Err(e) => {
             tracing::warn!("error retrieving repository: {e:?}");
-            return Err(RepositoryError::Unknown.into());
+            return Err(CoreError::NameUnknown(None).into());
         }
         Ok(Some(r)) => r,
         Ok(None) => portfolio
