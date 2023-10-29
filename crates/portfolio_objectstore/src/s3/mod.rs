@@ -12,9 +12,9 @@ use futures::stream::TryStreamExt;
 use http::{StatusCode, Uri};
 use hyper::body::Body;
 use serde::Deserialize;
-use uuid::Uuid;
 
 use super::Chunk;
+use super::Key;
 
 pub(crate) mod logging;
 use super::errors::{Error, Result};
@@ -79,11 +79,11 @@ impl ObjectStore for S3 {
     type Error = Error;
     type ObjectBody = BoxStream<'static, std::result::Result<Bytes, Error>>;
 
-    async fn get_blob(&self, key: &Uuid) -> Result<Self::ObjectBody> {
+    async fn get(&self, key: &Key) -> Result<Self::ObjectBody> {
         let get_object_output = self
             .client
             .get_object()
-            .key(key.to_string())
+            .key(key)
             .bucket(&self.bucket_name)
             .send()
             .await?;
@@ -91,11 +91,11 @@ impl ObjectStore for S3 {
         Ok(get_object_output.body.map_err(|e| e.into()).boxed())
     }
 
-    async fn blob_exists(&self, key: &Uuid) -> Result<bool> {
+    async fn exists(&self, key: &Key) -> Result<bool> {
         match self
             .client
             .head_object()
-            .key(key.to_string())
+            .key(key)
             .bucket(&self.bucket_name)
             .send()
             .await
@@ -112,11 +112,11 @@ impl ObjectStore for S3 {
         }
     }
 
-    async fn upload_blob(&self, key: &Uuid, body: Body, content_length: u64) -> Result<()> {
+    async fn put(&self, key: &Key, body: Body, content_length: u64) -> Result<()> {
         let _put_object_output = self
             .client
             .put_object()
-            .key(key.to_string())
+            .key(key)
             .body(body.into())
             .content_length(content_length as i64)
             .bucket(&self.bucket_name)
@@ -125,21 +125,21 @@ impl ObjectStore for S3 {
         Ok(())
     }
 
-    async fn delete_blob(&self, key: &Uuid) -> Result<()> {
+    async fn delete(&self, key: &Key) -> Result<()> {
         self.client
             .delete_object()
-            .key(key.to_string())
+            .key(key)
             .bucket(&self.bucket_name)
             .send()
             .await?;
         Ok(())
     }
 
-    async fn initiate_chunked_upload(&self, session_uuid: &Uuid) -> Result<String> {
+    async fn initiate_chunked_upload(&self, session_key: &Key) -> Result<String> {
         let create_multipart_upload_output = self
             .client
             .create_multipart_upload()
-            .key(session_uuid.to_string())
+            .key(session_key)
             .bucket(&self.bucket_name)
             .send()
             .await?;
@@ -154,7 +154,7 @@ impl ObjectStore for S3 {
     async fn upload_chunk(
         &self,
         upload_id: &str,
-        session_uuid: &Uuid,
+        session_key: &Key,
         chunk_number: i32,
         content_length: u64,
         body: Body,
@@ -164,7 +164,7 @@ impl ObjectStore for S3 {
             .upload_part()
             .upload_id(upload_id)
             .part_number(chunk_number)
-            .key(session_uuid.to_string())
+            .key(session_key)
             .body(body.into())
             .content_length(content_length as i64)
             .bucket(&self.bucket_name)
@@ -182,13 +182,10 @@ impl ObjectStore for S3 {
     async fn finalize_chunked_upload(
         &self,
         upload_id: &str,
-        session_uuid: &Uuid,
+        session_key: &Key,
         chunks: Vec<Chunk>,
-        key: &Uuid,
+        key: &Key,
     ) -> Result<()> {
-        let session_uuid = session_uuid.to_string();
-        let key = key.to_string();
-
         let mut mpu = CompletedMultipartUpload::builder();
         for chunk in chunks {
             let mut pb = CompletedPart::builder();
@@ -202,12 +199,12 @@ impl ObjectStore for S3 {
             .complete_multipart_upload()
             .multipart_upload(mpu.build())
             .upload_id(upload_id)
-            .key(&session_uuid)
+            .key(session_key)
             .bucket(&self.bucket_name)
             .send()
             .await?;
 
-        let copy_source = format!("{}/{}", &self.bucket_name, session_uuid);
+        let copy_source = format!("{}/{}", &self.bucket_name, session_key);
         let _copy_object_output = self
             .client
             .copy_object()
@@ -220,19 +217,19 @@ impl ObjectStore for S3 {
         let _delete_object_output = self
             .client
             .delete_object()
-            .key(&session_uuid)
+            .key(session_key)
             .bucket(&self.bucket_name)
             .send()
             .await?;
         Ok(())
     }
 
-    async fn abort_chunked_upload(&self, upload_id: &str, session_uuid: &Uuid) -> Result<()> {
+    async fn abort_chunked_upload(&self, upload_id: &str, session_key: &Key) -> Result<()> {
         let _complete_multipart_upload_output = self
             .client
             .abort_multipart_upload()
             .upload_id(upload_id)
-            .key(session_uuid.to_string())
+            .key(session_key)
             .bucket(&self.bucket_name)
             .send()
             .await?;

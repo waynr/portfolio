@@ -1962,6 +1962,8 @@ dependencies = [
  "futures",
  "http",
  "hyper",
+ "once_cell",
+ "regex",
  "serde",
  "thiserror",
  "tracing",

@@ -70,4 +70,28 @@ pub enum Error {
     // metadata errors
     #[error("PostgresMetadataTx already rolled back or committed")]
     PostgresMetadataTxInactive,
+
+    #[error("key error: {0}")]
+    KeyError(#[from] KeyError),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum KeyError {
+    #[error("prefix not allowed")]
+    PrefixNotAllowed,
+
+    #[error("root dir not allowed")]
+    RootDirNotAllowed,
+
+    #[error("current dir (`.`) not allowed")]
+    CurDirNotAllowed,
+
+    #[error("parent dir (`..`) not allowed")]
+    ParentDirNotAllowed,
+
+    #[error("path components must be valid unicode")]
+    PathComponentsMustBeValidUnicode,
+
+    #[error("path components must match regex: {0}")]
+    PathComponentsMustMatchRegex(String),
 }
