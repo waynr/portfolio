@@ -3,10 +3,6 @@ export OCI_NAMESPACE := "woof"
 export OCI_DEBUG := "1"
 export OCI_DELETE_MANIFEST_BEFORE_BLOBS := "1"
 
-#export OCI_CROSSMOUNT_NAMESPACE="myorg/other"
-#export OCI_USERNAME="myuser"
-#export OCI_PASSWORD="mypass"
-
 conformance-push focus="" $OCI_TEST_PUSH="1":
   just conformance '{{focus}}'
 
@@ -30,8 +26,6 @@ conformance focus="":
 devenv-up:
   docker compose up -d
   sleep 1
-  just init-cockroachdb
-  just cockroachdb-migrate
   just postgresql-migrate
 
 devenv-down:
@@ -43,15 +37,8 @@ devenv-cycle:
   just devenv-down
   just devenv-up
 
-init-cockroachdb:
-  docker exec -it portfolio-roach1-1 \
-    ./cockroach --host=roach1:26257 init --insecure
-
-cockroachdb-migrate $DATABASE_URL="postgresql://root@localhost:26258/defaultdb?sslmode=disable":
-  sqlx migrate --source portfolio_postgres-s3/migrations run
-
 postgresql-migrate $DATABASE_URL="postgresql://postgres:password@localhost:5432/postgres?sslmode=disable":
-  sqlx migrate --source portfolio_postgres-s3/migrations run
+  sqlx migrate --source crates/portfolio_backend_postgres/migrations run
 
 build:
   cargo build

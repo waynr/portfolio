@@ -14,50 +14,5 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_DB: postgres
       PGDATA: var/lib/postgresql/data
-  roach1:
-    image: cockroachdb/cockroach:v23.1.10
-    networks:
-      - roachnet
-    command:
-      - start
-      - --insecure
-      - --accept-sql-without-tls
-      - --join=roach1:26257,roach2:26257,roach3:26257
-      - --listen-addr=roach1:26257
-      - --sql-addr=roach1:26258
-    ports:
-      - 26258:26258
-      - 18080:8080
-    volumes:
-      - roach1:/cockroach/cockrach-data
-  roach2:
-    image: cockroachdb/cockroach:v23.1.10
-    networks:
-      - roachnet
-    command:
-      - start
-      - --insecure
-      - --accept-sql-without-tls
-      - --join=roach1:26257,roach2:26257,roach3:26257
-      - --listen-addr=roach2:26257
-      - --sql-addr=roach2:26258
-    volumes:
-      - roach2:/cockroach/cockrach-data
-  roach3:
-    image: cockroachdb/cockroach:v23.1.10
-    networks:
-      - roachnet
-    command:
-      - start
-      - --insecure
-      - --accept-sql-without-tls
-      - --join=roach1:26257,roach2:26257,roach3:26257
-      - --listen-addr=roach3:26257
-      - --sql-addr=roach3:26258
-    volumes:
-      - roach3:/cockroach/cockrach-data
 volumes:
-  roach1:
-  roach2:
-  roach3:
   postgres:
