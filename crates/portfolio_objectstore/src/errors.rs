@@ -1,7 +1,10 @@
+//! ObjectStore errors
+
 use thiserror;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// General purpose [`super::ObjectStore`] error handling.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("http error")]
@@ -75,6 +78,7 @@ pub enum Error {
     KeyError(#[from] KeyError),
 }
 
+/// Error type used when parsing [`super::Key`] from [`std::path::PathBuf`].
 #[derive(thiserror::Error, Debug)]
 pub enum KeyError {
     #[error("prefix not allowed")]

@@ -1,3 +1,7 @@
+//! Provides a simple abstraction over object storage services.
+//!
+//! Primarily intended for use in backend implementations of the traits in [`portfolio_core`].
+//!
 use std::path::Component;
 use std::path::PathBuf;
 
@@ -8,18 +12,22 @@ use hyper::body::Body;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-mod config;
-pub use config::Config;
-mod errors;
-pub use errors::{Error, KeyError, Result};
+pub mod config;
+pub mod errors;
 pub(crate) mod s3;
 
+#[doc(hidden)]
+pub use config::Config;
+#[doc(hidden)]
+pub use errors::{Error, KeyError, Result};
+
+/// Used to communicate multi-part upload information between [`ObjectStore`] user and backends.
 pub struct Chunk {
     pub e_tag: Option<String>,
     pub chunk_number: i32,
 }
 
-/// A wrapper around [`std::path::PathBuf`] that rejects unsavory key names.
+/// Wrapper around [`std::path::PathBuf`] that can reject unsavory key names.
 ///
 /// The following rules applied during the [`TryFrom<PathBuf>`] implementation:
 ///
@@ -104,6 +112,7 @@ fn validate_component(mut pb: PathBuf, c: Component<'_>) -> std::result::Result<
     Ok(pb)
 }
 
+#[doc(hidden)]
 pub type ObjectBody = BoxStream<'static, Result<Bytes>>;
 
 /// Provides a common interface for interacting with different kinds of backend object stores.
@@ -115,16 +124,22 @@ pub type ObjectBody = BoxStream<'static, Result<Bytes>>;
 /// different use cases come to light.
 #[async_trait]
 pub trait ObjectStore: Send + Sync + 'static {
+    /// Get the contents of the referenced [`Key`].
     async fn get(&self, key: &Key) -> Result<ObjectBody>;
 
+    /// Return true if referenced [`Key`] exists.
     async fn exists(&self, key: &Key) -> Result<bool>;
 
+    /// Upload the given contents as [`Key`].
     async fn put(&self, key: &Key, body: Body, content_length: u64) -> Result<()>;
 
+    /// Delete the [`Key`] from the backend.
     async fn delete(&self, key: &Key) -> Result<()>;
 
+    /// Initiated a chunked upload session and return an upload id as a String.
     async fn initiate_chunked_upload(&self, session_key: &Key) -> Result<String>;
 
+    /// Upload a chunk for the given upload id and session key.
     async fn upload_chunk(
         &self,
         upload_id: &str,
@@ -134,6 +149,8 @@ pub trait ObjectStore: Send + Sync + 'static {
         body: Body,
     ) -> Result<Chunk>;
 
+    /// Finalize the chunked upload and make the concatenated contents available under the given
+    /// [`Key`].
     async fn finalize_chunked_upload(
         &self,
         upload_id: &str,
@@ -142,6 +159,7 @@ pub trait ObjectStore: Send + Sync + 'static {
         key: &Key,
     ) -> Result<()>;
 
+    /// Abort the chunked upload without finalizing it.
     async fn abort_chunked_upload(&self, upload_id: &str, session_key: &Key) -> Result<()>;
 }
 
