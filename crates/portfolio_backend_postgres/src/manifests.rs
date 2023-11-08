@@ -70,7 +70,7 @@ impl ManifestStore for PgManifestStore {
         spec: &ManifestSpec,
         bytes: Bytes,
     ) -> Result<OciDigest> {
-        let calculated_digest: OciDigest = bytes.as_ref().try_into()?;
+        let calculated_digest: OciDigest = bytes.as_ref().into();
 
         let byte_count = bytes.len();
         let blob_uuid = self

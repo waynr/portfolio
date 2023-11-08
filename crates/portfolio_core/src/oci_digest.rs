@@ -47,17 +47,16 @@ impl TryFrom<&str> for OciDigest {
     }
 }
 
-impl TryFrom<&[u8]> for OciDigest {
-    type Error = Error;
-    fn try_from(bs: &[u8]) -> Result<Self> {
+impl From<&[u8]> for OciDigest {
+    fn from(bs: &[u8]) -> Self {
         let mut hasher = Sha256::new();
         Digest::update(&mut hasher, bs);
         let s = hasher.finalize();
 
-        Ok(Self {
+        Self {
             algorithm: RegisteredImageSpecAlgorithm::Sha256,
             encoded: format!("{:x}", s),
-        })
+        }
     }
 }
 
