@@ -1693,6 +1693,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "oci-distribution-test"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "derive_builder",
+ "oci-spec",
+ "portfolio-core",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "oci-spec"
 version = "0.6.2"
 dependencies = [

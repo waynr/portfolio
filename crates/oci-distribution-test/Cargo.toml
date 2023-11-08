@@ -1,0 +1,18 @@
+[package]
+name = "oci-distribution-test"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+portfolio-core = { path = "../portfolio_core" }
+
+# OCI & Distribution Spec
+oci-spec = { path = "/home/wayne/projects/containers/oci-spec-rs" }
+bytes = "1.5"
+serde_json = "1.0"
+
+thiserror = "1"
+derive_builder = "0.12"

@@ -11,8 +11,16 @@ watchexec target:
     -c \
     -e toml,rs \
     -w justfile \
-    -w Cargo.toml \
-    -w src \
+    -w ../portfolio_core/src \
+    -w ../portfolio_core/Cargo.toml \
+    -w ../portfolio_http/src \
+    -w ../portfolio_http/Cargo.toml \
+    -w ../portfolio_backend_postgres/src \
+    -w ../portfolio_backend_postgres/Cargo.toml \
+    -w ../portfolio_objectstore/src \
+    -w ../portfolio_objectstore/Cargo.toml \
+    -w ../oci-distribution-test/src \
+    -w ../oci-distribution-test/Cargo.toml \
     --restart \
     just {{target}}
 
