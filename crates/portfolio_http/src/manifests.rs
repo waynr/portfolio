@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use axum::body::{Bytes, StreamBody};
 use axum::extract::{DefaultBodyLimit, Extension, Path};
@@ -10,27 +11,25 @@ use axum::{Router, TypedHeader};
 use headers::{ContentLength, ContentType};
 use http::StatusCode;
 
-use portfolio_core::registry::{
-    Manifest, ManifestRef, ManifestSpec, ManifestStore, RepositoryStore,
-};
+use portfolio_core::registry::{ManifestRef, ManifestSpec, RepositoryStore};
 use portfolio_core::Error as CoreError;
 
 use super::errors::{Error, Result};
 
-pub fn router<R: RepositoryStore>() -> Router {
+pub fn router() -> Router {
     Router::new()
         .route(
             "/:reference",
-            get(get_manifest::<R>)
-                .delete(delete_manifest::<R>)
-                .put(put_manifest::<R>)
-                .head(head_manifest::<R>),
+            get(get_manifest)
+                .delete(delete_manifest)
+                .put(put_manifest)
+                .head(head_manifest),
         )
         .layer(DefaultBodyLimit::max(6 * 1024 * 1024))
 }
 
-async fn head_manifest<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn head_manifest(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let manifest_ref = ManifestRef::from_str(
@@ -40,7 +39,7 @@ async fn head_manifest<R: RepositoryStore>(
     )?;
 
     let mstore = repository.get_manifest_store();
-    let manifest = mstore.head(&manifest_ref).await.map_err(|e| e.into())?;
+    let manifest = mstore.head(&manifest_ref).await?;
 
     if let Some(manifest) = manifest {
         let mut headers = HeaderMap::new();
@@ -59,8 +58,8 @@ async fn head_manifest<R: RepositoryStore>(
     Err(CoreError::ManifestBlobUnknown(None).into())
 }
 
-async fn get_manifest<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn get_manifest(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let manifest_ref = ManifestRef::from_str(
@@ -70,12 +69,11 @@ async fn get_manifest<R: RepositoryStore>(
     )?;
 
     let mstore = repository.get_manifest_store();
-    let (manifest, body) =
-        if let Some((m, b)) = mstore.get(&manifest_ref).await.map_err(|e| e.into())? {
-            (m, b)
-        } else {
-            return Err(CoreError::ManifestUnknown(None).into());
-        };
+    let (manifest, body) = if let Some((m, b)) = mstore.get(&manifest_ref).await? {
+        (m, b)
+    } else {
+        return Err(CoreError::ManifestUnknown(None).into());
+    };
 
     let mut headers = HeaderMap::new();
     let dgst: String = manifest.digest().into();
@@ -98,8 +96,8 @@ async fn get_manifest<R: RepositoryStore>(
 }
 
 /// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests
-async fn put_manifest<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn put_manifest(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     content_type: Option<TypedHeader<ContentType>>,
     content_length: Option<TypedHeader<ContentLength>>,
     Path(path_params): Path<HashMap<String, String>>,
@@ -158,10 +156,7 @@ async fn put_manifest<R: RepositoryStore>(
     }
 
     let mut mstore = repository.get_manifest_store();
-    let calculated_digest = mstore
-        .put(&manifest_ref, &manifest, bytes)
-        .await
-        .map_err(|e| e.into())?;
+    let calculated_digest = mstore.put(&manifest_ref, &manifest, bytes).await?;
 
     let location = format!("/v2/{}/manifests/{}", repository.name(), mref);
     let mut headers = HeaderMap::new();
@@ -181,8 +176,8 @@ async fn put_manifest<R: RepositoryStore>(
     Ok((StatusCode::CREATED, headers, "").into_response())
 }
 
-async fn delete_manifest<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn delete_manifest(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let mref = path_params
@@ -191,7 +186,7 @@ async fn delete_manifest<R: RepositoryStore>(
     let manifest_ref = ManifestRef::from_str(mref)?;
 
     let mut mstore = repository.get_manifest_store();
-    mstore.delete(&manifest_ref).await.map_err(|e| e.into())?;
+    mstore.delete(&manifest_ref).await?;
 
     Ok((StatusCode::ACCEPTED, "").into_response())
 }

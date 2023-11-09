@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use ::http::StatusCode;
 use axum::body::StreamBody;
@@ -14,43 +15,37 @@ use headers::Header;
 use hyper::body::Body;
 use uuid::Uuid;
 
-use portfolio_core::registry::{
-    Blob, BlobStore, BlobWriter, RepositoryStore, UploadSession, UploadSessionStore,
-};
+use portfolio_core::registry::RepositoryStore;
 use portfolio_core::{Error as CoreError, OciDigest};
 
 use super::errors::{Error, Result};
 use super::headers::{ContentRange, Range};
 
-pub fn router<R: RepositoryStore>() -> Router {
+pub fn router() -> Router {
     Router::new()
         .route(
             "/:digest",
-            get(get_blob::<R>)
-                .delete(delete_blob::<R>)
-                .head(head_blob::<R>),
+            get(get_blob).delete(delete_blob).head(head_blob),
         )
-        .route("/uploads/", post(uploads_post::<R>))
+        .route("/uploads/", post(uploads_post))
         .route(
             "/uploads/:session_uuid",
-            patch(uploads_patch::<R>)
-                .put(uploads_put::<R>)
-                .get(uploads_get::<R>),
+            patch(uploads_patch).put(uploads_put).get(uploads_get),
         )
 }
 
-async fn get_blob<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn get_blob(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
-    let oci_digest: OciDigest = digest.try_into().map_err(CoreError::from)?;
+    let oci_digest: OciDigest = digest.try_into()?;
 
     let blob_store = repository.get_blob_store();
 
-    if let Some((blob, body)) = blob_store.get(&oci_digest).await.map_err(|e| e.into())? {
+    if let Some((blob, body)) = blob_store.get(&oci_digest).await? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
@@ -66,18 +61,18 @@ async fn get_blob<R: RepositoryStore>(
     }
 }
 
-async fn head_blob<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn head_blob(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
-    let oci_digest: OciDigest = digest.try_into().map_err(CoreError::from)?;
+    let oci_digest: OciDigest = digest.try_into()?;
 
     let blob_store = repository.get_blob_store();
 
-    if let Some(blob) = blob_store.head(&oci_digest).await.map_err(|e| e.into())? {
+    if let Some(blob) = blob_store.head(&oci_digest).await? {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_lowercase(b"docker-content-digest")?,
@@ -100,8 +95,8 @@ async fn head_blob<R: RepositoryStore>(
 //   * must include 'digest' query param
 //   * must include 'ContentLength' query param
 // * initiate upload session for POST-PUT or POST-PATCH-PUT sequence
-async fn uploads_post<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn uploads_post(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     content_length: Option<TypedHeader<ContentLength>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
@@ -113,19 +108,11 @@ async fn uploads_post<R: RepositoryStore>(
     match (mount, from) {
         (Some(digest), Some(_dontcare)) => {
             let mut headers = HeaderMap::new();
-            let oci_digest: OciDigest = digest.as_str().try_into().map_err(CoreError::from)?;
+            let oci_digest: OciDigest = digest.as_str().try_into()?;
 
             let store = repository.get_blob_store();
-            if !store
-                .head(&oci_digest)
-                .await
-                .map_err(|e| e.into())?
-                .is_some()
-            {
-                let session = session_store
-                    .new_upload_session()
-                    .await
-                    .map_err(|e| e.into())?;
+            if !store.head(&oci_digest).await?.is_some() {
+                let session = session_store.new_upload_session().await?;
 
                 let location =
                     format!("/v2/{}/blobs/uploads/{}", repository.name(), session.uuid(),);
@@ -170,10 +157,7 @@ async fn uploads_post<R: RepositoryStore>(
                     }
                 }
             }
-            let session = session_store
-                .new_upload_session()
-                .await
-                .map_err(|e| e.into())?;
+            let session = session_store.new_upload_session().await?;
 
             let location = format!("/v2/{}/blobs/uploads/{}", repository.name(), session.uuid(),);
             let mut headers = HeaderMap::new();
@@ -186,12 +170,11 @@ async fn uploads_post<R: RepositoryStore>(
         }
         Some(dgst) => {
             if let Some(TypedHeader(length)) = content_length {
-                let oci_digest: OciDigest = dgst.as_str().try_into().map_err(CoreError::from)?;
+                let oci_digest: OciDigest = dgst.as_str().try_into()?;
                 let mut store = repository.get_blob_store();
                 store
                     .put(&oci_digest, length.0, request.into_body())
-                    .await
-                    .map_err(|e| e.into())?;
+                    .await?;
 
                 let location = format!("/v2/{}/blobs/{}", repository.name(), dgst);
                 let mut headers = HeaderMap::new();
@@ -218,8 +201,8 @@ async fn uploads_post<R: RepositoryStore>(
 //   * must include 'digest' query param, referring to the digest of the entire blob (not the final
 //   chunk)
 //
-async fn uploads_put<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn uploads_put(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
@@ -230,7 +213,7 @@ async fn uploads_put<R: RepositoryStore>(
     let digest: &str = query_params
         .get("digest")
         .ok_or_else(|| Error::MissingQueryParameter("digest"))?;
-    let oci_digest: OciDigest = digest.try_into().map_err(CoreError::from)?;
+    let oci_digest: OciDigest = digest.try_into()?;
 
     let session_uuid_str = path_params
         .get("session_uuid")
@@ -264,24 +247,15 @@ async fn uploads_put<R: RepositoryStore>(
                 Some(TypedHeader(content_length)),
             ) = (content_type, content_length)
             {
-                let writer = store
-                    .resume(&session_uuid, start)
-                    .await
-                    .map_err(|e| e.into())?;
-                let session = writer
-                    .write(content_length.0, request.into_body())
-                    .await
-                    .map_err(|e| e.into())?;
+                let mut writer = store.resume(&session_uuid, start).await?;
+                let session = writer.write(content_length.0, request.into_body()).await?;
 
                 // TODO: validate content length of chunk
                 // TODO: update incremental digest state on session
                 session
             } else {
-                let writer = store
-                    .resume(&session_uuid, start)
-                    .await
-                    .map_err(|e| e.into())?;
-                writer.finalize(&oci_digest).await.map_err(|e| e.into())?
+                let mut writer = store.resume(&session_uuid, start).await?;
+                writer.finalize(&oci_digest).await?
             };
 
             let session_store = repository.get_upload_session_store();
@@ -307,8 +281,7 @@ async fn uploads_put<R: RepositoryStore>(
                 let mut store = repository.get_blob_store();
                 store
                     .put(&oci_digest, content_length.0, request.into_body())
-                    .await
-                    .map_err(|e| e.into())?;
+                    .await?;
 
                 let location = format!("/v2/{}/blobs/{}", repository.name(), digest);
                 let mut headers = HeaderMap::new();
@@ -326,8 +299,8 @@ async fn uploads_put<R: RepositoryStore>(
     Ok(response)
 }
 
-async fn uploads_patch<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn uploads_patch(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_range: Option<TypedHeader<ContentRange>>,
@@ -341,20 +314,11 @@ async fn uploads_patch<R: RepositoryStore>(
     let start = content_range.map(|TypedHeader(content_range)| content_range.start);
 
     let store = repository.get_blob_store();
-    let writer = store
-        .resume(&session_uuid, start)
-        .await
-        .map_err(|e| e.into())?;
+    let mut writer = store.resume(&session_uuid, start).await?;
     let session = if let Some(TypedHeader(content_length)) = content_length {
-        writer
-            .write(content_length.0, request.into_body())
-            .await
-            .map_err(|e| e.into())?
+        writer.write(content_length.0, request.into_body()).await?
     } else {
-        writer
-            .write_chunked(request.into_body())
-            .await
-            .map_err(|e| e.into())?
+        writer.write_chunked(request.into_body()).await?
     };
 
     // TODO: validate content length of chunk
@@ -379,8 +343,8 @@ async fn uploads_patch<R: RepositoryStore>(
     Ok((StatusCode::ACCEPTED, headers, "").into_response())
 }
 
-async fn uploads_get<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn uploads_get(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let session_uuid_str = path_params
@@ -414,18 +378,18 @@ async fn uploads_get<R: RepositoryStore>(
     Ok((StatusCode::NO_CONTENT, headers, "").into_response())
 }
 
-async fn delete_blob<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn delete_blob(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let digest: &str = path_params
         .get("digest")
         .ok_or_else(|| Error::MissingPathParameter("digest"))?;
-    let oci_digest: OciDigest = digest.try_into().map_err(CoreError::from)?;
+    let oci_digest: OciDigest = digest.try_into()?;
 
     let mut store = repository.get_blob_store();
 
-    store.delete(&oci_digest).await.map_err(|e| e.into())?;
+    store.delete(&oci_digest).await?;
 
     Ok((StatusCode::ACCEPTED, "").into_response())
 }

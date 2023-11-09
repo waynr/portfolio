@@ -79,8 +79,8 @@
 //! ```
 //!
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use axum::extract::{Path, State};
 use axum::http::header::{self, HeaderMap, HeaderName, HeaderValue};
@@ -120,16 +120,12 @@ pub struct RepositoryDefinition {
 /// Adds a [`axum::Extension`] containing a [`RepositoryStore`] for use in HTTP handlers. This is
 /// not included in the default [`axum::Router`] returned by [`self::Portfolio`] to enable users
 /// to add their own logic to determin how repositories are created or accessed.
-pub async fn add_basic_repository_extensions<B, M, R>(
-    State(portfolio): State<Portfolio<M, R>>,
+pub async fn add_basic_repository_extensions<B>(
+    State(portfolio): State<Portfolio>,
     Path(path_params): Path<HashMap<String, String>>,
     mut req: Request<B>,
     next: Next<B>,
-) -> Result<Response>
-where
-    M: RepositoryStoreManager,
-    R: RepositoryStore,
-{
+) -> Result<Response> {
     let repo_name = match path_params.get("repository") {
         Some(s) => s,
         None => return Err(Error::MissingPathParameter("repository")),
@@ -141,10 +137,7 @@ where
             return Err(CoreError::NameUnknown(None).into());
         }
         Ok(Some(r)) => r,
-        Ok(None) => portfolio
-            .insert_repository(repo_name)
-            .await
-            .map_err(|e| e.into())?,
+        Ok(None) => portfolio.insert_repository(repo_name).await?,
     };
 
     req.extensions_mut().insert(repository);
@@ -189,27 +182,19 @@ async fn version() -> Result<Response> {
 /// Centralizes management of Portfolio registries and provides an [`axum::Router`] that implements
 /// the [Distribution Spec](https://github.com/opencontainers/distribution-spec).
 #[derive(Clone)]
-pub struct Portfolio<M, R>
-where
-    M: RepositoryStoreManager,
-    R: RepositoryStore,
-{
-    manager: M,
-    phantom: PhantomData<R>,
+pub struct Portfolio {
+    manager: Arc<dyn RepositoryStoreManager>,
 }
 
-impl<M: RepositoryStoreManager, R: RepositoryStore> Portfolio<M, R> {
-    pub fn new(manager: M) -> Self {
-        Self {
-            manager,
-            phantom: PhantomData,
-        }
+impl Portfolio {
+    pub fn new(manager: Arc<dyn RepositoryStoreManager>) -> Self {
+        Self { manager }
     }
 
     pub async fn initialize_static_repositories(
         &self,
         repositories: Vec<RepositoryDefinition>,
-    ) -> std::result::Result<(), M::Error> {
+    ) -> std::result::Result<(), portfolio_core::Error> {
         for repository_config in repositories {
             match self.get_repository(&repository_config.name).await {
                 Ok(Some(r)) => r,
@@ -229,23 +214,24 @@ impl<M: RepositoryStoreManager, R: RepositoryStore> Portfolio<M, R> {
     async fn get_repository(
         &self,
         name: &str,
-    ) -> std::result::Result<Option<M::RepositoryStore>, M::Error> {
+    ) -> std::result::Result<Option<Box<dyn RepositoryStore + Send + Sync>>, portfolio_core::Error>
+    {
         Ok(self.manager.get(name).await?)
     }
 
     async fn insert_repository(
         &self,
         name: &str,
-    ) -> std::result::Result<M::RepositoryStore, M::Error> {
+    ) -> std::result::Result<Box<dyn RepositoryStore>, portfolio_core::Error> {
         Ok(self.manager.create(name).await?)
     }
 
     /// Return an [`axum::Router`] that implements the Distribution Specification.
     pub fn router(&self) -> Result<axum::Router> {
-        let blobs = blobs::router::<R>();
-        let manifests = manifests::router::<R>();
-        let referrers = referrers::router::<R>();
-        let tags = tags::router::<R>();
+        let blobs = blobs::router();
+        let manifests = manifests::router();
+        let referrers = referrers::router();
+        let tags = tags::router();
 
         let repository = Router::new()
             .nest("/blobs", blobs)

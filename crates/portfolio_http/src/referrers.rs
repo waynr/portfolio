@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use axum::extract::{Extension, Path, Query};
 use axum::http::header::{self, HeaderMap, HeaderName, HeaderValue};
@@ -9,14 +10,14 @@ use http::StatusCode;
 use oci_spec::image::MediaType;
 use serde::Deserialize;
 
-use portfolio_core::registry::{ManifestStore, RepositoryStore};
+use portfolio_core::registry::RepositoryStore;
 use portfolio_core::OciDigest;
 
-use super::errors::{Error, Result};
 use super::empty_string_as_none;
+use super::errors::{Error, Result};
 
-pub fn router<R: RepositoryStore>() -> Router {
-    Router::new().route("/:digest", get(get_referrers::<R>))
+pub fn router() -> Router {
+    Router::new().route("/:digest", get(get_referrers))
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,8 +26,8 @@ struct GetParams {
     artifact_type: Option<String>,
 }
 
-async fn get_referrers<R: RepositoryStore>(
-    Extension(repository): Extension<R>,
+async fn get_referrers(
+    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
     Path(path_params): Path<HashMap<String, String>>,
     Query(params): Query<GetParams>,
 ) -> Result<Response> {
@@ -38,8 +39,7 @@ async fn get_referrers<R: RepositoryStore>(
     let mstore = repository.get_manifest_store();
     let image_index = mstore
         .get_referrers(&oci_digest, params.artifact_type.clone())
-        .await
-        .map_err(|e| e.into())?;
+        .await?;
 
     let mut headers = HeaderMap::new();
     headers.insert(
