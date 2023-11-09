@@ -43,8 +43,29 @@ use uuid::Uuid;
 use crate::errors::{Error, Result};
 use crate::oci_digest::OciDigest;
 
+/// Alias to simplify method signatures on traits and implementations.
 type StreamableBody =
     BoxStream<'static, std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync>>>;
+
+/// Alias to simplify method signatures on traits and implementations.
+pub type BoxedRepositoryStore = Box<dyn RepositoryStore + Send + Sync + 'static>;
+
+/// Alias to simplify method signatures on traits and implementations.
+pub type BoxedManifestStore = Box<dyn ManifestStore + Send + Sync + 'static>;
+/// Alias to simplify method signatures on traits and implementations.
+pub type BoxedManifest = Box<dyn Manifest + Send + Sync + 'static>;
+
+/// Alias to simplify method signatures on traits and implementations.
+pub type BoxedBlobStore = Box<dyn BlobStore + Send + Sync + 'static>;
+/// Alias to simplify method signatures on traits and implementations.
+pub type BoxedBlob = Box<dyn Blob + Send + Sync + 'static>;
+/// Alias to simplify method signatures on traits and implementations.
+pub type BoxedBlobWriter = Box<dyn BlobWriter + Send + Sync + 'static>;
+
+/// Alias to simplify method signatures on traits and implementations.
+pub type BoxedUploadSessionStore = Box<dyn UploadSessionStore + Send + Sync + 'static>;
+/// Alias to simplify method signatures on traits and implementations.
+pub type BoxedUploadSession = Box<dyn UploadSession + Send + Sync + 'static>;
 
 /// Provide access to [`RepositoryStore`] instances.
 ///
@@ -56,14 +77,11 @@ pub trait RepositoryStoreManager: Send + Sync + 'static {
     /// Get [`RepositoryStore`] corresponding to the given name, if it already exists. This name
     /// corresponds to the `<name>` in distribution-spec API endpoints like
     /// `/v2/<name>/blobs/<digest>`.
-    async fn get(
-        &self,
-        name: &str,
-    ) -> Result<Option<Box<dyn RepositoryStore + Send + Sync + 'static>>>;
+    async fn get(&self, name: &str) -> Result<Option<BoxedRepositoryStore>>;
 
     /// Create new [`RepositoryStore`] with the given name. This name corresponds to the
     /// `<name>` in distribution-spec API endpoints like `/v2/<name>/blobs/<digest>`.
-    async fn create(&self, name: &str) -> Result<Box<dyn RepositoryStore + Send + Sync + 'static>>;
+    async fn create(&self, name: &str) -> Result<BoxedRepositoryStore>;
 }
 
 /// Provides access to a [`ManifestStore`] and [`BlobStore`] instances for a repository.
@@ -76,26 +94,23 @@ pub trait RepositoryStore: Send + Sync + 'static {
     fn name(&self) -> &str;
 
     /// Return a [`ManifestStore`] to provide access to manifests in this repository.
-    fn get_manifest_store(&self) -> Box<dyn ManifestStore + Send + Sync + 'static>;
+    fn get_manifest_store(&self) -> BoxedManifestStore;
 
     /// Return a [`BlobStore`] to provide access to blobs in this repository.
-    fn get_blob_store(&self) -> Box<dyn BlobStore + Send + Sync + 'static>;
+    fn get_blob_store(&self) -> BoxedBlobStore;
 
     /// Return a [`UploadSessionStore`] to provide access to blobs in this repository.
-    fn get_upload_session_store(&self) -> Box<dyn UploadSessionStore + Send + Sync + 'static>;
+    fn get_upload_session_store(&self) -> BoxedUploadSessionStore;
 }
 
 /// Provides access to upload sessions.
 #[async_trait]
 pub trait UploadSessionStore: Send + Sync + 'static {
     /// Initiate a new blob upload session.
-    async fn new_upload_session(&self) -> Result<Box<dyn UploadSession + Send + Sync + 'static>>;
+    async fn new_upload_session(&self) -> Result<BoxedUploadSession>;
 
     /// Get an existing blob upload session.
-    async fn get_upload_session(
-        &self,
-        session_uuid: &Uuid,
-    ) -> Result<Box<dyn UploadSession + Send + Sync + 'static>>;
+    async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<BoxedUploadSession>;
 
     /// Delete an existing blob upload session.
     async fn delete_session(&self, session_uuid: &Uuid) -> Result<()>;
@@ -104,15 +119,9 @@ pub trait UploadSessionStore: Send + Sync + 'static {
 /// Provides access to registry manifests.
 #[async_trait]
 pub trait ManifestStore: Send + Sync + 'static {
-    async fn head(
-        &self,
-        key: &ManifestRef,
-    ) -> Result<Option<Box<dyn Manifest + Send + Sync + 'static>>>;
+    async fn head(&self, key: &ManifestRef) -> Result<Option<BoxedManifest>>;
 
-    async fn get(
-        &self,
-        key: &ManifestRef,
-    ) -> Result<Option<(Box<dyn Manifest + Send + Sync + 'static>, StreamableBody)>>;
+    async fn get(&self, key: &ManifestRef) -> Result<Option<(BoxedManifest, StreamableBody)>>;
 
     async fn put(
         &mut self,
@@ -137,12 +146,9 @@ pub trait ManifestStore: Send + Sync + 'static {
 /// Provides access to registry blobs.
 #[async_trait]
 pub trait BlobStore: Send + Sync + 'static {
-    async fn head(&self, key: &OciDigest) -> Result<Option<Box<dyn Blob + Send + Sync + 'static>>>;
+    async fn head(&self, key: &OciDigest) -> Result<Option<BoxedBlob>>;
 
-    async fn get(
-        &self,
-        key: &OciDigest,
-    ) -> Result<Option<(Box<dyn Blob + Send + Sync + 'static>, StreamableBody)>>;
+    async fn get(&self, key: &OciDigest) -> Result<Option<(BoxedBlob, StreamableBody)>>;
 
     async fn put(&mut self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid>;
 
@@ -158,21 +164,11 @@ pub trait BlobStore: Send + Sync + 'static {
 /// Implements chunked blob uploads.
 #[async_trait]
 pub trait BlobWriter: Send + Sync + 'static {
-    async fn write(
-        &mut self,
-        content_length: u64,
-        body: Body,
-    ) -> Result<Box<dyn UploadSession + Send + Sync + 'static>>;
+    async fn write(&mut self, content_length: u64, body: Body) -> Result<BoxedUploadSession>;
 
-    async fn write_chunked(
-        &mut self,
-        body: Body,
-    ) -> Result<Box<dyn UploadSession + Send + Sync + 'static>>;
+    async fn write_chunked(&mut self, body: Body) -> Result<BoxedUploadSession>;
 
-    async fn finalize(
-        &mut self,
-        digest: &OciDigest,
-    ) -> Result<Box<dyn UploadSession + Send + Sync + 'static>>;
+    async fn finalize(&mut self, digest: &OciDigest) -> Result<BoxedUploadSession>;
 }
 
 /// Provides access to blob metadata.

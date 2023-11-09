@@ -20,6 +20,9 @@ pub enum Error {
     #[error("digest invalid: {0}")]
     UuidError(#[from] uuid::Error),
 
+    #[error("blob writer already finished")]
+    BlobWriterFinished,
+
     // Distribution Errors
     #[error("blob unknown")]
     BlobUnknown(Option<String>),
