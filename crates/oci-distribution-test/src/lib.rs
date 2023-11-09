@@ -1,75 +1,102 @@
-use bytes::Bytes;
-use derive_builder::Builder;
 use oci_spec::image::{
-    Descriptor, DescriptorBuilder, History, ImageConfiguration, ImageManifest,
-    ImageManifestBuilder, MediaType,
-    ImageIndex, ImageIndexBuilder,
+    Arch, Descriptor, DescriptorBuilder, History, ImageConfiguration, ImageConfigurationBuilder,
+    ImageIndex, ImageIndexBuilder, ImageManifest, ImageManifestBuilder, MediaType, Os,
+    RootFsBuilder,
 };
+use serde::{Deserialize, Serialize};
 
 use portfolio_core::registry::RepositoryStoreManager;
 use portfolio_core::OciDigest;
 
 mod errors;
-use errors::{Error, Result};
+mod testdata;
+use errors::Result;
 
 pub struct DistributionTester<RSM: RepositoryStoreManager> {
     mgr: RSM,
 }
 
-#[derive(Builder, Clone)]
-#[builder(build_fn(skip))]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Layer {
-    pub data: Bytes,
+    pub data: String,
     pub history: Option<History>,
 
-    #[builder(setter(skip))]
-    pub descriptor: Descriptor,
+    descriptor: Option<Descriptor>,
 }
 
-impl LayerBuilder {
-    pub fn build(self) -> Result<Layer> {
-        let data = self.data.ok_or(Error::LayerBuilderError(
-            "must include data to construct Layer".to_string(),
-        ))?;
-        let digest = OciDigest::from(data.as_ref());
+impl Layer {
+    pub fn descriptor(&mut self) -> Descriptor {
+        if let Some(d) = &self.descriptor {
+            return d.clone();
+        }
+
+        let digest = OciDigest::from(self.data.as_ref());
         let descriptor = DescriptorBuilder::default()
             .media_type(MediaType::ImageLayer)
             .digest(digest)
-            .size(data.len() as i64)
+            .size(self.data.len() as i64)
             .build()
             .expect("must set all required fields for descriptor");
-        Ok(Layer {
-            data,
-            descriptor,
-            history: self.history.flatten(),
-        })
+
+        self.descriptor = Some(descriptor.clone());
+        descriptor
     }
 }
 
-#[derive(Builder, Clone)]
-#[builder(build_fn(skip))]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Image {
-    pub config: ImageConfiguration,
+    pub os: Os,
+    pub architecture: Arch,
     pub layers: Vec<Layer>,
+    pub artifact_type: Option<MediaType>,
+    pub subject: Option<Descriptor>,
 
-    // artifact_type and subject are duplicated in the ImageConfiguration, but put here for the
-    // sake of generating a builder method to allow users to specify them for the ImageConfiguring
-    // when building an image.
-    #[allow(dead_code)]
-    artifact_type: Option<MediaType>,
-    #[allow(dead_code)]
-    subject: Option<Descriptor>,
-
-    #[builder(setter(skip))]
-    pub manifest: ImageManifest,
+    config: Option<ImageConfiguration>,
+    manifest: Option<ImageManifest>,
 }
 
-impl ImageBuilder {
-    pub fn build(self) -> Result<Image> {
-        let config = self.config.ok_or(Error::ImageBuilderError(
-            "must include image configuration to construct image".to_string(),
-        ))?;
-        let config_bytes = serde_json::to_vec(&config)?;
+impl Image {
+    pub fn config(&mut self) -> ImageConfiguration {
+        if let Some(c) = &self.config {
+            return c.clone();
+        }
+
+        let digests = self
+            .layers
+            .iter_mut()
+            .map(|l| l.descriptor().digest().clone())
+            .collect::<Vec<String>>();
+        let histories: Vec<History> = self
+            .layers
+            .iter()
+            .map(|l| l.history.clone().unwrap_or_else(Default::default))
+            .collect();
+        let rootfs = RootFsBuilder::default()
+            .typ("layers".to_string())
+            .diff_ids(digests)
+            .build()
+            .expect("must include all required fields for rootfs");
+        let builder = ImageConfigurationBuilder::default()
+            .os(self.os.clone())
+            .architecture(self.architecture.clone())
+            .history(histories)
+            .rootfs(rootfs);
+
+        let config = builder
+            .build()
+            .expect("must set all required fields for image configuration");
+
+        self.config = Some(config.clone());
+        config
+    }
+
+    pub fn manifest(&mut self) -> ImageManifest {
+        if let Some(m) = &self.manifest {
+            return m.clone();
+        }
+
+        let config_bytes = serde_json::to_vec(&self.config())
+            .expect("properly initialized ImageConfiguration should not fail to serialize");
         let config_digest = OciDigest::from(config_bytes.as_slice());
         let config_descriptor = DescriptorBuilder::default()
             .media_type(MediaType::ImageManifest)
@@ -78,14 +105,11 @@ impl ImageBuilder {
             .build()
             .expect("must set all required fields for descriptor");
 
-        let layers = self.layers.unwrap_or_else(Vec::new);
-        let layer_descriptors = layers
-            .iter()
-            .map(|l| l.descriptor.clone())
+        let layer_descriptors = self
+            .layers
+            .iter_mut()
+            .map(|l| l.descriptor().clone())
             .collect::<Vec<Descriptor>>();
-
-        let artifact_type = self.artifact_type.flatten();
-        let subject = self.subject.flatten();
 
         let mut manifest_builder = ImageManifestBuilder::default()
             .schema_version(2u32)
@@ -93,11 +117,11 @@ impl ImageBuilder {
             .layers(layer_descriptors)
             .config(config_descriptor);
 
-        if let Some(ref artifact_type) = artifact_type {
+        if let Some(ref artifact_type) = self.artifact_type {
             manifest_builder = manifest_builder.artifact_type(artifact_type.clone());
         }
 
-        if let Some(ref subject) = subject {
+        if let Some(ref subject) = self.subject {
             manifest_builder = manifest_builder.subject(subject.clone());
         }
 
@@ -105,54 +129,43 @@ impl ImageBuilder {
             .build()
             .expect("must set all required fields for image manifest");
 
-        Ok(Image {
-            config,
-            manifest,
-            layers,
-            artifact_type,
-            subject,
-        })
+        self.manifest = Some(manifest.clone());
+
+        manifest
     }
 }
 
-#[derive(Builder)]
-#[builder(build_fn(skip))]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Index {
     pub manifests: Vec<Image>,
+    pub artifact_type: Option<MediaType>,
+    pub subject: Option<Descriptor>,
 
-    // artifact_type and subject are duplicated in the ImageConfiguration, but put here for the
-    // sake of generating a builder method to allow users to specify them for the ImageConfiguring
-    // when building an image.
-    #[allow(dead_code)]
-    artifact_type: Option<MediaType>,
-    #[allow(dead_code)]
-    subject: Option<Descriptor>,
-
-    #[builder(setter(skip))]
-    pub index_manifest: ImageIndex,
+    index_manifest: Option<ImageIndex>,
 }
 
-impl IndexBuilder {
-    pub fn build(self) -> Result<Index> {
-        let manifests = self.manifests.unwrap_or_else(Vec::new);
-        let manifest_descriptors = manifests
-            .iter()
-            .map(|m| m.manifest.config().clone())
-            .collect::<Vec<Descriptor>>();
+impl Index {
+    pub fn manifest(&mut self) -> ImageIndex {
+        if let Some(m) = &self.index_manifest {
+            return m.clone();
+        }
 
-        let artifact_type = self.artifact_type.flatten();
-        let subject = self.subject.flatten();
+        let manifest_descriptors = self
+            .manifests
+            .iter_mut()
+            .map(|m| m.manifest().config().clone())
+            .collect::<Vec<Descriptor>>();
 
         let mut manifest_builder = ImageIndexBuilder::default()
             .schema_version(2u32)
             .media_type(MediaType::ImageIndex)
             .manifests(manifest_descriptors);
 
-        if let Some(ref artifact_type) = artifact_type {
+        if let Some(ref artifact_type) = self.artifact_type {
             manifest_builder = manifest_builder.artifact_type(artifact_type.clone());
         }
 
-        if let Some(ref subject) = subject {
+        if let Some(ref subject) = self.subject {
             manifest_builder = manifest_builder.subject(subject.clone());
         }
 
@@ -160,12 +173,9 @@ impl IndexBuilder {
             .build()
             .expect("must set all required fields for image manifest");
 
-        Ok(Index {
-            manifests,
-            index_manifest,
-            artifact_type,
-            subject,
-        })
+        self.index_manifest = Some(index_manifest.clone());
+
+        index_manifest
     }
 }
 
