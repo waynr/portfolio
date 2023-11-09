@@ -9,7 +9,7 @@ use pin_project::pin_project;
 
 use crate::Digester;
 
-type StreamableBody = Box<
+pub type StreamableBody = Box<
     (dyn futures_core::stream::Stream<
         Item = std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync + 'static>>,
     > + Send),

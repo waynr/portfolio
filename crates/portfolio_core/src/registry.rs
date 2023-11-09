@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use axum::Json;
 use bytes::Bytes;
-use futures_core::Stream;
+use futures::stream::BoxStream;
 use hyper::body::Body;
 use oci_spec::distribution::TagList;
 use oci_spec::image::{Descriptor, ImageIndex, ImageManifest, MediaType};
@@ -40,8 +40,11 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use uuid::Uuid;
 
-use crate::oci_digest::OciDigest;
 use crate::errors::{Error, Result};
+use crate::oci_digest::OciDigest;
+
+type StreamableBody =
+    BoxStream<'static, std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync>>>;
 
 /// Provide access to [`RepositoryStore`] instances.
 ///
@@ -49,23 +52,18 @@ use crate::errors::{Error, Result};
 /// Intended to be used within [`portfolio_http`]'s HTTP middleware to inject [`RepositoryStore`]
 /// instances into the request handling chain for use by Distribution API route handlers.
 #[async_trait]
-pub trait RepositoryStoreManager: Clone + Send + Sync + 'static {
-    /// The `RepositoryStore` implementation an implementing type provides.
-    type RepositoryStore: RepositoryStore;
-
-    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
-
+pub trait RepositoryStoreManager: Send + Sync + 'static {
     /// Get [`RepositoryStore`] corresponding to the given name, if it already exists. This name
     /// corresponds to the `<name>` in distribution-spec API endpoints like
     /// `/v2/<name>/blobs/<digest>`.
     async fn get(
         &self,
         name: &str,
-    ) -> std::result::Result<Option<Self::RepositoryStore>, Self::Error>;
+    ) -> Result<Option<Box<dyn RepositoryStore + Send + Sync + 'static>>>;
 
     /// Create new [`RepositoryStore`] with the given name. This name corresponds to the
     /// `<name>` in distribution-spec API endpoints like `/v2/<name>/blobs/<digest>`.
-    async fn create(&self, name: &str) -> std::result::Result<Self::RepositoryStore, Self::Error>;
+    async fn create(&self, name: &str) -> Result<Box<dyn RepositoryStore + Send + Sync + 'static>>;
 }
 
 /// Provides access to a [`ManifestStore`] and [`BlobStore`] instances for a repository.
@@ -73,146 +71,108 @@ pub trait RepositoryStoreManager: Clone + Send + Sync + 'static {
 /// Enables management of content within a registry scoped to a specific repository. It also
 /// handles session management (create, get, delete), and provides a tag listing method.
 #[async_trait]
-pub trait RepositoryStore: Clone + Send + Sync + 'static {
-    /// The type of the [`ManifestStore`] implementation provided by this [`RepositoryStore`].
-    type ManifestStore: ManifestStore;
-    /// The type of the [`BlobStore`] implementation provided by this [`RepositoryStore`].
-    type BlobStore: BlobStore;
-    /// The type of the [`BlobStore`] implementation provided by this [`RepositoryStore`].
-    type UploadSessionStore: UploadSessionStore;
-
-    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
-
+pub trait RepositoryStore: Send + Sync + 'static {
     /// The name of the repository accessed by this [`RepositoryStore`].
     fn name(&self) -> &str;
 
-    /// Return a [`Self::ManifestStore`] to provide access to manifests in this repository.
-    fn get_manifest_store(&self) -> Self::ManifestStore;
+    /// Return a [`ManifestStore`] to provide access to manifests in this repository.
+    fn get_manifest_store(&self) -> Box<dyn ManifestStore + Send + Sync + 'static>;
 
-    /// Return a [`Self::BlobStore`] to provide access to blobs in this repository.
-    fn get_blob_store(&self) -> Self::BlobStore;
+    /// Return a [`BlobStore`] to provide access to blobs in this repository.
+    fn get_blob_store(&self) -> Box<dyn BlobStore + Send + Sync + 'static>;
 
-    /// Return a [`Self::UploadSessionStore`] to provide access to blobs in this repository.
-    fn get_upload_session_store(&self) -> Self::UploadSessionStore;
+    /// Return a [`UploadSessionStore`] to provide access to blobs in this repository.
+    fn get_upload_session_store(&self) -> Box<dyn UploadSessionStore + Send + Sync + 'static>;
 }
 
 /// Provides access to upload sessions.
 #[async_trait]
-pub trait UploadSessionStore: Clone + Send + Sync + 'static {
-    /// The type of the [`UploadSession`] implementation provided by this [`RepositoryStore`].
-    type UploadSession: UploadSession + Send + Sync + 'static;
-
-    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
-
+pub trait UploadSessionStore: Send + Sync + 'static {
     /// Initiate a new blob upload session.
-    async fn new_upload_session(&self) -> std::result::Result<Self::UploadSession, Self::Error>;
+    async fn new_upload_session(&self) -> Result<Box<dyn UploadSession + Send + Sync + 'static>>;
 
     /// Get an existing blob upload session.
     async fn get_upload_session(
         &self,
         session_uuid: &Uuid,
-    ) -> std::result::Result<Self::UploadSession, Self::Error>;
+    ) -> Result<Box<dyn UploadSession + Send + Sync + 'static>>;
 
     /// Delete an existing blob upload session.
-    async fn delete_session(&self, session_uuid: &Uuid) -> std::result::Result<(), Self::Error>;
+    async fn delete_session(&self, session_uuid: &Uuid) -> Result<()>;
 }
 
 /// Provides access to registry manifests.
 #[async_trait]
 pub trait ManifestStore: Send + Sync + 'static {
-    type Manifest: Manifest;
-    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
-    type ManifestBody: Stream<Item = std::result::Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>
-        + Send;
-
     async fn head(
         &self,
         key: &ManifestRef,
-    ) -> std::result::Result<Option<Self::Manifest>, Self::Error>;
+    ) -> Result<Option<Box<dyn Manifest + Send + Sync + 'static>>>;
 
     async fn get(
         &self,
         key: &ManifestRef,
-    ) -> std::result::Result<Option<(Self::Manifest, Self::ManifestBody)>, Self::Error>;
+    ) -> Result<Option<(Box<dyn Manifest + Send + Sync + 'static>, StreamableBody)>>;
 
     async fn put(
         &mut self,
         key: &ManifestRef,
         spec: &ManifestSpec,
         bytes: Bytes,
-    ) -> std::result::Result<OciDigest, Self::Error>;
+    ) -> Result<OciDigest>;
 
-    async fn delete(&mut self, key: &ManifestRef) -> std::result::Result<(), Self::Error>;
+    async fn delete(&mut self, key: &ManifestRef) -> Result<()>;
 
     /// Return an ImageIndex containing a list of manifests that reference the given OciDigest.
     async fn get_referrers(
         &self,
         subject: &OciDigest,
         artifact_type: Option<String>,
-    ) -> std::result::Result<ImageIndex, Self::Error>;
+    ) -> Result<ImageIndex>;
 
     /// Return an OCI TagList of tags in this repository.
-    async fn get_tags(
-        &self,
-        n: Option<i64>,
-        last: Option<String>,
-    ) -> std::result::Result<TagList, Self::Error>;
+    async fn get_tags(&self, n: Option<i64>, last: Option<String>) -> Result<TagList>;
 }
 
 /// Provides access to registry blobs.
 #[async_trait]
 pub trait BlobStore: Send + Sync + 'static {
-    type BlobWriter: BlobWriter;
-    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
-    type UploadSession: UploadSession + Send + Sync + 'static;
-    type Blob: Blob;
-    type BlobBody: Stream<Item = std::result::Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>
-        + Send;
-
-    async fn head(&self, key: &OciDigest) -> std::result::Result<Option<Self::Blob>, Self::Error>;
+    async fn head(&self, key: &OciDigest) -> Result<Option<Box<dyn Blob + Send + Sync + 'static>>>;
 
     async fn get(
         &self,
         key: &OciDigest,
-    ) -> std::result::Result<Option<(Self::Blob, Self::BlobBody)>, Self::Error>;
+    ) -> Result<Option<(Box<dyn Blob + Send + Sync + 'static>, StreamableBody)>>;
 
-    async fn put(
-        &mut self,
-        digest: &OciDigest,
-        content_length: u64,
-        body: Body,
-    ) -> std::result::Result<Uuid, Self::Error>;
+    async fn put(&mut self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid>;
 
-    async fn delete(&mut self, digest: &OciDigest) -> std::result::Result<(), Self::Error>;
+    async fn delete(&mut self, digest: &OciDigest) -> Result<()>;
 
     async fn resume(
         &self,
         session_uuid: &Uuid,
         start: Option<u64>,
-    ) -> std::result::Result<Self::BlobWriter, Self::Error>;
+    ) -> Result<Box<dyn BlobWriter + Send + Sync + 'static>>;
 }
 
 /// Implements chunked blob uploads.
 #[async_trait]
 pub trait BlobWriter: Send + Sync + 'static {
-    type Error: std::error::Error + Into<crate::errors::Error> + Send + Sync;
-    type UploadSession: UploadSession + Send + Sync + 'static;
-
     async fn write(
-        self,
+        &mut self,
         content_length: u64,
         body: Body,
-    ) -> std::result::Result<Self::UploadSession, Self::Error>;
+    ) -> Result<Box<dyn UploadSession + Send + Sync + 'static>>;
 
     async fn write_chunked(
-        self,
+        &mut self,
         body: Body,
-    ) -> std::result::Result<Self::UploadSession, Self::Error>;
+    ) -> Result<Box<dyn UploadSession + Send + Sync + 'static>>;
 
     async fn finalize(
-        self,
+        &mut self,
         digest: &OciDigest,
-    ) -> std::result::Result<Self::UploadSession, Self::Error>;
+    ) -> Result<Box<dyn UploadSession + Send + Sync + 'static>>;
 }
 
 /// Provides access to blob metadata.
