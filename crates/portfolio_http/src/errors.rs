@@ -102,6 +102,14 @@ fn core_error_to_response(e: CoreError) -> Response {
             )
                 .into_response()
         }
+        CoreError::BlobWriterFinished => {
+            tracing::warn!("unexpected attempt to reuse blob writer after first use: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("internal server error"),
+            )
+                .into_response()
+        }
         CoreError::UuidError(e) => {
             into_error_response(DistributionErrorCode::DigestInvalid, Some(format!("{}", e)))
         }
