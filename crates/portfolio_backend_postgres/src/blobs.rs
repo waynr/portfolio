@@ -8,14 +8,17 @@ use futures::stream::TryStreamExt;
 use hyper::body::Body;
 use uuid::Uuid;
 
+use portfolio_core::registry::BoxedUploadSession;
 use portfolio_core::registry::{BlobStore, BlobWriter};
+use portfolio_core::registry::{BoxedBlob, BoxedBlobWriter};
 use portfolio_core::Error as CoreError;
+use portfolio_core::Result;
 use portfolio_core::{ChunkedBody, DigestBody, Digester, OciDigest};
 use portfolio_objectstore::{Chunk, Key, ObjectStore};
 
-use super::errors::{Error, Result};
+use super::errors::Error;
 use super::metadata::{
-    Blob, Chunk as MetadataChunk, PostgresMetadataPool, PostgresMetadataTx, UploadSession,
+    Chunk as MetadataChunk, PostgresMetadataPool, PostgresMetadataTx, UploadSession,
 };
 
 pub struct PgBlobStore {
@@ -25,24 +28,22 @@ pub struct PgBlobStore {
 
 impl PgBlobStore {
     pub fn new(metadata: PostgresMetadataPool, objects: Arc<dyn ObjectStore>) -> Self {
-        Self { metadata, objects: objects }
+        Self {
+            metadata,
+            objects: objects,
+        }
     }
 }
 
+type TryBytes = std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync>>;
+
 #[async_trait]
 impl BlobStore for PgBlobStore {
-    type BlobWriter = PgBlobWriter;
-    type Error = Error;
-    type UploadSession = UploadSession;
-    type Blob = Blob;
-    type BlobBody =
-        BoxStream<'static, std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync>>>;
-
     async fn resume(
         &self,
         session_uuid: &Uuid,
         start_of_range: Option<u64>,
-    ) -> Result<PgBlobWriter> {
+    ) -> Result<BoxedBlobWriter> {
         // retrieve the session or fail if it doesn't exist
         let mut session = self
             .metadata
@@ -66,15 +67,16 @@ impl BlobStore for PgBlobStore {
             session.upload_id = Some(
                 self.objects
                     .initiate_chunked_upload(&Key::from(&session.uuid))
-                    .await?,
+                    .await
+                    .map_err(Error::from)?,
             );
         }
 
-        Ok(PgBlobWriter {
+        Ok(Box::new(PgBlobWriter {
             metadata: self.metadata.clone(),
             objects: self.objects.clone(),
-            session,
-        })
+            session: Some(session),
+        }))
     }
 
     async fn put(&mut self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid> {
@@ -82,12 +84,20 @@ impl BlobStore for PgBlobStore {
         let uuid = match tx.get_blob(digest).await? {
             Some(b) => {
                 // verify blob actually exists before returning a potentially bogus uuid
-                if self.objects.exists(&Key::from(&b.id)).await? {
+                if self
+                    .objects
+                    .exists(&Key::from(&b.id))
+                    .await
+                    .map_err(Error::from)?
+                {
                     return Ok(b.id);
                 }
                 b.id
             }
-            None => tx.insert_blob(digest, content_length as i64).await?,
+            None => tx
+                .insert_blob(digest, content_length as i64)
+                .await
+                .map_err(Error::from)?,
         };
 
         // upload blob
@@ -95,27 +105,38 @@ impl BlobStore for PgBlobStore {
         let stream_body = DigestBody::from_body(body, digester);
         self.objects
             .put(&Key::from(&uuid), stream_body.into(), content_length)
-            .await?;
+            .await
+            .map_err(Error::from)?;
 
         // TODO: validate digest
         // TODO: validate content length
 
-        tx.commit().await?;
+        tx.commit().await.map_err(Error::from)?;
 
         Ok(uuid)
     }
 
-    async fn get(&self, key: &OciDigest) -> Result<Option<(Self::Blob, Self::BlobBody)>> {
+    async fn get(
+        &self,
+        key: &OciDigest,
+    ) -> Result<Option<(BoxedBlob, BoxStream<'static, TryBytes>)>> {
         if let Some(blob) = self.metadata.get_conn().await?.get_blob(key).await? {
-            let body = self.objects.get(&Key::from(&blob.id)).await?;
-            Ok(Some((blob, body.map_err(|e| e.into()).boxed())))
+            let body = self
+                .objects
+                .get(&Key::from(&blob.id))
+                .await
+                .map_err(Error::from)?;
+            Ok(Some((Box::new(blob), body.map_err(|e| e.into()).boxed())))
         } else {
             Ok(None)
         }
     }
 
-    async fn head(&self, key: &OciDigest) -> Result<Option<Blob>> {
-        self.metadata.get_conn().await?.get_blob(key).await
+    async fn head(&self, key: &OciDigest) -> Result<Option<BoxedBlob>> {
+        match self.metadata.get_conn().await?.get_blob(key).await? {
+            Some(b) => Ok(Some(Box::new(b))),
+            None => Ok(None),
+        }
     }
 
     async fn delete(&mut self, digest: &OciDigest) -> Result<()> {
@@ -137,28 +158,33 @@ pub struct PgBlobWriter {
     metadata: PostgresMetadataPool,
     objects: Arc<dyn ObjectStore>,
 
-    session: UploadSession,
+    session: Option<UploadSession>,
 }
 
 impl PgBlobWriter {
-    async fn write_chunk(&mut self, tx: &mut PostgresMetadataTx<'_>, bytes: Bytes) -> Result<()> {
+    async fn write_chunk(
+        &self,
+        tx: &mut PostgresMetadataTx<'_>,
+        session: &mut UploadSession,
+        bytes: Bytes,
+    ) -> Result<()> {
         let chunk = self
             .objects
             .upload_chunk(
-                &self
-                    .session
+                &session
                     .upload_id
                     .as_ref()
                     .expect("UploadSession.upload_id should always be Some here")
                     .as_str(),
-                &Key::from(&self.session.uuid),
-                self.session.chunk_number,
+                &Key::from(&session.uuid),
+                session.chunk_number,
                 bytes.len() as u64,
                 bytes.into(),
             )
-            .await?;
+            .await
+            .map_err(Error::from)?;
 
-        tx.insert_chunk(&self.session, &MetadataChunk::from(chunk))
+        tx.insert_chunk(&session, &MetadataChunk::from(chunk))
             .await?;
         Ok(())
     }
@@ -166,31 +192,33 @@ impl PgBlobWriter {
 
 #[async_trait]
 impl BlobWriter for PgBlobWriter {
-    type Error = Error;
-    type UploadSession = UploadSession;
-
-    async fn write(mut self, content_length: u64, body: Body) -> Result<Self::UploadSession> {
-        tracing::debug!("before chunk upload: {:?}", self.session);
+    async fn write(&mut self, content_length: u64, body: Body) -> Result<BoxedUploadSession> {
+        let mut session = if let Some(session) = self.session.take() {
+            session
+        } else {
+            return Err(CoreError::BlobWriterFinished);
+        };
+        tracing::debug!("before chunk upload: {:?}", session);
         let digester = Arc::new(Mutex::new(Digester::default()));
         let stream_body = DigestBody::from_body(body, digester.clone());
         let chunk = self
             .objects
             .upload_chunk(
-                &self
-                    .session
+                &session
                     .upload_id
                     .as_ref()
                     .expect("UploadSession.upload_id should always be Some here")
                     .as_str(),
-                &Key::from(&self.session.uuid),
-                self.session.chunk_number,
+                &Key::from(&session.uuid),
+                session.chunk_number,
                 content_length,
                 stream_body.into(),
             )
-            .await?;
+            .await
+            .map_err(Error::from)?;
 
         let mut conn = self.metadata.get_conn().await?;
-        conn.insert_chunk(&self.session, &MetadataChunk::from(chunk))
+        conn.insert_chunk(&session, &MetadataChunk::from(chunk))
             .await?;
 
         let digester = Arc::into_inner(digester)
@@ -198,16 +226,21 @@ impl BlobWriter for PgBlobWriter {
             .into_inner()
             .expect("the mutex cannot be locked if there are no other Arc references");
 
-        self.session.chunk_number += 1;
-        self.session.last_range_end += digester.bytes() as i64 - 1;
+        session.chunk_number += 1;
+        session.last_range_end += digester.bytes() as i64 - 1;
 
-        conn.update_session(&self.session).await?;
+        conn.update_session(&session).await?;
 
         // TODO: return uploaded content length here
-        Ok(self.session)
+        Ok(Box::new(session))
     }
 
-    async fn write_chunked(mut self, body: Body) -> Result<Self::UploadSession> {
+    async fn write_chunked(&mut self, body: Body) -> Result<BoxedUploadSession> {
+        let mut session = if let Some(session) = self.session.take() {
+            session
+        } else {
+            return Err(CoreError::BlobWriterFinished);
+        };
         let md = self.metadata.clone();
         let mut tx = md.get_tx().await?;
         let mut digester = Digester::default();
@@ -218,42 +251,44 @@ impl BlobWriter for PgBlobWriter {
         while let Some(vbytes) = chunked.next().await {
             for bytes in vbytes.into_iter() {
                 digester.update(&bytes);
-                self.write_chunk(&mut tx, bytes).await?;
-                self.session.chunk_number += 1;
+                self.write_chunk(&mut tx, &mut session, bytes).await?;
+                session.chunk_number += 1;
             }
         }
 
-        self.session.last_range_end += digester.bytes() as i64 - 1;
-        tx.update_session(&self.session).await?;
+        session.last_range_end += digester.bytes() as i64 - 1;
+        tx.update_session(&session).await?;
 
         tx.commit().await?;
-        Ok(self.session)
+        Ok(Box::new(session))
     }
 
-    async fn finalize(self, digest: &OciDigest) -> Result<Self::UploadSession> {
+    async fn finalize(&mut self, digest: &OciDigest) -> Result<BoxedUploadSession> {
+        let session = if let Some(session) = self.session.take() {
+            session
+        } else {
+            return Err(CoreError::BlobWriterFinished);
+        };
         // TODO: validate digest
         let mut tx = self.metadata.get_tx().await?;
         let uuid = match tx.get_blob(&digest).await? {
             Some(b) => b.id,
-            None => {
-                tx.insert_blob(&digest, &self.session.last_range_end + 1)
-                    .await?
-            }
+            None => tx.insert_blob(&digest, &session.last_range_end + 1).await?,
         };
 
         let blob_key = Key::from(&uuid);
-        let session_key = Key::from(&self.session.uuid);
+        let session_key = Key::from(&session.uuid);
 
-        if !self.objects.exists(&blob_key).await? {
+        if !self.objects.exists(&blob_key).await.map_err(Error::from)? {
             let chunks = tx
-                .get_chunks(&self.session)
+                .get_chunks(&session)
                 .await?
                 .into_iter()
                 .map(Chunk::from)
                 .collect();
             self.objects
                 .finalize_chunked_upload(
-                    self.session
+                    session
                         .upload_id
                         .as_ref()
                         .expect("UploadSession.upload_id should always be Some here")
@@ -262,21 +297,23 @@ impl BlobWriter for PgBlobWriter {
                     chunks,
                     &blob_key,
                 )
-                .await?;
+                .await
+                .map_err(Error::from)?;
         } else {
             self.objects
                 .abort_chunked_upload(
-                    self.session
+                    session
                         .upload_id
                         .as_ref()
                         .expect("UploadSession.upload_id should always be Some here")
                         .as_str(),
                     &session_key,
                 )
-                .await?;
+                .await
+                .map_err(Error::from)?;
         }
 
         tx.commit().await?;
-        Ok(self.session)
+        Ok(Box::new(session))
     }
 }

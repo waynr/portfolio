@@ -1,11 +1,10 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use portfolio_core::registry::UploadSessionStore;
+use portfolio_core::registry::{UploadSession, UploadSessionStore};
+use portfolio_core::Result;
 
-use super::errors::{Error, Result};
 use super::metadata::PostgresMetadataPool;
-use super::metadata::UploadSession;
 
 #[derive(Clone)]
 pub struct PgSessionStore {
@@ -20,19 +19,23 @@ impl PgSessionStore {
 
 #[async_trait]
 impl UploadSessionStore for PgSessionStore {
-    type Error = Error;
-    type UploadSession = UploadSession;
-
-    async fn new_upload_session(&self) -> Result<Self::UploadSession> {
-        self.metadata.get_conn().await?.new_upload_session().await
+    async fn new_upload_session(&self) -> Result<Box<dyn UploadSession + Send + Sync>> {
+        Ok(Box::new(
+            self.metadata.get_conn().await?.new_upload_session().await?,
+        ))
     }
 
-    async fn get_upload_session(&self, session_uuid: &Uuid) -> Result<Self::UploadSession> {
-        self.metadata
-            .get_conn()
-            .await?
-            .get_session(session_uuid)
-            .await
+    async fn get_upload_session(
+        &self,
+        session_uuid: &Uuid,
+    ) -> Result<Box<dyn UploadSession + Send + Sync>> {
+        Ok(Box::new(
+            self.metadata
+                .get_conn()
+                .await?
+                .get_session(session_uuid)
+                .await?,
+        ))
     }
 
     async fn delete_session(&self, session_uuid: &Uuid) -> Result<()> {

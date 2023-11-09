@@ -9,13 +9,16 @@ use futures::stream::TryStreamExt;
 use oci_spec::distribution::{TagList, TagListBuilder};
 use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
-use portfolio_core::registry::{BlobStore, ManifestRef, ManifestSpec, ManifestStore};
+use portfolio_core::registry::{
+    BlobStore, BoxedManifest, ManifestRef, ManifestSpec, ManifestStore,
+};
 use portfolio_core::Error as CoreError;
 use portfolio_core::OciDigest;
+use portfolio_core::Result;
 use portfolio_objectstore::Key;
 
 use super::blobs::PgBlobStore;
-use super::errors::{Error, Result};
+use super::errors::Error;
 use super::metadata::Manifest;
 use super::metadata::Repository;
 
@@ -37,28 +40,31 @@ type TryBytes = std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sy
 
 #[async_trait]
 impl ManifestStore for PgManifestStore {
-    type Manifest = Manifest;
-    type Error = Error;
-    type ManifestBody = BoxStream<'static, TryBytes>;
-
-    async fn head(&self, key: &ManifestRef) -> Result<Option<Self::Manifest>> {
+    async fn head(&self, key: &ManifestRef) -> Result<Option<BoxedManifest>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn.get_manifest(&self.repository.id, key).await? {
-            Ok(Some(manifest))
+            Ok(Some(Box::new(manifest)))
         } else {
             Ok(None)
         }
     }
 
-    async fn get(&self, key: &ManifestRef) -> Result<Option<(Self::Manifest, Self::ManifestBody)>> {
+    async fn get(
+        &self,
+        key: &ManifestRef,
+    ) -> Result<Option<(BoxedManifest, BoxStream<'static, TryBytes>)>> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         if let Some(manifest) = conn.get_manifest(&self.repository.id, key).await? {
             let body = self
                 .blobstore
                 .objects
                 .get(&Key::from(&manifest.blob_id))
-                .await?;
-            Ok(Some((manifest, body.map_err(|e| e.into()).boxed())))
+                .await
+                .map_err(Error::from)?;
+            Ok(Some((
+                Box::new(manifest),
+                body.map_err(|e| e.into()).boxed(),
+            )))
         } else {
             Ok(None)
         }
@@ -186,8 +192,19 @@ impl ManifestStore for PgManifestStore {
         let manifest_blob_key = Key::from(&manifest.blob_id);
 
         let mut count = 0;
-        while self.blobstore.objects.exists(&manifest_blob_key).await? && count < 10 {
-            self.blobstore.objects.delete(&manifest_blob_key).await?;
+        while self
+            .blobstore
+            .objects
+            .exists(&manifest_blob_key)
+            .await
+            .map_err(Error::from)?
+            && count < 10
+        {
+            self.blobstore
+                .objects
+                .delete(&manifest_blob_key)
+                .await
+                .map_err(Error::from)?;
             count += 1;
         }
 
@@ -224,10 +241,14 @@ impl ManifestStore for PgManifestStore {
             }
             let db_media_type = m.media_type.unwrap();
             set.spawn(async move {
-                let stream = objects.get(&Key::from(&m.blob_id)).await?;
+                let stream = objects
+                    .get(&Key::from(&m.blob_id))
+                    .await
+                    .map_err(Error::from)?;
                 let bs: Bytes = stream
                     .try_collect::<Vec<Bytes>>()
-                    .await?
+                    .await
+                    .map_err(Error::from)?
                     .into_iter()
                     .fold(BytesMut::new(), |mut acc, bs| {
                         acc.extend_from_slice(&bs);
@@ -253,7 +274,7 @@ impl ManifestStore for PgManifestStore {
                             subject
                         );
                     }
-                    return Err(e.into());
+                    return Err(Error::from(e).into());
                 }
                 Ok(Err(e)) => return Err(e),
                 Ok(Ok(d)) => d,
@@ -278,7 +299,8 @@ impl ManifestStore for PgManifestStore {
                     .map(|t| t.name)
                     .collect::<Vec<_>>(),
             )
-            .build()?;
+            .build()
+            .map_err(Error::from)?;
 
         Ok(taglist)
     }

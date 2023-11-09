@@ -3,12 +3,17 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use portfolio_core::registry::RepositoryStore;
+use portfolio_core::errors::Result;
+use portfolio_core::registry::BoxedBlobStore;
+use portfolio_core::registry::BoxedManifestStore;
+use portfolio_core::registry::BoxedRepositoryStore;
+use portfolio_core::registry::BoxedUploadSessionStore;
+use portfolio_core::registry::RepositoryStore as RepositoryStoreT;
 use portfolio_core::registry::RepositoryStoreManager;
 use portfolio_objectstore::{Config as ObjectStoreConfig, ObjectStore};
 
 use super::blobs::PgBlobStore;
-use super::errors::{Error, Result};
+use super::errors::Error;
 use super::manifests::PgManifestStore;
 use super::metadata::Repository;
 use super::metadata::{PostgresConfig, PostgresMetadataPool};
@@ -66,27 +71,25 @@ impl PgRepository {
 }
 
 #[async_trait]
-impl RepositoryStore for PgRepository {
-    type ManifestStore = PgManifestStore;
-    type BlobStore = PgBlobStore;
-    type UploadSessionStore = PgSessionStore;
-    type Error = Error;
-
+impl RepositoryStoreT for PgRepository {
     fn name(&self) -> &str {
         self.repository.name.as_str()
     }
 
-    fn get_manifest_store(&self) -> Self::ManifestStore {
+    fn get_manifest_store(&self) -> BoxedManifestStore {
         let blobstore = PgBlobStore::new(self.metadata.clone(), self.objects.clone());
-        PgManifestStore::new(blobstore, self.repository.clone())
+        Box::new(PgManifestStore::new(blobstore, self.repository.clone()))
     }
 
-    fn get_blob_store(&self) -> Self::BlobStore {
-        PgBlobStore::new(self.metadata.clone(), self.objects.clone())
+    fn get_blob_store(&self) -> BoxedBlobStore {
+        Box::new(PgBlobStore::new(
+            self.metadata.clone(),
+            self.objects.clone(),
+        ))
     }
 
-    fn get_upload_session_store(&self) -> Self::UploadSessionStore {
-        PgSessionStore::new(self.metadata.clone())
+    fn get_upload_session_store(&self) -> BoxedUploadSessionStore {
+        Box::new(PgSessionStore::new(self.metadata.clone()))
     }
 }
 
@@ -101,15 +104,20 @@ pub struct PgRepositoryFactory {
 
 #[async_trait]
 impl RepositoryStoreManager for PgRepositoryFactory {
-    type RepositoryStore = PgRepository;
-    type Error = Error;
-
-    async fn get(&self, name: &str) -> Result<Option<Self::RepositoryStore>> {
-        PgRepository::get(name, self.metadata.clone(), self.objects.clone()).await
+    async fn get(&self, name: &str) -> Result<Option<BoxedRepositoryStore>> {
+        if let Some(s) =
+            PgRepository::get(name, self.metadata.clone(), self.objects.clone()).await?
+        {
+            Ok(Some(Box::new(s)))
+        } else {
+            Ok(None)
+        }
     }
 
-    async fn create(&self, name: &str) -> Result<Self::RepositoryStore> {
-        Ok(PgRepository::get_or_insert(name, self.metadata.clone(), self.objects.clone()).await?)
+    async fn create(&self, name: &str) -> Result<BoxedRepositoryStore> {
+        Ok(Box::new(
+            PgRepository::get_or_insert(name, self.metadata.clone(), self.objects.clone()).await?,
+        ))
     }
 }
 
@@ -124,7 +132,7 @@ impl PgRepositoryConfig {
     pub async fn get_manager(&self) -> Result<PgRepositoryFactory> {
         Ok(PgRepositoryFactory {
             metadata: self.postgres.new_metadata().await?,
-            objects: self.objects.new_objects().await?,
+            objects: self.objects.new_objects().await.map_err(Error::from)?,
         })
     }
 }
