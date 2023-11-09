@@ -1,12 +1,12 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Result;
 use axum::middleware;
 use clap::Parser;
 
-use portfolio_backend_postgres::{PgRepository, PgRepositoryFactory};
 use portfolio_http::{add_basic_repository_extensions, Portfolio};
 
 mod config;
@@ -43,7 +43,7 @@ async fn main() -> Result<()> {
     let portfolio = match config.backend {
         RepositoryBackend::Postgres(cfg) => {
             let manager = cfg.get_manager().await?;
-            Portfolio::<PgRepositoryFactory, PgRepository>::new(manager)
+            Portfolio::new(Arc::new(manager))
         }
     };
 
