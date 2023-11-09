@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::Arc;
 
 use ::http::StatusCode;
 use axum::body::StreamBody;
@@ -15,11 +14,11 @@ use headers::Header;
 use hyper::body::Body;
 use uuid::Uuid;
 
-use portfolio_core::registry::RepositoryStore;
 use portfolio_core::{Error as CoreError, OciDigest};
 
 use super::errors::{Error, Result};
 use super::headers::{ContentRange, Range};
+use super::ArcRepositoryStore;
 
 pub fn router() -> Router {
     Router::new()
@@ -35,7 +34,7 @@ pub fn router() -> Router {
 }
 
 async fn get_blob(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let digest: &str = path_params
@@ -62,7 +61,7 @@ async fn get_blob(
 }
 
 async fn head_blob(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let digest: &str = path_params
@@ -96,7 +95,7 @@ async fn head_blob(
 //   * must include 'ContentLength' query param
 // * initiate upload session for POST-PUT or POST-PATCH-PUT sequence
 async fn uploads_post(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     content_length: Option<TypedHeader<ContentLength>>,
     Query(query_params): Query<HashMap<String, String>>,
     request: Request<Body>,
@@ -202,7 +201,7 @@ async fn uploads_post(
 //   chunk)
 //
 async fn uploads_put(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_type: Option<TypedHeader<ContentType>>,
@@ -300,7 +299,7 @@ async fn uploads_put(
 }
 
 async fn uploads_patch(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     Path(path_params): Path<HashMap<String, String>>,
     content_length: Option<TypedHeader<ContentLength>>,
     content_range: Option<TypedHeader<ContentRange>>,
@@ -344,7 +343,7 @@ async fn uploads_patch(
 }
 
 async fn uploads_get(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let session_uuid_str = path_params
@@ -379,7 +378,7 @@ async fn uploads_get(
 }
 
 async fn delete_blob(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let digest: &str = path_params

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use axum::extract::{Extension, Path, Query};
 use axum::http::header::{self, HeaderMap, HeaderName, HeaderValue};
@@ -10,11 +9,11 @@ use http::StatusCode;
 use oci_spec::image::MediaType;
 use serde::Deserialize;
 
-use portfolio_core::registry::RepositoryStore;
 use portfolio_core::OciDigest;
 
 use super::empty_string_as_none;
 use super::errors::{Error, Result};
+use super::ArcRepositoryStore;
 
 pub fn router() -> Router {
     Router::new().route("/:digest", get(get_referrers))
@@ -27,7 +26,7 @@ struct GetParams {
 }
 
 async fn get_referrers(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     Path(path_params): Path<HashMap<String, String>>,
     Query(params): Query<GetParams>,
 ) -> Result<Response> {

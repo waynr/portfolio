@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::Arc;
 
 use axum::body::{Bytes, StreamBody};
 use axum::extract::{DefaultBodyLimit, Extension, Path};
@@ -11,10 +10,11 @@ use axum::{Router, TypedHeader};
 use headers::{ContentLength, ContentType};
 use http::StatusCode;
 
-use portfolio_core::registry::{ManifestRef, ManifestSpec, RepositoryStore};
+use portfolio_core::registry::{ManifestRef, ManifestSpec};
 use portfolio_core::Error as CoreError;
 
 use super::errors::{Error, Result};
+use super::ArcRepositoryStore;
 
 pub fn router() -> Router {
     Router::new()
@@ -29,7 +29,7 @@ pub fn router() -> Router {
 }
 
 async fn head_manifest(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let manifest_ref = ManifestRef::from_str(
@@ -59,7 +59,7 @@ async fn head_manifest(
 }
 
 async fn get_manifest(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let manifest_ref = ManifestRef::from_str(
@@ -97,7 +97,7 @@ async fn get_manifest(
 
 /// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pushing-manifests
 async fn put_manifest(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     content_type: Option<TypedHeader<ContentType>>,
     content_length: Option<TypedHeader<ContentLength>>,
     Path(path_params): Path<HashMap<String, String>>,
@@ -177,7 +177,7 @@ async fn put_manifest(
 }
 
 async fn delete_manifest(
-    Extension(repository): Extension<Arc<dyn RepositoryStore>>,
+    Extension(repository): Extension<ArcRepositoryStore>,
     Path(path_params): Path<HashMap<String, String>>,
 ) -> Result<Response> {
     let mref = path_params

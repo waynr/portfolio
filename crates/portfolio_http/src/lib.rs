@@ -186,6 +186,8 @@ pub struct Portfolio {
     manager: Arc<dyn RepositoryStoreManager>,
 }
 
+pub(crate) type ArcRepositoryStore = Arc<dyn RepositoryStore + Send + Sync>;
+
 impl Portfolio {
     pub fn new(manager: Arc<dyn RepositoryStoreManager>) -> Self {
         Self { manager }
@@ -214,16 +216,19 @@ impl Portfolio {
     async fn get_repository(
         &self,
         name: &str,
-    ) -> std::result::Result<Option<Box<dyn RepositoryStore + Send + Sync>>, portfolio_core::Error>
+    ) -> std::result::Result<Option<ArcRepositoryStore>, portfolio_core::Error>
     {
-        Ok(self.manager.get(name).await?)
+        match self.manager.get(name).await? {
+            Some(b) => Ok(Some(Arc::from(b))),
+            None => Ok(None),
+        }
     }
 
     async fn insert_repository(
         &self,
         name: &str,
-    ) -> std::result::Result<Box<dyn RepositoryStore>, portfolio_core::Error> {
-        Ok(self.manager.create(name).await?)
+    ) -> std::result::Result<ArcRepositoryStore, portfolio_core::Error> {
+        Ok(Arc::from(self.manager.create(name).await?))
     }
 
     /// Return an [`axum::Router`] that implements the Distribution Specification.
