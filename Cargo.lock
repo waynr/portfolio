@@ -1957,7 +1957,6 @@ dependencies = [
  "oci-spec",
  "portfolio-core",
  "serde",
- "serde_yaml 0.8.26",
  "thiserror",
  "tower-http",
  "tracing",
