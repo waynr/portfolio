@@ -9,7 +9,7 @@ images.
 The primary focus in this implementation is on safe concurrent object storage
 management via transactional metadata, but the project is designed in a way
 that allows for a variety of backend implementations. For more info, please see
-`./docs/architecture.md`.
+[architecture.md](./docs/architecture.md).
 
 # License
 

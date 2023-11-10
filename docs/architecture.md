@@ -2,14 +2,17 @@
 
 ## Layers
 
-Portfolio is split into three primary layers: HTTP Server, Core Abstractions,
-and Backends.
+Portfolio is split into three primary layers:
+
+* HTTP Server
+* Core Abstractions
+* Backends
 
 These layers are combined to form a daemon binary in the `portfolio` crate.
 
 ### HTTP Server
 
-**Crate:** [./crates/portfolio_http]
+**Crate:** [portfolio_http](../crates/portfolio_http)
 
 The `portfolio-http` is where the distribution HTTP API spec is implemented.
 This implementation is generic over traits defined in the `portfolio-core` repo
@@ -21,7 +24,7 @@ conformance tests.
 
 ### Core Abstractions
 
-**Crate:** [./crates/portfolio_core]
+**Crate:** [portfolio_core](../crates/portfolio_core)
 
 #### API Boundary Traits
 
@@ -31,27 +34,49 @@ traits can be used to store/serve OCI Distribution content via a well-defined
 and conformance test compliant HTTP API.
 
 <dl>
-<dt>`RepositoryStoreManager`</dt>
-  <dd>Create & get `Self::RepositoryStore` instances. Initalized from
+<dt><code>RepositoryStoreManager</code></dt>
+  <dd>
+  Create & get <code>RepositoryStore</code> instances. Initalized from
   backend-specific config and passed to the HTTP service to be invoked on each
-  HTTP request.</dd>
-<dt>`RepositoryStore`</dt>
-  <dd>Provides access to a `Self::ManifestStore` and `Self::BlobStore`
+  HTTP request.
+  </dd>
+<dt><code>RepositoryStore</code></dt>
+  <dd>
+  Provides access to a <code>ManifestStore</code> and <code>BlobStore</code>
   instances for the sake of repository content management, handles session
-  management (create, get, delete), and provides a tag listing method.</dd>
-<dt>`ManifestStore`</dt>
-  <dd>Implements manifest `head`, `get`, `put`, and `delete` operations for a
-  Repository, provides a `get_referrers` method to implement the Referrers API.</dd>
-<dt>`BlobStore`</dt>
-  <dd>Implements blob `head`, `get`, `put`, and `delete` operations for a Repository, enables resuming a chunked upload session by providing access to `Self::BlobWriter`.</dd>
-<dt>`BlobWriter`</dt>
-  <dd>Provides chunked upload access for blobs.</dd>
-<dt>`Blob`</dt>
-  <dd>Provides accessor methods for metadata about blobs</dd>
-<dt>`Manifest`</dt>
-  <dd>Provides accessor methods for metadata about manifests.</dd>
-<dt>`UploadSession`</dt>
-  <dd>Provides accessor methods for upload session metadata.</dd>
+  management (create, get, delete), and provides a tag listing method.
+  </dd>
+<dt><code>ManifestStore</code></dt>
+  <dd>
+  Implements manifest <code>head</code>, <code>get</code>, <code>put</code>,
+  and <code>delete</code> operations for a Repository, provides a
+  <code>get_referrers</code> method to implement the Referrers API.
+  </dd>
+<dt><code>BlobStore</code></dt>
+  <dd>
+  Implements blob <code>head</code>, <code>get</code>, <code>put</code>, and
+  <code>delete</code> operations for a Repository, enables resuming a chunked
+  upload session by providing access to a <code>BlobWriter</code>.
+  </dd>
+<dt><code>BlobWriter</code></dt>
+  <dd>
+  Provides chunked upload access for blobs.
+  </dd>
+<dt><code>Blob</code></dt>
+  <dd>
+  Provides accessor methods for blob metadata and allows each backend
+  implementation to implement its own blob type.
+  </dd>
+<dt><code>Manifest</code></dt>
+  <dd>
+  Provides accessor methods for manifest metadata and allows each backend
+  implementation to implement its own manifest type.
+  </dd>
+<dt><code>UploadSession</code></dt>
+  <dd>
+  Provides accessor methods for upload session metadata and allows each backend
+  implementation to implement its own upload session type.
+  </dd>
 </dl>
 
 ### Backends
@@ -63,8 +88,8 @@ bulk data storage.
 #### Postgres + ObjectStore
 
 **Crates:**
-* [./crates/portfolio_backend_postgres]
-* [./crates/portfolio_objectstore]
+* [portfolio_backend_postgres](../crates/portfolio_backend_postgres)
+* [portfolio_objectstore](../crates/portfolio_objectstore)
 
 The only current backend implementation takes the approach of clearly
 distinguishing between metadata and bulk data storage.
