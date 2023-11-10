@@ -30,7 +30,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use axum::Json;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use hyper::body::Body;
@@ -203,15 +202,16 @@ impl TryFrom<&Bytes> for ManifestSpec {
     type Error = Error;
 
     fn try_from(bs: &Bytes) -> std::result::Result<Self, Self::Error> {
-        let img_rej_err = match axum::Json::from_bytes(bs) {
-            Ok(Json(m)) => return Ok(ManifestSpec::Image(m)),
-            Err(e) => e,
-        };
-        match axum::Json::from_bytes(bs) {
-            Ok(Json(m)) => return Ok(ManifestSpec::Index(m)),
-            Err(ind_rej_err) => {
-                tracing::warn!("unable to deserialize manifest as image: {img_rej_err:?}");
-                tracing::warn!("unable to deserialize manifest as index: {ind_rej_err:?}");
+        match serde_json::from_slice(bs) {
+            Ok(m) => return Ok(ManifestSpec::Image(m)),
+            Err(e) => {
+                tracing::warn!("unable to deserialize manifest as image: {e:?}");
+            }
+        }
+        match serde_json::from_slice(bs) {
+            Ok(m) => return Ok(ManifestSpec::Index(m)),
+            Err(e) => {
+                tracing::warn!("unable to deserialize manifest as index: {e:?}");
                 Err(Error::ManifestInvalid(None))
             }
         }

@@ -530,6 +530,8 @@ dependencies = [
 [[package]]
 name = "axum"
 version = "0.6.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b829e4e32b91e643de6eafe82b1d90675f5874230191a4ffbc1b336dec4d6bf"
 dependencies = [
  "async-trait",
  "axum-core",
@@ -561,6 +563,8 @@ dependencies = [
 [[package]]
 name = "axum-core"
 version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "759fa577a247914fd3f7f76d62972792636412fbfd634cd452f6a385a74d2d2c"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1696,9 +1700,11 @@ dependencies = [
 name = "oci-distribution-test"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytes",
  "lazy_static",
  "oci-spec",
+ "portfolio-backend-postgres",
  "portfolio-core",
  "serde",
  "serde_json",
@@ -1930,9 +1936,9 @@ name = "portfolio-core"
 version = "0.0.0"
 dependencies = [
  "async-trait",
- "axum",
  "bytes",
  "digest",
+ "futures",
  "futures-core",
  "hyper",
  "oci-spec",
@@ -1941,6 +1947,7 @@ dependencies = [
  "regex",
  "rstest",
  "serde",
+ "serde_json",
  "sha2",
  "thiserror",
  "tracing",
