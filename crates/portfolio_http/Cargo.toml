@@ -30,4 +30,4 @@ serde = { version = "1", features = [ "derive" ] }
 tracing = "0.1"
 
 # OCI & Distribution Spec
-oci-spec = { path = "/home/wayne/projects/containers/oci-spec-rs" }
+oci-spec = "0.6"
