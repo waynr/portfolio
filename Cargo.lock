@@ -1702,6 +1702,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
+ "hyper",
  "lazy_static",
  "oci-spec",
  "portfolio-backend-postgres",
@@ -1710,6 +1711,9 @@ dependencies = [
  "serde_json",
  "serde_yaml 0.9.25",
  "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

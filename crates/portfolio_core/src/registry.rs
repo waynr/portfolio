@@ -47,6 +47,9 @@ type StreamableBody =
     BoxStream<'static, std::result::Result<Bytes, Box<dyn std::error::Error + Send + Sync>>>;
 
 /// Alias to simplify method signatures on traits and implementations.
+pub type BoxedRepositoryStoreManager = Box<dyn RepositoryStoreManager + Send + Sync + 'static>;
+
+/// Alias to simplify method signatures on traits and implementations.
 pub type BoxedRepositoryStore = Box<dyn RepositoryStore + Send + Sync + 'static>;
 
 /// Alias to simplify method signatures on traits and implementations.

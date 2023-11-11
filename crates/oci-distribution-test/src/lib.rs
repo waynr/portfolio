@@ -5,16 +5,15 @@ use oci_spec::image::{
 };
 use serde::{Deserialize, Serialize};
 
-use portfolio_core::registry::RepositoryStoreManager;
+use portfolio_core::registry::ManifestRef;
 use portfolio_core::OciDigest;
 
 mod errors;
+mod loader;
 mod testdata;
-use errors::Result;
+pub use errors::Result;
 
-pub struct DistributionTester<RSM: RepositoryStoreManager> {
-    mgr: RSM,
-}
+pub use loader::RepositoryLoader;
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Layer {
@@ -44,15 +43,27 @@ impl Layer {
 }
 
 #[derive(Serialize, Deserialize, Default, Clone)]
+pub enum ManifestReference {
+    #[default]
+    Digest,
+    Tag(String),
+}
+
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Image {
+    manifest_ref: ManifestReference,
     pub os: Os,
     pub architecture: Arch,
     pub layers: Vec<Layer>,
     pub artifact_type: Option<MediaType>,
     pub subject: Option<Descriptor>,
 
+    #[serde(skip)]
     config: Option<ImageConfiguration>,
+    #[serde(skip)]
     manifest: Option<ImageManifest>,
+    #[serde(skip)]
+    descriptor: Option<Descriptor>,
 }
 
 impl Image {
@@ -88,6 +99,14 @@ impl Image {
 
         self.config = Some(config.clone());
         config
+    }
+
+    pub fn digest(&mut self) -> OciDigest {
+        self.descriptor()
+            .digest()
+            .as_str()
+            .try_into()
+            .expect("digests created by this library should always be correctly formed")
     }
 
     pub fn manifest(&mut self) -> ImageManifest {
@@ -133,15 +152,46 @@ impl Image {
 
         manifest
     }
+
+    pub fn manifest_ref(&mut self) -> ManifestRef {
+        match &self.manifest_ref {
+            ManifestReference::Digest => ManifestRef::Digest(self.digest()),
+            ManifestReference::Tag(name) => ManifestRef::Tag(name.clone()),
+        }
+    }
+
+    pub fn descriptor(&mut self) -> Descriptor {
+        if let Some(d) = &self.descriptor {
+            return d.clone();
+        }
+
+        let config_bytes =
+            serde_json::to_vec(&self.manifest()).expect("ImageManifest should be properly formed");
+        let digest = OciDigest::from(config_bytes.as_slice());
+
+        let descriptor = DescriptorBuilder::default()
+            .media_type(MediaType::ImageLayer)
+            .digest(String::from(&digest).as_str())
+            .size(config_bytes.len() as i64)
+            .build()
+            .expect("must set all required fields for descriptor");
+
+        self.descriptor = Some(descriptor.clone());
+        descriptor
+    }
 }
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Index {
+    manifest_ref: ManifestReference,
     pub manifests: Vec<Image>,
     pub artifact_type: Option<MediaType>,
     pub subject: Option<Descriptor>,
 
+    #[serde(skip)]
     index_manifest: Option<ImageIndex>,
+    #[serde(skip)]
+    digest: Option<OciDigest>,
 }
 
 impl Index {
@@ -153,7 +203,7 @@ impl Index {
         let manifest_descriptors = self
             .manifests
             .iter_mut()
-            .map(|m| m.manifest().config().clone())
+            .map(|m| m.descriptor())
             .collect::<Vec<Descriptor>>();
 
         let mut manifest_builder = ImageIndexBuilder::default()
@@ -177,15 +227,24 @@ impl Index {
 
         index_manifest
     }
-}
 
-impl<RSM: RepositoryStoreManager> DistributionTester<RSM> {
-    pub fn new(mgr: RSM) -> Self {
-        Self { mgr }
+    pub fn digest(&mut self) -> OciDigest {
+        if let Some(digest) = &self.digest {
+            return digest.clone();
+        }
+
+        let config_bytes =
+            serde_json::to_vec(&self.manifest()).expect("ImageIndex should be properly formed");
+        let digest = OciDigest::from(config_bytes.as_slice());
+
+        self.digest = Some(digest.clone());
+        digest
     }
 
-    pub async fn generate_basic_image(&self) -> Result<()> {
-        self.mgr.create("repo_1").await.map_err(|e| e.into())?;
-        Ok(())
+    pub fn manifest_ref(&mut self) -> ManifestRef {
+        match &self.manifest_ref {
+            ManifestReference::Digest => ManifestRef::Digest(self.digest()),
+            ManifestReference::Tag(name) => ManifestRef::Tag(name.clone()),
+        }
     }
 }

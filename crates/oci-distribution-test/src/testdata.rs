@@ -4,16 +4,17 @@ use super::Image;
 use super::Index;
 
 lazy_static! {
-    static ref BASIC_IMAGES: Vec<Image> = initialize_basic_images();
-    static ref BASIC_INDEXES: Vec<Index> = initialize_basic_indices();
-    static ref EMPTY_IMAGE: Image = Default::default();
-    static ref EMPTY_INDEX: Index = Default::default();
+    pub static ref BASIC_IMAGES: Vec<Image> = initialize_basic_images();
+    pub static ref BASIC_INDEXES: Vec<Index> = initialize_basic_indices();
+    pub static ref EMPTY_IMAGE: Image = Default::default();
+    pub static ref EMPTY_INDEX: Index = Default::default();
 }
 
 fn initialize_basic_images() -> Vec<Image> {
     serde_yaml::from_str(
         r#"
-- config:
+- manifest_ref: !Tag meow
+  config:
   os: linux
   architecture: amd64
   layers:
@@ -34,8 +35,10 @@ fn initialize_basic_images() -> Vec<Image> {
 fn initialize_basic_indices() -> Vec<Index> {
     serde_yaml::from_str(
         r#"
-- manifests:
+- manifest_ref: Digest
+  manifests:
     - config:
+      manifest_ref: Digest
       os: linux
       architecture: amd64
       layers:
@@ -49,6 +52,7 @@ fn initialize_basic_indices() -> Vec<Index> {
         history:
           comment: "this layer created for testing purposes"
     - config:
+      manifest_ref: Digest
       os: linux
       architecture: amd64
       layers:
@@ -65,6 +69,7 @@ fn initialize_basic_indices() -> Vec<Index> {
         history:
           comment: "this layer created for testing purposes"
     - config:
+      manifest_ref: Digest
       os: linux
       architecture: amd64
       layers:
