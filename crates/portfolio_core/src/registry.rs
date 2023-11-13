@@ -56,6 +56,8 @@ pub type BoxedRepositoryStore = Box<dyn RepositoryStore + Send + Sync + 'static>
 pub type BoxedManifestStore = Box<dyn ManifestStore + Send + Sync + 'static>;
 /// Alias to simplify method signatures on traits and implementations.
 pub type BoxedManifest = Box<dyn Manifest + Send + Sync + 'static>;
+/// Alias to simplify method signatures on traits and implementations.
+pub type BoxedTag = Box<dyn Tag + Send + Sync + 'static>;
 
 /// Alias to simplify method signatures on traits and implementations.
 pub type BoxedBlobStore = Box<dyn BlobStore + Send + Sync + 'static>;
@@ -142,7 +144,12 @@ pub trait ManifestStore: Send + Sync + 'static {
     ) -> Result<ImageIndex>;
 
     /// Return an OCI TagList of tags in this repository.
-    async fn get_tags(&self, n: Option<i64>, last: Option<String>) -> Result<TagList>;
+    async fn get_tags_list(&self, n: Option<i64>, last: Option<String>) -> Result<TagList>;
+
+    /// Return all tags associated with the specified manifest. Should return
+    /// [`Error::ManifestUnknown`] if the manifest doesn't exist and an empty Vec if there are no
+    /// tags for the manifest.
+    async fn get_tags(&self, key: &ManifestRef) -> Result<Vec<BoxedTag>>;
 }
 
 /// Provides access to registry blobs.
@@ -183,6 +190,12 @@ pub trait Manifest {
     fn bytes_on_disk(&self) -> u64;
     fn digest(&self) -> &OciDigest;
     fn media_type(&self) -> &Option<MediaType>;
+}
+
+// Provides access to tag metadata.
+pub trait Tag {
+    fn name(&self) -> &str;
+    fn manifest_digest(&self) -> &OciDigest;
 }
 
 /// Provides access to blob upload session metadata.

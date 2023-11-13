@@ -16,6 +16,18 @@ pub enum Error {
     #[error("{0}")]
     CoreError(#[from] portfolio_core::Error),
 
+    #[error("repository not found")]
+    RepositoryNotFound,
+
+    #[error("manifest {0} not found")]
+    ManifestNotFound(String),
+
+    #[error("blob {0} not found")]
+    BlobNotFound(String),
+
+    #[error("failed to collect bytes from stream: {0}")]
+    StreamCollectFailed(String),
+
     #[error("{0}")]
     SerdeJsonToValueError(#[from] serde_json::Error),
 }

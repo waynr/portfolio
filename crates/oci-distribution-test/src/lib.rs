@@ -51,7 +51,7 @@ pub enum ManifestReference {
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Image {
-    manifest_ref: ManifestReference,
+    pub(crate) manifest_ref: ManifestReference,
     pub os: Os,
     pub architecture: Arch,
     pub layers: Vec<Layer>,
@@ -59,11 +59,13 @@ pub struct Image {
     pub subject: Option<Descriptor>,
 
     #[serde(skip)]
-    config: Option<ImageConfiguration>,
+    pub(crate) tags: Vec<String>,
     #[serde(skip)]
-    manifest: Option<ImageManifest>,
+    pub(crate) config: Option<ImageConfiguration>,
     #[serde(skip)]
-    descriptor: Option<Descriptor>,
+    pub(crate) manifest: Option<ImageManifest>,
+    #[serde(skip)]
+    pub(crate) descriptor: Option<Descriptor>,
 }
 
 impl Image {

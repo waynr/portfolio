@@ -88,6 +88,16 @@ impl sqlx::FromRow<'_, sqlx_postgres::PgRow> for Tag {
     }
 }
 
+impl registry::Tag for Tag {
+    fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    fn manifest_digest(&self) -> &OciDigest {
+        &self.digest
+    }
+}
+
 #[derive(Iden)]
 pub enum Tags {
     Table,

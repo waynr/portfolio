@@ -456,6 +456,36 @@ impl Queries {
             .await?)
     }
 
+    pub async fn get_tags_by_manifest(
+        executor: &mut PgConnection,
+        repository_id: &Uuid,
+        manifest_ref: &ManifestRef,
+    ) -> Result<Vec<Tag>> {
+        let mut builder = Query::select();
+        builder
+            .columns([Tags::ManifestId, Tags::Name])
+            .column((Manifests::Table, Manifests::Digest))
+            .left_join(
+                Manifests::Table,
+                Expr::col((Tags::Table, Tags::ManifestId))
+                    .equals((Manifests::Table, Manifests::Id)),
+            )
+            .from(Tags::Table)
+            .and_where(Expr::col((Tags::Table, Tags::RepositoryId)).eq(*repository_id));
+
+        let builder = match manifest_ref {
+            ManifestRef::Digest(digest) => builder
+                .and_where(Expr::col((Manifests::Table, Manifests::Digest)).eq(String::from(digest))),
+            ManifestRef::Tag(tag) => builder
+                .and_where(Expr::col((Tags::Table, Tags::Name)).eq(tag)),
+        };
+
+        let (sql, values) = builder.build_sqlx(PostgresQueryBuilder);
+        Ok(sqlx::query_as_with::<_, Tag, _>(&sql, values)
+            .fetch_all(executor)
+            .await?)
+    }
+
     pub async fn delete_tags_by_manifest_id(
         executor: &mut PgConnection,
         manifest_id: &Uuid,
@@ -697,6 +727,14 @@ impl PostgresMetadataConn {
         artifact_type: &Option<String>,
     ) -> Result<Vec<Manifest>> {
         Queries::get_referrers(&mut *self.conn, repository_id, subject, artifact_type).await
+    }
+
+    pub async fn get_tags_by_manifest(
+        &mut self,
+        repository_id: &Uuid,
+        manifest_ref: &ManifestRef,
+    ) -> Result<Vec<Tag>> {
+        Queries::get_tags_by_manifest(&mut *self.conn, repository_id, manifest_ref).await
     }
 }
 

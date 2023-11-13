@@ -1,13 +1,20 @@
 use bytes::Bytes;
+use bytes::BytesMut;
+use futures::stream::TryStreamExt;
 use hyper::body::Body;
+use oci_spec::image::Descriptor;
+use oci_spec::image::History;
+use oci_spec::image::ImageConfiguration;
+use oci_spec::image::ImageManifest;
 
 use portfolio_core::registry::BoxedRepositoryStore;
 use portfolio_core::registry::BoxedRepositoryStoreManager;
+use portfolio_core::registry::ManifestRef;
 use portfolio_core::registry::ManifestSpec;
 use portfolio_core::OciDigest;
 
-pub use super::errors::Result;
-use super::{Image, Index};
+pub use super::errors::{Error, Result};
+use super::{Image, Index, Layer, ManifestReference};
 
 pub struct RepositoryLoader {
     mgr: BoxedRepositoryStoreManager,
@@ -101,6 +108,90 @@ impl RepositoryLoader {
         }
         Ok(())
     }
+
+    pub async fn pull_image(&self, name: &str, manifest_ref: &ManifestRef) -> Result<Image> {
+        let repo_store = self.mgr.get(name).await?.ok_or(Error::RepositoryNotFound)?;
+
+        let manifest_store = repo_store.get_manifest_store();
+        let blob_store = repo_store.get_blob_store();
+
+        // pull manifest
+        let manifest_stream = match manifest_store.get(manifest_ref).await? {
+            Some((_, stream)) => stream,
+            None => return Err(Error::ManifestNotFound(format!("{:?}", manifest_ref))),
+        };
+        let manifest_bytes: BytesMut = manifest_stream
+            .try_collect()
+            .await
+            .map_err(|e| Error::StreamCollectFailed(format!("{e:?}")))?;
+        let manifest: ImageManifest = serde_json::from_slice(&manifest_bytes)?;
+
+        let config_digest: OciDigest = manifest.config().digest().as_str().try_into()?;
+        let config_blob_stream = match blob_store.get(&config_digest).await? {
+            Some((_, stream)) => stream,
+            None => return Err(Error::BlobNotFound(format!("{:?}", config_digest))),
+        };
+        let config_blob_bytes: BytesMut = config_blob_stream
+            .try_collect()
+            .await
+            .map_err(|e| Error::StreamCollectFailed(format!("{e:?}")))?;
+        let image_config: ImageConfiguration = serde_json::from_slice(&config_blob_bytes)?;
+
+        let layer_descriptors: Vec<(Descriptor, Option<History>)> =
+            if image_config.history().len() == manifest.layers().len() {
+                manifest
+                    .layers()
+                    .iter()
+                    .map(Clone::clone)
+                    .zip(image_config.history().iter().map(Clone::clone).map(Some))
+                    .collect()
+            } else {
+                manifest
+                    .layers()
+                    .iter()
+                    .map(Clone::clone)
+                    .zip(std::iter::repeat(None))
+                    .collect()
+            };
+
+        // for each layer in manifest, pull layer
+        let mut layers: Vec<Layer> = Vec::new();
+
+        for (layer, history) in layer_descriptors {
+            let digest: OciDigest = layer.digest().as_str().try_into()?;
+            let blob_stream = match blob_store.get(&digest).await? {
+                Some((_, stream)) => stream,
+                None => return Err(Error::BlobNotFound(format!("{:?}", layer.digest()))),
+            };
+            let blob_bytes: BytesMut = blob_stream
+                .try_collect()
+                .await
+                .map_err(|e| Error::StreamCollectFailed(format!("{e:?}")))?;
+
+            let mut layer = Layer::default();
+            layer.data = blob_bytes.into_iter().map(char::from).collect();
+            layer.history = history;
+
+            layers.push(layer);
+        }
+
+        let tags: Vec<String> = manifest_store
+            .get_tags(manifest_ref)
+            .await?
+            .iter()
+            .map(|bt| bt.name().to_owned())
+            .collect();
+
+        // construct Image type
+        let mut image = Image::default();
+        image.manifest_ref = ManifestReference::Digest;
+        image.os = image_config.os().to_owned();
+        image.architecture = image_config.architecture().to_owned();
+        image.layers = layers;
+        image.tags = tags;
+
+        Ok(image)
+    }
 }
 
 #[cfg(test)]
@@ -113,8 +204,8 @@ mod test {
     use portfolio_backend_postgres::PgRepositoryConfig;
     use serde::Deserialize;
 
-    use super::*;
     use super::super::testdata;
+    use super::*;
 
     #[derive(Clone, Deserialize)]
     #[serde(tag = "type")]
