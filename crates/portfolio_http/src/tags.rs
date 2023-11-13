@@ -26,7 +26,7 @@ async fn get_tags(
     Query(params): Query<GetListParams>,
 ) -> Result<Response> {
     let mstore = repository.get_manifest_store();
-    let tags_list = mstore.get_tags(params.n, params.last).await?;
+    let tags_list = mstore.get_tags_list(params.n, params.last).await?;
 
     Ok((StatusCode::OK, Json(tags_list)).into_response())
 }
