@@ -126,13 +126,13 @@ pub trait ManifestStore: Send + Sync + 'static {
     async fn get(&self, key: &ManifestRef) -> Result<Option<(BoxedManifest, StreamableBody)>>;
 
     async fn put(
-        &mut self,
+        &self,
         key: &ManifestRef,
         spec: &ManifestSpec,
         bytes: Bytes,
     ) -> Result<OciDigest>;
 
-    async fn delete(&mut self, key: &ManifestRef) -> Result<()>;
+    async fn delete(&self, key: &ManifestRef) -> Result<()>;
 
     /// Return an ImageIndex containing a list of manifests that reference the given OciDigest.
     async fn get_referrers(
@@ -152,9 +152,9 @@ pub trait BlobStore: Send + Sync + 'static {
 
     async fn get(&self, key: &OciDigest) -> Result<Option<(BoxedBlob, StreamableBody)>>;
 
-    async fn put(&mut self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid>;
+    async fn put(&self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid>;
 
-    async fn delete(&mut self, digest: &OciDigest) -> Result<()>;
+    async fn delete(&self, digest: &OciDigest) -> Result<()>;
 
     async fn resume(
         &self,
@@ -315,7 +315,7 @@ impl ManifestSpec {
 /// > MUST match the following regular expression:
 /// >
 /// > `[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}`
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ManifestRef {
     Digest(OciDigest),
     Tag(String),
