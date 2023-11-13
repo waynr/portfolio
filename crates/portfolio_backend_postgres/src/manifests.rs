@@ -10,7 +10,7 @@ use oci_spec::distribution::{TagList, TagListBuilder};
 use oci_spec::image::{Descriptor, ImageIndex, MediaType};
 
 use portfolio_core::registry::{
-    BlobStore, BoxedManifest, ManifestRef, ManifestSpec, ManifestStore,
+    BlobStore, BoxedManifest, BoxedTag, ManifestRef, ManifestSpec, ManifestStore,
 };
 use portfolio_core::Error as CoreError;
 use portfolio_core::OciDigest;
@@ -288,7 +288,7 @@ impl ManifestStore for PgManifestStore {
         Ok(index)
     }
 
-    async fn get_tags(&self, n: Option<i64>, last: Option<String>) -> Result<TagList> {
+    async fn get_tags_list(&self, n: Option<i64>, last: Option<String>) -> Result<TagList> {
         let mut conn = self.blobstore.metadata.get_conn().await?;
         let taglist = TagListBuilder::default()
             .name(self.repository.name.as_str())
@@ -303,5 +303,17 @@ impl ManifestStore for PgManifestStore {
             .map_err(Error::from)?;
 
         Ok(taglist)
+    }
+
+    async fn get_tags(&self, key: &ManifestRef) -> Result<Vec<BoxedTag>> {
+        let mut conn = self.blobstore.metadata.get_conn().await?;
+        let tags = conn
+            .get_tags_by_manifest(&self.repository.id, key)
+            .await?
+            .into_iter()
+            .map(|t| -> BoxedTag { Box::new(t)})
+            .collect::<Vec<BoxedTag>>();
+
+        Ok(tags)
     }
 }
