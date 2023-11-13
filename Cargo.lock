@@ -1702,6 +1702,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
+ "futures",
  "hyper",
  "lazy_static",
  "oci-spec",

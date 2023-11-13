@@ -17,5 +17,8 @@ pub enum Error {
     CoreError(#[from] portfolio_core::Error),
 
     #[error("{0}")]
+    TokioJoinError(#[from] tokio::task::JoinError),
+
+    #[error("{0}")]
     SerdeJsonToValueError(#[from] serde_json::Error),
 }

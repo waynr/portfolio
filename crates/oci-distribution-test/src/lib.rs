@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::sync::Mutex;
+
 use oci_spec::image::{
     Arch, Descriptor, DescriptorBuilder, History, ImageConfiguration, ImageConfigurationBuilder,
     ImageIndex, ImageIndexBuilder, ImageManifest, ImageManifestBuilder, MediaType, Os,
@@ -54,7 +57,7 @@ pub struct Image {
     manifest_ref: ManifestReference,
     pub os: Os,
     pub architecture: Arch,
-    pub layers: Vec<Layer>,
+    pub layers: Vec<Arc<Mutex<Layer>>>,
     pub artifact_type: Option<MediaType>,
     pub subject: Option<Descriptor>,
 
@@ -75,12 +78,12 @@ impl Image {
         let digests = self
             .layers
             .iter_mut()
-            .map(|l| l.descriptor().digest().clone())
+            .map(|l| l.lock().unwrap().descriptor().digest().clone())
             .collect::<Vec<String>>();
         let histories: Vec<History> = self
             .layers
             .iter()
-            .map(|l| l.history.clone().unwrap_or_else(Default::default))
+            .map(|l| l.lock().unwrap().history.clone().unwrap_or_else(Default::default))
             .collect();
         let rootfs = RootFsBuilder::default()
             .typ("layers".to_string())
@@ -127,7 +130,7 @@ impl Image {
         let layer_descriptors = self
             .layers
             .iter_mut()
-            .map(|l| l.descriptor().clone())
+            .map(|l| l.lock().unwrap().descriptor().clone())
             .collect::<Vec<Descriptor>>();
 
         let mut manifest_builder = ImageManifestBuilder::default()
@@ -184,7 +187,7 @@ impl Image {
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Index {
     manifest_ref: ManifestReference,
-    pub manifests: Vec<Image>,
+    pub manifests: Vec<Arc<Mutex<Image>>>,
     pub artifact_type: Option<MediaType>,
     pub subject: Option<Descriptor>,
 
@@ -203,7 +206,7 @@ impl Index {
         let manifest_descriptors = self
             .manifests
             .iter_mut()
-            .map(|m| m.descriptor())
+            .map(|m| m.lock().unwrap().descriptor())
             .collect::<Vec<Descriptor>>();
 
         let mut manifest_builder = ImageIndexBuilder::default()

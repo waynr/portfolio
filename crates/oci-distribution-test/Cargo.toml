@@ -16,18 +16,19 @@ hyper = { version = "0.14", features = [ "full" ] }
 bytes = "1.5"
 lazy_static = "1.4"
 
+tokio = { version = "1.17", features = [ "full" ] }
+futures = "0.3"
+tracing = "0.1"
+
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 
-tracing = "0.1"
 thiserror = "1"
 
 [dev-dependencies]
 
 portfolio-backend-postgres = { path = "../portfolio_backend_postgres" }
-
-tokio = { version = "1.17", features = [ "full" ] }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"]}
