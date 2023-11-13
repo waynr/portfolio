@@ -71,7 +71,7 @@ impl ManifestStore for PgManifestStore {
     }
 
     async fn put(
-        &mut self,
+        &self,
         key: &ManifestRef,
         spec: &ManifestSpec,
         bytes: Bytes,
@@ -172,7 +172,7 @@ impl ManifestStore for PgManifestStore {
         Ok(calculated_digest)
     }
 
-    async fn delete(&mut self, key: &ManifestRef) -> Result<()> {
+    async fn delete(&self, key: &ManifestRef) -> Result<()> {
         let mut tx = self.blobstore.metadata.get_tx().await?;
 
         let manifest = tx

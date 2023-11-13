@@ -79,7 +79,7 @@ impl BlobStore for PgBlobStore {
         }))
     }
 
-    async fn put(&mut self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid> {
+    async fn put(&self, digest: &OciDigest, content_length: u64, body: Body) -> Result<Uuid> {
         let mut tx = self.metadata.get_tx().await?;
         let uuid = match tx.get_blob(digest).await? {
             Some(b) => {
@@ -139,7 +139,7 @@ impl BlobStore for PgBlobStore {
         }
     }
 
-    async fn delete(&mut self, digest: &OciDigest) -> Result<()> {
+    async fn delete(&self, digest: &OciDigest) -> Result<()> {
         let mut tx = self.metadata.get_tx().await?;
 
         let blob = tx
