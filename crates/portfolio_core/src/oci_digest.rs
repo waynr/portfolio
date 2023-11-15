@@ -10,7 +10,7 @@ use crate::{Error, Result};
 ///
 /// Used throughout [`portfolio_core`] and related crates to address various types of manifest and
 /// blob.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct OciDigest {
     algorithm: RegisteredImageSpecAlgorithm,
     encoded: String,
@@ -81,7 +81,7 @@ impl OciDigest {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum RegisteredImageSpecAlgorithm {
     Sha256,
     Sha512,

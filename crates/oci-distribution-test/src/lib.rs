@@ -14,8 +14,9 @@ use portfolio_core::OciDigest;
 mod errors;
 mod loader;
 mod testdata;
-pub use errors::Result;
+mod tests;
 
+pub use errors::Result;
 pub use loader::RepositoryLoader;
 
 #[derive(Serialize, Deserialize, Default, Clone)]
@@ -52,9 +53,22 @@ pub enum ManifestReference {
     Tag(String),
 }
 
+impl From<&ManifestRef> for ManifestReference {
+    fn from(mr: &ManifestRef) -> Self {
+        match mr {
+            ManifestRef::Digest(_) => ManifestReference::Digest,
+            ManifestRef::Tag(t) => ManifestReference::Tag(t.clone()),
+        }
+    }
+}
+
+// TODO: separate deserializable image (type used to deserialize from test fixtures) and test image
+// (type that contains generated content like ImageConfiguration, ImageManifest, etc). then write
+// bidirectional From<> implementations to convert between the two. this eliminates the need for
+// mutable references to Image in test cases
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Image {
-    manifest_ref: ManifestReference,
+    pub(crate) manifest_ref: ManifestReference,
     pub os: Os,
     pub architecture: Arch,
     pub layers: Vec<Arc<Mutex<Layer>>>,
@@ -62,11 +76,13 @@ pub struct Image {
     pub subject: Option<Descriptor>,
 
     #[serde(skip)]
-    config: Option<ImageConfiguration>,
+    pub(crate) tags: Vec<String>,
     #[serde(skip)]
-    manifest: Option<ImageManifest>,
+    pub(crate) config: Option<ImageConfiguration>,
     #[serde(skip)]
-    descriptor: Option<Descriptor>,
+    pub(crate) manifest: Option<ImageManifest>,
+    #[serde(skip)]
+    pub(crate) descriptor: Option<Descriptor>,
 }
 
 impl Image {
@@ -83,7 +99,13 @@ impl Image {
         let histories: Vec<History> = self
             .layers
             .iter()
-            .map(|l| l.lock().unwrap().history.clone().unwrap_or_else(Default::default))
+            .map(|l| {
+                l.lock()
+                    .unwrap()
+                    .history
+                    .clone()
+                    .unwrap_or_else(Default::default)
+            })
             .collect();
         let rootfs = RootFsBuilder::default()
             .typ("layers".to_string())
@@ -168,14 +190,14 @@ impl Image {
             return d.clone();
         }
 
-        let config_bytes =
+        let manifest_bytes =
             serde_json::to_vec(&self.manifest()).expect("ImageManifest should be properly formed");
-        let digest = OciDigest::from(config_bytes.as_slice());
+        let digest = OciDigest::from(manifest_bytes.as_slice());
 
         let descriptor = DescriptorBuilder::default()
-            .media_type(MediaType::ImageLayer)
+            .media_type(MediaType::ImageManifest)
             .digest(String::from(&digest).as_str())
-            .size(config_bytes.len() as i64)
+            .size(manifest_bytes.len() as i64)
             .build()
             .expect("must set all required fields for descriptor");
 
@@ -186,15 +208,18 @@ impl Image {
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Index {
-    manifest_ref: ManifestReference,
+    pub(crate) manifest_ref: ManifestReference,
+    // TODO: rename manifests to images
     pub manifests: Vec<Arc<Mutex<Image>>>,
     pub artifact_type: Option<MediaType>,
     pub subject: Option<Descriptor>,
 
     #[serde(skip)]
-    index_manifest: Option<ImageIndex>,
+    pub(crate) index_manifest: Option<ImageIndex>,
     #[serde(skip)]
-    digest: Option<OciDigest>,
+    pub(crate) digest: Option<OciDigest>,
+    #[serde(skip)]
+    pub(crate) tags: Vec<String>,
 }
 
 impl Index {

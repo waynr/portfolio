@@ -14,7 +14,6 @@ fn initialize_basic_images() -> Vec<Image> {
     serde_yaml::from_str(
         r#"
 - manifest_ref: !Tag meow
-  config:
   os: linux
   architecture: amd64
   layers:

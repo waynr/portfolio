@@ -328,7 +328,7 @@ impl ManifestSpec {
 /// > MUST match the following regular expression:
 /// >
 /// > `[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ManifestRef {
     Digest(OciDigest),
     Tag(String),
